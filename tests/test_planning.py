@@ -158,7 +158,7 @@ def test_wrong_verb_unselected_nodes_duplicate_ids_and_cycles_are_diagnosed() ->
     assert plan.status is PlanStatus.CONFLICT
     assert {item.code for item in plan.diagnostics} == {
         "action.duplicate-id",
-        "action.outside-selection",
+        "action.unknown-node",
         "action.wrong-verb",
         "constraint.cycle",
     }
@@ -175,3 +175,24 @@ def test_empty_plan_is_a_normal_result() -> None:
     assert plan.status is PlanStatus.EMPTY
     assert plan.rejected == (rejected,)
     assert plan.actions == ()
+
+
+def test_action_may_cover_known_supporting_nodes_outside_selection() -> None:
+    inventory = Inventory((Node("dependency", "dependency"), Node("service", "service")))
+    requested = PlanningRequest("verify", inventory, ("service",))
+    proposed = ActionSpec(
+        id="reactor:verify",
+        driver="maven",
+        verb="verify",
+        operation="maven/reactor",
+        node_ids=("service", "dependency"),
+        requested_node_ids=("service",),
+    )
+    provider = StubProvider(
+        "maven", frozenset(("verify",)), DriverProposal("maven", (proposed,)), []
+    )
+
+    plan = Planner((provider,)).negotiate(requested)
+
+    assert plan.status is PlanStatus.EXECUTABLE
+    assert plan.diagnostics == ()

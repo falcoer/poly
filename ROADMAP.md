@@ -9,7 +9,7 @@ authoritative evidence that CI validated its target commit.
 
 ## 0.1 — Canonical core and finite planning
 
-- Status: `implemented-awaiting-ci`
+- Status: `validated`
 - Tag: `roadmap/0.1-core-model`
 - Scope: immutable node/inventory, selection, action, constraint, proposal,
   plan, and diagnostic models; deterministic finite-plan negotiation.
@@ -24,7 +24,7 @@ authoritative evidence that CI validated its target commit.
 
 ## 0.2 — Driver SDK and conformance testkit
 
-- Status: `pending`
+- Status: `implemented-awaiting-ci`
 - Tag: `roadmap/0.2-driver-sdk`
 - Scope: versioned manifest, inspection/planning/execution protocols, registry,
   reusable fixtures, and driver conformance assertions.

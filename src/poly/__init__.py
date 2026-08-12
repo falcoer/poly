@@ -1,5 +1,6 @@
 """Poly's deterministic polyrepo core."""
 
+from poly.driver.api import PlanningProvider
 from poly.model import (
     ActionClaim,
     ActionSpec,
@@ -14,7 +15,7 @@ from poly.model import (
     PlanStatus,
     RejectedCandidate,
 )
-from poly.planning import Planner, PlanningProvider
+from poly.planning import Planner
 
 __all__ = [
     "ActionClaim",

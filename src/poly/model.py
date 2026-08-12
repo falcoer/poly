@@ -141,6 +141,7 @@ class ActionSpec:
     verb: str
     operation: str
     node_ids: tuple[str, ...]
+    requested_node_ids: tuple[str, ...] = ()
     requires: frozenset[Constraint] = frozenset()
     produces: frozenset[Constraint] = frozenset()
     claims: frozenset[ActionClaim] = frozenset()
@@ -152,6 +153,10 @@ class ActionSpec:
         for name in ("id", "driver", "verb", "operation"):
             object.__setattr__(self, name, _required(getattr(self, name), name))
         object.__setattr__(self, "node_ids", tuple(sorted(dict.fromkeys(self.node_ids))))
+        requested = tuple(sorted(dict.fromkeys(self.requested_node_ids)))
+        if not set(requested).issubset(self.node_ids):
+            raise ValueError("requested nodes must be covered by the action")
+        object.__setattr__(self, "requested_node_ids", requested)
         object.__setattr__(
             self, "environment", MappingProxyType(dict(sorted(self.environment.items())))
         )

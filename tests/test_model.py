@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from poly.model import Inventory, Node, NodeRelation, PlanningRequest
+from poly.model import ActionSpec, Inventory, Node, NodeRelation, PlanningRequest
 
 
 def test_node_normalizes_structural_values() -> None:
@@ -57,3 +57,15 @@ def test_required_identifiers_reject_empty_or_whitespace() -> None:
         Node(id=" ", path=".")
     with pytest.raises(ValueError, match="whitespace"):
         Node(id="not valid", path=".")
+
+
+def test_action_requested_nodes_must_be_covered() -> None:
+    with pytest.raises(ValueError, match="must be covered"):
+        ActionSpec(
+            id="invalid",
+            driver="driver",
+            verb="verify",
+            operation="verify",
+            node_ids=("dependency",),
+            requested_node_ids=("service",),
+        )

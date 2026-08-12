@@ -6,28 +6,15 @@ import hashlib
 import json
 from collections import defaultdict
 from collections.abc import Iterable
-from typing import Protocol
 
+from poly.driver.api import PlanningProvider
 from poly.model import (
     ActionSpec,
-    DriverProposal,
     Plan,
     PlanDiagnostic,
     PlanningRequest,
     PlanStatus,
 )
-
-
-class PlanningProvider(Protocol):
-    """Minimal provider surface; the versioned SDK builds on this protocol."""
-
-    @property
-    def name(self) -> str: ...
-
-    @property
-    def verbs(self) -> frozenset[str]: ...
-
-    def propose(self, request: PlanningRequest) -> DriverProposal: ...
 
 
 class Planner:
@@ -82,12 +69,28 @@ class Planner:
                         action_id=action.id,
                     )
                 )
-            unknown_nodes = sorted(set(action.node_ids) - set(request.selected_node_ids))
+            unknown_nodes = sorted(
+                set(action.node_ids) - {node.id for node in request.inventory.nodes}
+            )
             if unknown_nodes:
                 diagnostics.append(
                     PlanDiagnostic(
+                        code="action.unknown-node",
+                        message=f"action covers unknown nodes: {', '.join(unknown_nodes)}",
+                        action_id=action.id,
+                    )
+                )
+            outside_selection = sorted(
+                set(action.requested_node_ids) - set(request.selected_node_ids)
+            )
+            if outside_selection:
+                diagnostics.append(
+                    PlanDiagnostic(
                         code="action.outside-selection",
-                        message=f"action covers unselected nodes: {', '.join(unknown_nodes)}",
+                        message=(
+                            "action marks unselected nodes as requested: "
+                            f"{', '.join(outside_selection)}"
+                        ),
                         action_id=action.id,
                     )
                 )
@@ -191,6 +194,7 @@ def _action_payload(action: ActionSpec) -> dict[str, object]:
         "verb": action.verb,
         "operation": action.operation,
         "nodes": action.node_ids,
+        "requested_nodes": action.requested_node_ids,
         "requires": sorted(constraint.key for constraint in action.requires),
         "produces": sorted(constraint.key for constraint in action.produces),
         "claims": sorted((claim.operation, claim.scope) for claim in action.claims),
