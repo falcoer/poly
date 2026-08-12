@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+          prune-cache: true
+      - run: uv sync --locked --all-groups
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run mypy src tests
+      - run: uv run pytest
+      - run: uv build
+
+  milestone-tag:
+    needs: quality
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Create validated milestone tag
+        shell: bash
+        run: |
+          marker=.poly/milestone-tag
+          test -f "$marker" || exit 0
+          tag=$(tr -d '\r\n' < "$marker")
+          test -n "$tag" || exit 0
+          case "$tag" in
+            roadmap/*) ;;
+            *) echo "Invalid milestone tag: $tag" >&2; exit 1 ;;
+          esac
+          grep -F "Tag: \`$tag\`" ROADMAP.md >/dev/null
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            test "$(git rev-list -n 1 "$tag")" = "$GITHUB_SHA"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "Validated roadmap milestone $tag" "$GITHUB_SHA"
+          git push origin "refs/tags/$tag"
