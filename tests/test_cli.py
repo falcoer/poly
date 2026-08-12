@@ -133,3 +133,75 @@ def test_cli_rejects_unknown_verbs_and_invalid_parameters(
             ]
         )
     assert "unknown node" in capsys.readouterr().err
+
+
+def test_cli_init_add_persist_and_render_construction_runs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert (
+        main(
+            [
+                "init",
+                "--workspace",
+                str(tmp_path),
+                "--name",
+                "Example",
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    initialized = json.loads(capsys.readouterr().out)
+    init_id = initialized["plan"]["id"]
+    assert initialized["run"]["status"] == "succeeded"
+
+    assert (
+        main(
+            [
+                "add",
+                "service",
+                "--workspace",
+                str(tmp_path),
+                "--path",
+                "services/service",
+                "--nature",
+                "maven/module",
+                "--format",
+                "xml",
+            ]
+        )
+        == 0
+    )
+    assert "poly-report" in capsys.readouterr().out
+    assert (tmp_path / "services" / "service").is_dir()
+
+    assert (
+        main(
+            [
+                "report",
+                init_id,
+                "--workspace",
+                str(tmp_path),
+                "--format",
+                "yaml",
+            ]
+        )
+        == 0
+    )
+    recovered = capsys.readouterr().out
+    assert '"kind": "construction"' in recovered
+    assert '"status": "succeeded"' in recovered
+
+    assert main(["inspect", "--workspace", str(tmp_path), "--format", "json"]) == 0
+    capsys.readouterr()
+    assert (tmp_path / ".poly" / "state" / "inventory.json").is_file()
+
+    assert main(["controllers", "--workspace", str(tmp_path), "--format", "json"]) == 0
+    controllers = json.loads(capsys.readouterr().out)
+    assert controllers["controllers"][0]["name"] == "local"
+    assert controllers["controllers"][0]["capabilities"] == [
+        "driver.execute",
+        "process.execute",
+        "workspace.construct",
+    ]

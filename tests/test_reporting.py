@@ -5,6 +5,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from poly.application import InspectionSnapshot, PlanningSnapshot
+from poly.control_plane import ControllerDescriptor
 from poly.model import (
     ActionSpec,
     Inventory,
@@ -15,6 +16,7 @@ from poly.model import (
 )
 from poly.reporting import (
     action_catalog_document,
+    controllers_document,
     inspection_document,
     planning_document,
     render,
@@ -104,6 +106,25 @@ def test_renderer_rejects_unknown_format(tmp_path: Path) -> None:
         assert "unsupported" in str(error)
     else:
         raise AssertionError("unknown format was accepted")
+
+
+def test_controller_report_exposes_capabilities(tmp_path: Path) -> None:
+    document = controllers_document(
+        tmp_path,
+        (
+            ControllerDescriptor(
+                "local", "linux", frozenset(("process.execute", "workspace.construct"))
+            ),
+        ),
+    )
+
+    value = json.loads(render(document, "json"))
+
+    assert value["controllers"][0]["capabilities"] == [
+        "process.execute",
+        "workspace.construct",
+    ]
+    assert "Controllers: 1" in render(document, "text")
 
 
 def _decode_xml(element: ET.Element) -> object:

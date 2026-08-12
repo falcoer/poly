@@ -7,11 +7,27 @@ import sys
 from pathlib import Path
 
 from poly.application import inspect_workspace, prepare_planning
+from poly.construction import (
+    WORKSPACE_MANIFEST,
+    ConstructionError,
+    ConstructionPlanner,
+    constructor_driver,
+)
+from poly.control_plane import (
+    ControllerDescriptor,
+    ControlPlane,
+    ControlPlaneActionRunner,
+    LocalController,
+)
 from poly.driver import DriverRegistry, ExecutionContext
 from poly.drivers import git_driver, maven_driver
 from poly.model import Node
+from poly.persistence import StateError, StateStore
 from poly.reporting import (
+    ReportDocument,
     action_catalog_document,
+    construction_document,
+    controllers_document,
     inspection_document,
     planning_document,
     render,
@@ -24,6 +40,7 @@ REPORT_FORMATS = ("text", "json", "yaml", "xml")
 
 def build_registry() -> DriverRegistry:
     registry = DriverRegistry()
+    registry.register(constructor_driver())
     registry.register(git_driver())
     registry.register(maven_driver())
     return registry
@@ -36,10 +53,27 @@ def main(arguments: list[str] | None = None) -> int:
     if not workspace.is_dir():
         parser.error(f"workspace does not exist or is not a directory: {workspace}")
     registry = build_registry()
+    if options.command in {"init", "add"}:
+        return _construct(parser, options, workspace, registry)
+    if options.command == "report":
+        try:
+            document = StateStore(workspace).load_report(options.run_id)
+        except StateError as error:
+            parser.error(str(error))
+        sys.stdout.write(render(document, options.format))
+        return 0
+    if options.command == "controllers":
+        plane = _control_plane(registry)
+        sys.stdout.write(
+            render(controllers_document(workspace, plane.descriptors()), options.format)
+        )
+        return 0
+
     inspection = inspect_workspace(registry, workspace)
 
     if options.command == "inspect":
         document = inspection_document(inspection)
+        _save_inventory_if_initialized(workspace, document)
         exit_code = 0
     else:
         selected = _selection(options.select, inspection.inventory.nodes)
@@ -61,13 +95,16 @@ def main(arguments: list[str] | None = None) -> int:
             snapshot = prepare_planning(registry, inspection, options.verb, selected, parameters)
             if options.command == "plan":
                 document = planning_document(snapshot)
+                _save_plan_if_initialized(workspace, snapshot.plan.id, document)
                 exit_code = 0 if snapshot.plan.status.value in {"executable", "empty"} else 1
             else:
                 run_directory = workspace / ".poly" / "runs" / snapshot.plan.id
                 run_directory.mkdir(parents=True, exist_ok=True)
                 context = ExecutionContext(workspace, run_directory)
-                result = Executor(LocalActionRunner(registry)).execute(snapshot.plan, context)
+                runner = _controller_runner(registry, options.controller)
+                result = Executor(runner).execute(snapshot.plan, context)
                 document = run_document(snapshot, result)
+                _save_run_if_initialized(workspace, snapshot.plan.id, document)
                 exit_code = 0 if result.status in {RunStatus.SUCCEEDED, RunStatus.EMPTY} else 1
 
     sys.stdout.write(render(document, options.format))
@@ -81,6 +118,18 @@ def _parser() -> argparse.ArgumentParser:
     inspect = commands.add_parser("inspect", help="inspect the current workspace")
     _report_options(inspect)
 
+    init = commands.add_parser("init", help="initialize an existing directory as a Poly workspace")
+    init.add_argument("--name", help="workspace name (default: directory name)")
+    init.add_argument("--controller", default="local")
+    _report_options(init)
+
+    add = commands.add_parser("add", help="add a declared node to an initialized workspace")
+    add.add_argument("node_id")
+    add.add_argument("--path", required=True, dest="node_path")
+    add.add_argument("--nature", action="append", default=[])
+    add.add_argument("--controller", default="local")
+    _report_options(add)
+
     actions = commands.add_parser("actions", help="list currently applicable actions")
     actions.add_argument("verb", nargs="?", help="limit the catalog to one verb")
     _planning_options(actions)
@@ -91,8 +140,76 @@ def _parser() -> argparse.ArgumentParser:
 
     run = commands.add_parser("run", help="negotiate and execute a finite plan")
     run.add_argument("verb")
+    run.add_argument("--controller", default="local")
     _planning_options(run)
+
+    report = commands.add_parser("report", help="render a persisted plan or run")
+    report.add_argument("run_id")
+    _report_options(report)
+
+    controllers = commands.add_parser("controllers", help="list controller capabilities")
+    _report_options(controllers)
     return parser
+
+
+def _construct(
+    parser: argparse.ArgumentParser,
+    options: argparse.Namespace,
+    workspace: Path,
+    registry: DriverRegistry,
+) -> int:
+    planner = ConstructionPlanner()
+    try:
+        if options.command == "init":
+            plan = planner.plan_init(workspace, options.name or workspace.name)
+        else:
+            plan = planner.plan_add(
+                workspace,
+                options.node_id,
+                options.node_path,
+                tuple(options.nature),
+            )
+    except ConstructionError as error:
+        parser.error(str(error))
+    run_directory = workspace / ".poly" / "runs" / plan.id
+    context = ExecutionContext(workspace, run_directory)
+    result = Executor(_controller_runner(registry, options.controller)).execute(plan, context)
+    document = construction_document(workspace, plan, result)
+    if (workspace / WORKSPACE_MANIFEST).is_file():
+        StateStore(workspace).save_run(plan.id, document)
+    sys.stdout.write(render(document, options.format))
+    return 0 if result.status is RunStatus.SUCCEEDED else 1
+
+
+def _controller_runner(
+    registry: DriverRegistry, requested_controller: str | None
+) -> ControlPlaneActionRunner:
+    return ControlPlaneActionRunner(_control_plane(registry), requested_controller)
+
+
+def _control_plane(registry: DriverRegistry) -> ControlPlane:
+    descriptor = ControllerDescriptor(
+        "local",
+        sys.platform,
+        frozenset(("driver.execute", "process.execute", "workspace.construct")),
+    )
+    local = LocalController(descriptor, LocalActionRunner(registry))
+    return ControlPlane((local,))
+
+
+def _save_inventory_if_initialized(workspace: Path, document: ReportDocument) -> None:
+    if (workspace / WORKSPACE_MANIFEST).is_file():
+        StateStore(workspace).save_inventory(document)
+
+
+def _save_plan_if_initialized(workspace: Path, plan_id: str, document: ReportDocument) -> None:
+    if (workspace / WORKSPACE_MANIFEST).is_file():
+        StateStore(workspace).save_plan(plan_id, document)
+
+
+def _save_run_if_initialized(workspace: Path, run_id: str, document: ReportDocument) -> None:
+    if (workspace / WORKSPACE_MANIFEST).is_file():
+        StateStore(workspace).save_run(run_id, document)
 
 
 def _report_options(parser: argparse.ArgumentParser) -> None:

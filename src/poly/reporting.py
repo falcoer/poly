@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Mapping, Sequence
+from pathlib import Path
 
 from poly.application import InspectionSnapshot, PlanningSnapshot
+from poly.control_plane import ControllerDescriptor
 from poly.driver import InspectionDiagnostic
 from poly.model import (
     ActionSpec,
@@ -88,6 +90,41 @@ def run_document(snapshot: PlanningSnapshot, result: RunResult) -> ReportDocumen
     return document
 
 
+def construction_document(workspace: Path, plan: Plan, result: RunResult) -> ReportDocument:
+    return {
+        "schema": REPORT_SCHEMA,
+        "kind": "construction",
+        "workspace": str(workspace.resolve()),
+        "available_verbs": ["add", "init"],
+        "inventory": {"nodes": []},
+        "diagnostics": [],
+        "applicable_actions": [_action_document(action) for action in plan.actions],
+        "rejected_candidates": [],
+        "plan": _plan_document(plan),
+        "run": {
+            "plan_id": result.plan_id,
+            "status": result.status.value,
+            "available_constraints": list(result.available_constraints),
+            "actions": [_action_result_document(action) for action in result.actions],
+            "events": [_event_document(event) for event in result.events],
+        },
+    }
+
+
+def controllers_document(
+    workspace: Path, descriptors: tuple[ControllerDescriptor, ...]
+) -> ReportDocument:
+    return {
+        "schema": REPORT_SCHEMA,
+        "kind": "controllers",
+        "workspace": str(workspace.resolve()),
+        "available_verbs": [],
+        "inventory": {"nodes": []},
+        "diagnostics": [],
+        "controllers": [descriptor.to_dict() for descriptor in descriptors],
+    }
+
+
 def render(document: ReportDocument, format_name: str) -> str:
     if format_name == "json":
         return json.dumps(document, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
@@ -139,6 +176,7 @@ def _action_document(action: ActionSpec) -> ReportDocument:
         "command": list(action.command) if action.command is not None else None,
         "environment": dict(action.environment),
         "changes_structure": action.changes_structure,
+        "required_capability": action.required_capability,
     }
 
 
@@ -312,6 +350,7 @@ def _text(document: ReportDocument) -> str:
         if isinstance(diagnostic, dict):
             lines.append(f"Diagnostic {diagnostic.get('code')}: {diagnostic.get('message')}")
     _text_planning(lines, document)
+    _text_controllers(lines, document)
     _text_run(lines, document)
     return "\n".join(lines) + "\n"
 
@@ -398,6 +437,19 @@ def _text_run(lines: list[str], document: ReportDocument) -> None:
                     f"  {event.get('sequence')}. {event.get('action_id')} "
                     f"{event.get('state')} {event.get('message')}"
                 )
+
+
+def _text_controllers(lines: list[str], document: ReportDocument) -> None:
+    controllers = document.get("controllers")
+    if not isinstance(controllers, list):
+        return
+    lines.append(f"Controllers: {len(controllers)}")
+    for controller in controllers:
+        if isinstance(controller, dict):
+            lines.append(
+                f"  {controller.get('name')} [{controller.get('platform')}] "
+                f"{_compact(controller.get('capabilities'))}"
+            )
 
 
 def _text_action(lines: list[str], action: dict[str, JsonValue], prefix: str) -> None:

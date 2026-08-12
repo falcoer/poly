@@ -42,10 +42,14 @@ fresh, side-effect-free view of what the current workspace can do.
 
 ```shell
 poly inspect
+poly controllers
+poly init --name example
+poly add service-api --path services/api --nature maven/module
 poly actions
 poly actions verify --select maven:platform/service-a
 poly plan verify --select maven:platform/service-a --format yaml
 poly run status --select git:. --format json
+poly report <run-id> --format xml
 ```
 
 Every command accepts `--workspace`. Reports support `text`, `json`, `yaml`,

@@ -63,7 +63,7 @@ authoritative evidence that CI validated its target commit.
 
 ## 0.5 — Executor, canonical reports, and CLI
 
-- Status: `implemented-awaiting-ci`
+- Status: `validated`
 - Tag: `roadmap/0.5-runtime-reporting`
 - Scope: sequential constraint executor, process adapter, result/event models,
   text/JSON/YAML/XML renderers, and initial `poly inspect/actions/plan/run` CLI.
@@ -77,7 +77,7 @@ authoritative evidence that CI validated its target commit.
 
 ## 0.6 — Constructor, persistence, and control-plane
 
-- Status: `pending`
+- Status: `implemented-awaiting-ci`
 - Tag: `roadmap/0.6-constructor-control-plane`
 - Scope: `init`/`add` construction plans, versioned inventory/run persistence,
   and local/remote controller contracts.

@@ -1,5 +1,12 @@
 """Poly's deterministic polyrepo core."""
 
+from poly.control_plane import (
+    ControllerDescriptor,
+    ControlPlane,
+    ControlPlaneActionRunner,
+    LocalController,
+    RemoteController,
+)
 from poly.driver.api import PlanningProvider
 from poly.model import (
     ActionClaim,
@@ -15,6 +22,7 @@ from poly.model import (
     PlanStatus,
     RejectedCandidate,
 )
+from poly.persistence import StateStore
 from poly.planning import Planner
 from poly.runtime import (
     ActionAttempt,
@@ -36,10 +44,14 @@ __all__ = [
     "ActionSpec",
     "ActionState",
     "Constraint",
+    "ControlPlane",
+    "ControlPlaneActionRunner",
+    "ControllerDescriptor",
     "DriverProposal",
     "Executor",
     "Inventory",
     "LocalActionRunner",
+    "LocalController",
     "Node",
     "NodeRelation",
     "Plan",
@@ -49,7 +61,9 @@ __all__ = [
     "PlanningProvider",
     "PlanningRequest",
     "RejectedCandidate",
+    "RemoteController",
     "RunEvent",
     "RunResult",
     "RunStatus",
+    "StateStore",
 ]

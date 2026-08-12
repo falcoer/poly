@@ -148,6 +148,7 @@ class ActionSpec:
     command: tuple[str, ...] | None = None
     environment: dict[str, str] = field(default_factory=dict)
     changes_structure: bool = False
+    required_capability: str = "process.execute"
 
     def __post_init__(self) -> None:
         for name in ("id", "driver", "verb", "operation"):
@@ -159,6 +160,11 @@ class ActionSpec:
         object.__setattr__(self, "requested_node_ids", requested)
         object.__setattr__(
             self, "environment", MappingProxyType(dict(sorted(self.environment.items())))
+        )
+        object.__setattr__(
+            self,
+            "required_capability",
+            _required(self.required_capability, "required capability"),
         )
         if self.command is not None and not self.command:
             raise ValueError("command must contain at least an executable")

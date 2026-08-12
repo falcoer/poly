@@ -209,6 +209,7 @@ def _action_payload(action: ActionSpec) -> dict[str, object]:
         "command": action.command,
         "environment": dict(action.environment),
         "changes_structure": action.changes_structure,
+        "required_capability": action.required_capability,
     }
 
 

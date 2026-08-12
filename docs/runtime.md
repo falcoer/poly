@@ -39,3 +39,11 @@ Text, JSON, YAML, and XML renderers receive the same canonical document. The
 machine formats retain the entire inventory, diagnostics, rejected candidates,
 plan, commands, constraints, results, logs, and events. The text renderer
 presents the same information as a compact operator report.
+
+## Persistence
+
+Initialized workspaces persist the latest inventory under `.poly/state` and
+plan/run reports under `.poly/runs/<plan-id>`. Files use the
+`poly.state/v1` envelope around the canonical report. Reads migrate legacy v0
+envelopes and raw v1 reports atomically. `poly report <plan-id>` prefers the run
+result when present and otherwise renders the saved plan.

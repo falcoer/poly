@@ -56,3 +56,9 @@ were not produced. Commands and driver handlers share one action-attempt model,
 so the reporter does not need technology-specific logic. The initial CLI
 exposes `inspect`, `actions`, `plan`, and `run` without collapsing their distinct
 meanings.
+
+Construction plans use that same executor. The control-plane chooses local or
+remote action runners only from explicitly advertised capabilities. Versioned
+state envelopes retain inventory and reports independently of any renderer, so
+an interrupted session can recover a prior plan or result without renegotiating
+it.
