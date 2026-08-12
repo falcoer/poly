@@ -28,6 +28,11 @@ owns committed `poly.yaml` and `poly.lock.yaml`, while independently versioned
 child repositories and generated `.poly/` state are excluded through a
 Poly-managed root `.gitignore` block.
 
+The version 1 contract is implemented: manifests and locks are validated and
+compiled into rebuildable state, declared identities are enriched by Git and
+Maven inspection, and undeclared repositories remain explicit `observed-only`
+nodes. Clone/fetch/checkout hydration remains deliberately deferred to 0.10.
+
 ## Development
 
 Python 3.12 and [uv](https://docs.astral.sh/uv/) are required.
@@ -64,7 +69,9 @@ fresh, side-effect-free view of what the current workspace can do.
 poly inspect
 poly controllers
 poly init --name example
-poly add service-api --path services/api --nature maven/module
+poly add service-api --kind repository --path services/api
+poly add service-api-reactor --parent service-api --path . --nature maven/reactor
+poly remove service-api-reactor
 poly actions
 poly actions verify --select maven:platform/service-a
 poly plan verify --select maven:platform/service-a --format yaml
@@ -76,6 +83,12 @@ Every command accepts `--workspace`. Reports support `text`, `json`, `yaml`,
 and `xml`; all formats are rendered from the same `poly.report/v1` document.
 `run` stores process output and state transitions in its report. It executes
 only the frozen plan printed in the same document.
+
+`poly init` creates `poly.yaml`, `poly.lock.yaml`, compiled state, and the
+delimited root `.gitignore` block. Re-running it reconciles those generated
+artifacts without changing authored composition. `poly add` and `poly remove`
+edit the YAML round-trip document while preserving comments and user-owned
+ignore rules; they declare structure but do not materialize Git sources.
 
 The project advances directly on `main`. A milestone tag is created by CI only
 after every required check succeeds on the exact milestone commit.

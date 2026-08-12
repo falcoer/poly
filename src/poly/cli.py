@@ -35,6 +35,7 @@ from poly.reporting import (
     run_document,
 )
 from poly.runtime import Executor, LocalActionRunner, RunStatus
+from poly.workspace import WorkspaceError
 
 REPORT_FORMATS = ("text", "json", "yaml", "xml")
 
@@ -65,7 +66,7 @@ def main(arguments: list[str] | None = None) -> int:
     if not workspace.is_dir():
         parser.error(f"workspace does not exist or is not a directory: {workspace}")
     registry = build_registry()
-    if options.command in {"init", "add"}:
+    if options.command in {"init", "add", "remove"}:
         return _construct(parser, options, workspace, registry)
     if options.command == "report":
         try:
@@ -81,7 +82,10 @@ def main(arguments: list[str] | None = None) -> int:
         )
         return 0
 
-    inspection = inspect_workspace(registry, workspace)
+    try:
+        inspection = inspect_workspace(registry, workspace)
+    except WorkspaceError as error:
+        parser.error(str(error))
 
     if options.command == "inspect":
         document = inspection_document(inspection)
@@ -138,9 +142,21 @@ def _parser() -> argparse.ArgumentParser:
     add = commands.add_parser("add", help="add a declared node to an initialized workspace")
     add.add_argument("node_id")
     add.add_argument("--path", required=True, dest="node_path")
+    add.add_argument("--parent", help="parent node (default: workspace root)")
+    add.add_argument(
+        "--kind",
+        choices=("repository", "module"),
+        default="module",
+        help="declared node kind (default: module)",
+    )
     add.add_argument("--nature", action="append", default=[])
     add.add_argument("--controller", default="local")
     _report_options(add)
+
+    remove = commands.add_parser("remove", help="remove a leaf node from the composition")
+    remove.add_argument("node_id")
+    remove.add_argument("--controller", default="local")
+    _report_options(remove)
 
     actions = commands.add_parser("actions", help="list currently applicable actions")
     actions.add_argument("verb", nargs="?", help="limit the catalog to one verb")
@@ -185,13 +201,17 @@ def _construct(
     try:
         if options.command == "init":
             plan = planner.plan_init(workspace, options.name or workspace.name)
-        else:
+        elif options.command == "add":
             plan = planner.plan_add(
                 workspace,
                 options.node_id,
                 options.node_path,
                 tuple(options.nature),
+                parent=options.parent,
+                kind=options.kind,
             )
+        else:
+            plan = planner.plan_remove(workspace, options.node_id)
     except ConstructionError as error:
         parser.error(str(error))
     run_directory = workspace / ".poly" / "runs" / plan.id

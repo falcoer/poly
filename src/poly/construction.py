@@ -1,12 +1,11 @@
-"""Construction plans for creating and extending Poly workspaces."""
+"""Construction plans for editing the root-owned workspace composition."""
 
 from __future__ import annotations
 
 import hashlib
 import json
-import os
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from poly.driver import (
     DRIVER_API_VERSION,
@@ -17,10 +16,21 @@ from poly.driver import (
     ExecutionContext,
 )
 from poly.model import ActionClaim, ActionSpec, JsonValue, Plan, PlanStatus
+from poly.workspace import (
+    WORKSPACE_MANIFEST,
+    WORKSPACE_SCHEMA,
+    WorkspaceError,
+    add_manifest_node,
+    compile_workspace,
+    create_workspace_files,
+    remove_manifest_node,
+    validate_initialization_target,
+    validate_manifest_value,
+    validate_workspace,
+    workspace_id,
+)
 
 CONSTRUCTOR_DRIVER_NAME = "poly.constructor"
-WORKSPACE_SCHEMA = "poly.workspace/v1"
-WORKSPACE_MANIFEST = ".poly/workspace.json"
 
 
 class ConstructionError(ValueError):
@@ -33,11 +43,27 @@ class ConstructionPlanner:
         workspace = workspace.resolve()
         if not workspace.is_dir():
             raise ConstructionError(f"workspace does not exist: {workspace}")
-        if not name.strip():
+        normalized_name = name.strip()
+        if not normalized_name:
             raise ConstructionError("workspace name must not be empty")
-        manifest = workspace / WORKSPACE_MANIFEST
-        if manifest.exists():
-            raise ConstructionError(f"workspace is already initialized: {manifest}")
+        try:
+            if (workspace / WORKSPACE_MANIFEST).is_file():
+                validate_workspace(workspace)
+                action = ActionSpec(
+                    "construct.reconcile",
+                    CONSTRUCTOR_DRIVER_NAME,
+                    "init",
+                    "poly/construction/reconcile",
+                    (),
+                    claims=frozenset((ActionClaim("poly/construction/reconcile", "workspace:."),)),
+                    changes_structure=True,
+                    required_capability="workspace.construct",
+                )
+                return _construction_plan("init", (action,))
+            validate_initialization_target(workspace)
+            identifier = workspace_id(normalized_name)
+        except WorkspaceError as error:
+            raise ConstructionError(str(error)) from error
         action = ActionSpec(
             "construct.init",
             CONSTRUCTOR_DRIVER_NAME,
@@ -45,7 +71,10 @@ class ConstructionPlanner:
             "poly/construction/init",
             (),
             claims=frozenset((ActionClaim("poly/construction/init", "workspace:."),)),
-            environment={"poly.workspace.name": name.strip()},
+            environment={
+                "poly.workspace.id": identifier,
+                "poly.workspace.name": normalized_name,
+            },
             changes_structure=True,
             required_capability="workspace.construct",
         )
@@ -57,35 +86,38 @@ class ConstructionPlanner:
         node_id: str,
         path: str,
         natures: tuple[str, ...] = (),
+        *,
+        parent: str | None = None,
+        kind: str = "module",
     ) -> Plan:
-        definition = read_workspace_definition(workspace)
-        normalized_path = _relative_path(path)
-        normalized_id = node_id.strip()
-        if not normalized_id or any(character.isspace() for character in normalized_id):
-            raise ConstructionError("node id must be non-empty and contain no whitespace")
-        nodes = definition.get("nodes")
-        if not isinstance(nodes, list):
-            raise ConstructionError("workspace manifest nodes must be a list")
-        if any(isinstance(node, dict) and node.get("id") == normalized_id for node in nodes):
-            raise ConstructionError(f"node already exists: {normalized_id!r}")
-        if any(isinstance(node, dict) and node.get("path") == normalized_path for node in nodes):
-            raise ConstructionError(f"node path already exists: {normalized_path!r}")
-        nature_values: list[JsonValue] = [nature for nature in sorted(set(natures))]
-        spec: dict[str, JsonValue] = {
-            "id": normalized_id,
-            "path": normalized_path,
-            "natures": nature_values,
-        }
+        try:
+            compiled = validate_workspace(workspace)
+            parent_id = parent or compiled.manifest.root_node
+            value = compiled.manifest.semantic()
+            nodes = value["nodes"]
+            assert isinstance(nodes, list)
+            spec: dict[str, JsonValue] = {
+                "id": node_id,
+                "parent": parent_id,
+                "kind": kind,
+                "path": path,
+            }
+            if natures:
+                spec["natures"] = list(natures)
+            nodes.append(spec)
+            validate_manifest_value(workspace, value)
+        except WorkspaceError as error:
+            raise ConstructionError(str(error)) from error
         action = ActionSpec(
-            f"construct.add:{normalized_id}",
+            f"construct.add:{node_id}",
             CONSTRUCTOR_DRIVER_NAME,
             "add",
             "poly/construction/add",
             (),
             claims=frozenset(
                 (
-                    ActionClaim("poly/construction/add", f"node:{normalized_id}"),
-                    ActionClaim("poly/construction/path", f"path:{normalized_path}"),
+                    ActionClaim("poly/construction/add", f"node:{node_id}"),
+                    ActionClaim("poly/construction/path", f"path:{path}"),
                 )
             ),
             environment={"poly.node.spec": json.dumps(spec, sort_keys=True)},
@@ -94,90 +126,108 @@ class ConstructionPlanner:
         )
         return _construction_plan("add", (action,))
 
+    def plan_remove(self, workspace: Path, node_id: str) -> Plan:
+        try:
+            compiled = validate_workspace(workspace)
+            if node_id == compiled.manifest.root_node:
+                raise WorkspaceError("the root node cannot be removed")
+            compiled.manifest.get(node_id)
+            children = sorted(node.id for node in compiled.manifest.nodes if node.parent == node_id)
+            if children:
+                raise WorkspaceError(f"node {node_id!r} still owns children: {children!r}")
+        except KeyError as error:
+            raise ConstructionError(f"unknown node: {node_id!r}") from error
+        except WorkspaceError as error:
+            raise ConstructionError(str(error)) from error
+        action = ActionSpec(
+            f"construct.remove:{node_id}",
+            CONSTRUCTOR_DRIVER_NAME,
+            "remove",
+            "poly/construction/remove",
+            (),
+            claims=frozenset((ActionClaim("poly/construction/remove", f"node:{node_id}"),)),
+            environment={"poly.node.id": node_id},
+            changes_structure=True,
+            required_capability="workspace.construct",
+        )
+        return _construction_plan("remove", (action,))
+
 
 @dataclass(frozen=True, slots=True)
 class ConstructionActionHandler:
     name: str = CONSTRUCTOR_DRIVER_NAME
 
     def execute(self, action: ActionSpec, context: ExecutionContext) -> DriverExecutionResult:
-        if action.operation == "poly/construction/init":
-            return self._init(action, context)
-        if action.operation == "poly/construction/add":
-            return self._add(action, context)
-        return DriverExecutionResult(
-            False, f"unsupported construction operation: {action.operation}"
-        )
+        try:
+            if action.operation == "poly/construction/init":
+                return self._init(action, context)
+            if action.operation == "poly/construction/reconcile":
+                compile_workspace(context.workspace)
+                return DriverExecutionResult(True, "reconciled Poly workspace")
+            if action.operation == "poly/construction/add":
+                return self._add(action, context)
+            if action.operation == "poly/construction/remove":
+                return self._remove(action, context)
+            return DriverExecutionResult(
+                False, f"unsupported construction operation: {action.operation}"
+            )
+        except (KeyError, json.JSONDecodeError, WorkspaceError) as error:
+            return DriverExecutionResult(False, str(error))
 
     def _init(self, action: ActionSpec, context: ExecutionContext) -> DriverExecutionResult:
-        manifest = context.workspace / WORKSPACE_MANIFEST
-        if manifest.exists():
-            return DriverExecutionResult(False, "workspace is already initialized")
         name = action.environment.get("poly.workspace.name", "").strip()
-        if not name:
-            return DriverExecutionResult(False, "construction action has no workspace name")
-        definition: dict[str, JsonValue] = {
-            "schema": WORKSPACE_SCHEMA,
-            "name": name,
-            "nodes": [],
-        }
-        _write_json(manifest, definition)
-        (context.workspace / ".poly" / "state").mkdir(parents=True, exist_ok=True)
-        (context.workspace / ".poly" / "runs").mkdir(parents=True, exist_ok=True)
+        identifier = action.environment.get("poly.workspace.id", "").strip()
+        create_workspace_files(context.workspace, identifier, name)
         return DriverExecutionResult(True, f"initialized Poly workspace {name!r}")
 
     def _add(self, action: ActionSpec, context: ExecutionContext) -> DriverExecutionResult:
-        try:
-            spec = json.loads(action.environment["poly.node.spec"])
-            if not isinstance(spec, dict):
-                raise ConstructionError("node specification must be an object")
-            node_id = str(spec["id"])
-            path = _relative_path(str(spec["path"]))
-            natures_value = spec.get("natures", [])
-            if not isinstance(natures_value, list) or not all(
-                isinstance(nature, str) for nature in natures_value
-            ):
-                raise ConstructionError("node natures must be a string list")
-            definition = read_workspace_definition(context.workspace)
-            nodes = definition["nodes"]
-            if not isinstance(nodes, list):
-                raise ConstructionError("workspace manifest nodes must be a list")
-            if any(isinstance(node, dict) and node.get("id") == node_id for node in nodes):
-                return DriverExecutionResult(False, f"node already exists: {node_id!r}")
-            nodes.append({"id": node_id, "path": path, "natures": sorted(natures_value)})
-            nodes.sort(key=lambda node: str(node.get("id")) if isinstance(node, dict) else "")
-            (context.workspace / path).mkdir(parents=True, exist_ok=True)
-            _write_json(context.workspace / WORKSPACE_MANIFEST, definition)
-        except (KeyError, OSError, json.JSONDecodeError, ConstructionError) as error:
-            return DriverExecutionResult(False, str(error))
-        return DriverExecutionResult(True, f"added node {node_id!r}", {"path": path})
+        spec = json.loads(action.environment["poly.node.spec"])
+        if not isinstance(spec, dict):
+            raise WorkspaceError("node specification must be a mapping")
+        node_id = str(spec["id"])
+        natures_value = spec.get("natures", [])
+        if not isinstance(natures_value, list) or not all(
+            isinstance(nature, str) for nature in natures_value
+        ):
+            raise WorkspaceError("node natures must be a string list")
+        compiled = add_manifest_node(
+            context.workspace,
+            node_id=node_id,
+            parent=str(spec["parent"]),
+            kind=str(spec["kind"]),
+            path=str(spec["path"]),
+            natures=tuple(natures_value),
+        )
+        return DriverExecutionResult(
+            True,
+            f"added node {node_id!r}",
+            {"path": compiled.manifest.get(node_id).workspace_path},
+        )
+
+    def _remove(self, action: ActionSpec, context: ExecutionContext) -> DriverExecutionResult:
+        node_id = action.environment["poly.node.id"]
+        remove_manifest_node(context.workspace, node_id)
+        return DriverExecutionResult(True, f"removed node {node_id!r}")
 
 
 def constructor_driver() -> DriverRegistration:
     return DriverRegistration(
         DriverManifest(
             CONSTRUCTOR_DRIVER_NAME,
-            "0.1.0",
+            "0.2.0",
             DRIVER_API_VERSION,
             frozenset((DriverCapability.EXECUTE,)),
-            "Poly workspace construction action handler",
+            "Poly root workspace composition action handler",
         ),
         handlers=(ConstructionActionHandler(),),
     )
 
 
 def read_workspace_definition(workspace: Path) -> dict[str, JsonValue]:
-    manifest = workspace.resolve() / WORKSPACE_MANIFEST
     try:
-        value = json.loads(manifest.read_text(encoding="utf-8"))
-    except FileNotFoundError as error:
-        raise ConstructionError(f"workspace is not initialized: {manifest}") from error
-    except (OSError, json.JSONDecodeError) as error:
-        raise ConstructionError(f"cannot read workspace manifest: {error}") from error
-    if not isinstance(value, dict) or value.get("schema") != WORKSPACE_SCHEMA:
-        raise ConstructionError("workspace manifest has an unsupported schema")
-    if not isinstance(value.get("name"), str) or not isinstance(value.get("nodes"), list):
-        raise ConstructionError("workspace manifest is malformed")
-    return value
+        return validate_workspace(workspace).manifest.semantic()
+    except WorkspaceError as error:
+        raise ConstructionError(str(error)) from error
 
 
 def _construction_plan(verb: str, actions: tuple[ActionSpec, ...]) -> Plan:
@@ -199,18 +249,13 @@ def _construction_plan(verb: str, actions: tuple[ActionSpec, ...]) -> Plan:
     return Plan(plan_id, verb, (), actions, (), (), PlanStatus.EXECUTABLE)
 
 
-def _relative_path(value: str) -> str:
-    path = PurePosixPath(value.strip())
-    if not value.strip() or path.is_absolute() or ".." in path.parts or path.as_posix() == ".":
-        raise ConstructionError(f"node path must be a non-root workspace-relative path: {value!r}")
-    return path.as_posix()
-
-
-def _write_json(path: Path, value: dict[str, JsonValue]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    temporary.write_text(
-        json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    temporary.replace(path)
+__all__ = [
+    "CONSTRUCTOR_DRIVER_NAME",
+    "WORKSPACE_MANIFEST",
+    "WORKSPACE_SCHEMA",
+    "ConstructionActionHandler",
+    "ConstructionError",
+    "ConstructionPlanner",
+    "constructor_driver",
+    "read_workspace_definition",
+]

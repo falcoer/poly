@@ -21,6 +21,7 @@ from poly.control_plane import (
 from poly.driver import DriverRegistry, ExecutionContext
 from poly.model import Plan
 from poly.runtime import Executor, LocalActionRunner, RunResult, RunStatus
+from poly.workspace import validate_manifest_value
 
 
 def _execute(workspace: Path, plan: Plan) -> RunResult:
@@ -46,7 +47,11 @@ def test_init_and_add_are_frozen_plans_executed_by_common_runtime(tmp_path: Path
     initialized = _execute(tmp_path, init)
 
     assert initialized.status is RunStatus.SUCCEEDED
-    assert read_workspace_definition(tmp_path)["name"] == "Example"
+    assert read_workspace_definition(tmp_path)["workspace"] == {
+        "id": "example",
+        "name": "Example",
+        "root-node": "root",
+    }
 
     add = planner.plan_add(tmp_path, "service-api", "services/api", ("maven/module",))
     assert not (tmp_path / "services" / "api").exists()
@@ -54,9 +59,15 @@ def test_init_and_add_are_frozen_plans_executed_by_common_runtime(tmp_path: Path
     definition = read_workspace_definition(tmp_path)
 
     assert added.status is RunStatus.SUCCEEDED
-    assert (tmp_path / "services" / "api").is_dir()
     assert definition["nodes"] == [
-        {"id": "service-api", "natures": ["maven/module"], "path": "services/api"}
+        {"id": "root", "kind": "workspace", "path": "."},
+        {
+            "id": "service-api",
+            "kind": "module",
+            "natures": ["maven/module"],
+            "parent": "root",
+            "path": "services/api",
+        },
     ]
 
 
@@ -65,14 +76,15 @@ def test_constructor_rejects_unsafe_or_duplicate_nodes(tmp_path: Path) -> None:
     _execute(tmp_path, planner.plan_init(tmp_path, "Example"))
     _execute(tmp_path, planner.plan_add(tmp_path, "service", "service"))
 
-    with pytest.raises(ConstructionError, match="already exists"):
+    with pytest.raises(ConstructionError, match="duplicate node identifier"):
         planner.plan_add(tmp_path, "service", "another")
-    with pytest.raises(ConstructionError, match="path already exists"):
+    with pytest.raises(ConstructionError, match="path collision"):
         planner.plan_add(tmp_path, "other", "service")
-    with pytest.raises(ConstructionError, match="workspace-relative"):
+    with pytest.raises(ConstructionError, match="safe relative path"):
         planner.plan_add(tmp_path, "unsafe", "../outside")
-    with pytest.raises(ConstructionError, match="already initialized"):
-        planner.plan_init(tmp_path, "Again")
+    reconcile = planner.plan_init(tmp_path, "Again")
+    assert reconcile.actions[0].operation == "poly/construction/reconcile"
+    assert _execute(tmp_path, reconcile).status is RunStatus.SUCCEEDED
 
 
 def test_workspace_manifest_validation_and_handler_failures(tmp_path: Path) -> None:
@@ -80,19 +92,37 @@ def test_workspace_manifest_validation_and_handler_failures(tmp_path: Path) -> N
         read_workspace_definition(tmp_path)
 
     manifest = tmp_path / WORKSPACE_MANIFEST
-    manifest.parent.mkdir()
     manifest.write_text(json.dumps({"schema": "wrong"}))
-    with pytest.raises(ConstructionError, match="unsupported schema"):
+    with pytest.raises(ConstructionError, match="unsupported workspace schema"):
         read_workspace_definition(tmp_path)
 
-    manifest.write_text(json.dumps({"schema": "poly.workspace/v1", "name": "Example", "nodes": []}))
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema": "poly.workspace/v1",
+                "workspace": {"id": "example", "root-node": "root"},
+                "nodes": [{"id": "root", "kind": "workspace", "path": "."}],
+            }
+        )
+    )
+    lock = tmp_path / "poly.lock.yaml"
+    digest = validate_manifest_value(tmp_path, json.loads(manifest.read_text())).digest
+    lock.write_text(
+        json.dumps(
+            {
+                "schema": "poly.workspace-lock/v1",
+                "manifest-digest": digest,
+                "sources": {},
+            }
+        )
+    )
     plan = ConstructionPlanner().plan_add(tmp_path, "service", "service")
-    manifest.write_text("invalid json")
+    manifest.write_text("invalid: [yaml")
     result = _execute(tmp_path, plan)
 
     assert result.status is RunStatus.FAILED
     assert result.actions[0].attempt is not None
-    assert "cannot read workspace manifest" in result.actions[0].attempt.summary
+    assert "cannot read workspace file" in result.actions[0].attempt.summary
 
 
 def test_constructor_driver_uses_public_execution_contract() -> None:

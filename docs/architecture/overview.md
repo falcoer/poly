@@ -29,10 +29,15 @@ ordinary action constraints that the generic executor understands.
 
 ## State
 
-Only observed structure is eligible for durable inventory. Action completion
-constraints exist for a single run. Volatile facts such as a generated JAR are
-revalidated when a verb needs them and are never trusted solely because they
-appeared in an older inventory.
+Authored structure comes only from root-owned `poly.yaml`; inspectors enrich
+those stable identities with observed natures and metadata. Undeclared
+discoveries receive deterministic `observed-only` identities and never mutate
+the manifest. Compiled workspace and inventory documents below `.poly/state`
+are disposable and rebuildable from authored files plus a fresh inspection.
+
+Action completion constraints exist for a single run. Volatile facts such as a
+generated JAR are revalidated when a verb needs them and are never trusted
+solely because they appeared in an older inventory.
 
 ## Planning invariant
 

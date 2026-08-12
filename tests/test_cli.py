@@ -174,7 +174,8 @@ def test_cli_init_add_persist_and_render_construction_runs(
         == 0
     )
     assert "poly-report" in capsys.readouterr().out
-    assert (tmp_path / "services" / "service").is_dir()
+    assert (tmp_path / "poly.yaml").is_file()
+    assert (tmp_path / "poly.lock.yaml").is_file()
 
     assert (
         main(

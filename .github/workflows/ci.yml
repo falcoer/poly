@@ -66,8 +66,26 @@ jobs:
           uv run pytest
           uv build
 
+  workspace-contract:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          prune-cache: true
+      - run: uv sync --locked --all-groups
+      - run: uv run pytest
+
   milestone-tag:
-    needs: [quality, external-driver-clean-room]
+    needs: [quality, external-driver-clean-room, workspace-contract]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:

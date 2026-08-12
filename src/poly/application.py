@@ -9,11 +9,18 @@ from poly.driver import DriverRegistry, InspectionContext, InspectionDiagnostic
 from poly.model import (
     ActionSpec,
     Inventory,
+    Node,
     Plan,
     PlanningRequest,
     RejectedCandidate,
 )
 from poly.planning import Planner
+from poly.workspace import (
+    PROVISIONAL_WORKSPACE_MANIFEST,
+    WORKSPACE_MANIFEST,
+    compile_workspace,
+    reconcile_inventory,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,27 +42,21 @@ class PlanningSnapshot:
 
 def inspect_workspace(registry: DriverRegistry, workspace: Path) -> InspectionSnapshot:
     context = InspectionContext(workspace)
-    nodes = []
+    compiled = (
+        compile_workspace(workspace)
+        if (workspace / WORKSPACE_MANIFEST).is_file()
+        or (workspace / PROVISIONAL_WORKSPACE_MANIFEST).is_file()
+        else None
+    )
+    nodes: list[Node] = []
     diagnostics: list[InspectionDiagnostic] = []
-    known_ids: set[str] = set()
     for provider in registry.inspection_providers():
         result = provider.inspect(context)
         diagnostics.extend(result.diagnostics)
-        for node in result.nodes:
-            if node.id in known_ids:
-                diagnostics.append(
-                    InspectionDiagnostic(
-                        "inventory.node.duplicate",
-                        f"multiple inspectors produced node {node.id!r}",
-                        node.path,
-                    )
-                )
-                continue
-            known_ids.add(node.id)
-            nodes.append(node)
+        nodes.extend(result.nodes)
     return InspectionSnapshot(
         workspace.resolve(),
-        Inventory(tuple(nodes)),
+        reconcile_inventory(compiled, tuple(nodes)),
         tuple(sorted(diagnostics)),
         available_verbs(registry),
     )
