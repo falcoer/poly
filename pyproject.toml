@@ -17,6 +17,9 @@ classifiers = [
 ]
 dependencies = []
 
+[project.scripts]
+poly = "poly.cli:main"
+
 [dependency-groups]
 dev = [
   "mypy>=1.14",

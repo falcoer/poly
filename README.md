@@ -35,6 +35,24 @@ uv run pytest
 uv build
 ```
 
+## Local CLI
+
+Inspection, planning, and execution are separate commands. `actions` is a
+fresh, side-effect-free view of what the current workspace can do.
+
+```shell
+poly inspect
+poly actions
+poly actions verify --select maven:platform/service-a
+poly plan verify --select maven:platform/service-a --format yaml
+poly run status --select git:. --format json
+```
+
+Every command accepts `--workspace`. Reports support `text`, `json`, `yaml`,
+and `xml`; all formats are rendered from the same `poly.report/v1` document.
+`run` stores process output and state transitions in its report. It executes
+only the frozen plan printed in the same document.
+
 The project advances directly on `main`. A milestone tag is created by CI only
 after every required check succeeds on the exact milestone commit.
 

@@ -10,6 +10,7 @@ from collections.abc import Iterable
 from poly.driver.api import PlanningProvider
 from poly.model import (
     ActionSpec,
+    DriverProposal,
     Plan,
     PlanDiagnostic,
     PlanningRequest,
@@ -24,11 +25,18 @@ class Planner:
         self._providers = tuple(sorted(providers, key=lambda provider: provider.name))
 
     def negotiate(self, request: PlanningRequest) -> Plan:
-        proposals = tuple(
+        return self.negotiate_proposals(request, self.propose(request))
+
+    def propose(self, request: PlanningRequest) -> tuple[DriverProposal, ...]:
+        return tuple(
             provider.propose(request)
             for provider in self._providers
             if request.verb in provider.verbs
         )
+
+    def negotiate_proposals(
+        self, request: PlanningRequest, proposals: tuple[DriverProposal, ...]
+    ) -> Plan:
         actions = tuple(
             sorted((action for p in proposals for action in p.actions), key=lambda a: a.id)
         )

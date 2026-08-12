@@ -49,7 +49,7 @@ authoritative evidence that CI validated its target commit.
 
 ## 0.4 — Maven reference driver
 
-- Status: `implemented-awaiting-ci`
+- Status: `validated`
 - Tag: `roadmap/0.4-maven-driver`
 - Scope: inspect POMs, aggregators, GAVs, and local dependencies; negotiate
   reactor actions using the highest usable local aggregator and `-pl`/`-am`.
@@ -63,7 +63,7 @@ authoritative evidence that CI validated its target commit.
 
 ## 0.5 — Executor, canonical reports, and CLI
 
-- Status: `pending`
+- Status: `implemented-awaiting-ci`
 - Tag: `roadmap/0.5-runtime-reporting`
 - Scope: sequential constraint executor, process adapter, result/event models,
   text/JSON/YAML/XML renderers, and initial `poly inspect/actions/plan/run` CLI.

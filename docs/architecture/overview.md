@@ -47,3 +47,12 @@ Negotiation is closed over the requested verb:
 
 Missing prerequisites block an action. They do not trigger recursive discovery
 of another verb capable of producing them.
+
+## Initial runtime
+
+The local runtime is deliberately sequential. It continues independent work
+after a failure and marks dependants blocked when their declared constraints
+were not produced. Commands and driver handlers share one action-attempt model,
+so the reporter does not need technology-specific logic. The initial CLI
+exposes `inspect`, `actions`, `plan`, and `run` without collapsing their distinct
+meanings.
