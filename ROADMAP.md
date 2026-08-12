@@ -124,7 +124,7 @@ Cross-milestone invariants:
 
 ## 0.8 — Root-owned workspace contract and canonical identity
 
-- Status: `implemented-awaiting-ci`
+- Status: `validated`
 - Tag: `roadmap/0.8-workspace-manifest`
 - Depends on: validated 0.7 baseline.
 - Scope: implement the version 1 `poly.yaml` and `poly.lock.yaml` formats
