@@ -44,7 +44,7 @@ def test_scaffold_generates_complete_external_repository(tmp_path: Path) -> None
         path.read_text(encoding="utf-8") for path in target.rglob("*") if path.is_file()
     )
     assert "__DRIVER_NAME__" not in all_content
-    assert f"poly @ file://{source.resolve().as_posix()}" in all_content
+    assert f"poly @ {source.resolve().as_uri()}" in all_content
 
     with pytest.raises(DriverScaffoldError, match="not empty"):
         scaffold_driver("another", target)

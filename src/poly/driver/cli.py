@@ -19,10 +19,11 @@ from poly.model import Inventory, Node, PlanningRequest
 def main(arguments: list[str] | None = None) -> int:
     parser = _parser()
     options = parser.parse_args(arguments)
+    target_path = Path(options.target)
     registration = (
-        load_entrypoint(options.target)
-        if ":" in options.target
-        else load_external_driver(ExternalDriverSpec.from_file(Path(options.target).resolve()))
+        load_external_driver(ExternalDriverSpec.from_file(target_path.resolve()))
+        if target_path.suffix.casefold() == ".toml" or target_path.is_file()
+        else load_entrypoint(options.target)
     )
     assert_manifest_compatible(registration.manifest)
 
