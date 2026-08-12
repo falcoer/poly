@@ -24,7 +24,7 @@ authoritative evidence that CI validated its target commit.
 
 ## 0.2 — Driver SDK and conformance testkit
 
-- Status: `implemented-awaiting-ci`
+- Status: `validated`
 - Tag: `roadmap/0.2-driver-sdk`
 - Scope: versioned manifest, inspection/planning/execution protocols, registry,
   reusable fixtures, and driver conformance assertions.
@@ -37,7 +37,7 @@ authoritative evidence that CI validated its target commit.
 
 ## 0.3 — Git reference driver
 
-- Status: `pending`
+- Status: `implemented-awaiting-ci`
 - Tag: `roadmap/0.3-git-driver`
 - Scope: discover local Git repositories and expose read-only `status` actions.
 - Acceptance:
