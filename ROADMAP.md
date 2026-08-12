@@ -37,7 +37,7 @@ authoritative evidence that CI validated its target commit.
 
 ## 0.3 — Git reference driver
 
-- Status: `implemented-awaiting-ci`
+- Status: `validated`
 - Tag: `roadmap/0.3-git-driver`
 - Scope: discover local Git repositories and expose read-only `status` actions.
 - Acceptance:
@@ -49,7 +49,7 @@ authoritative evidence that CI validated its target commit.
 
 ## 0.4 — Maven reference driver
 
-- Status: `pending`
+- Status: `implemented-awaiting-ci`
 - Tag: `roadmap/0.4-maven-driver`
 - Scope: inspect POMs, aggregators, GAVs, and local dependencies; negotiate
   reactor actions using the highest usable local aggregator and `-pl`/`-am`.

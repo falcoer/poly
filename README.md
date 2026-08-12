@@ -11,9 +11,11 @@ Poly is a deterministic polyrepo engine. It separates five roles:
 Technology knowledge lives in versioned drivers. The built-in Git and Maven
 drivers use the same public SDK and conformance suite as external drivers.
 
-The current Git reference driver discovers root and nested repositories,
-observes branch/HEAD/cleanliness without changing them, and negotiates explicit
-read-only `status` actions.
+The Git reference driver discovers root and nested repositories, observes
+branch/HEAD/cleanliness without changing them, and negotiates explicit read-only
+`status` actions. The Maven reference driver distinguishes inheritance from
+aggregation, groups selected modules at their highest local reactor, and makes
+cross-reactor materialization and ordering explicit in the plan.
 
 ## Status
 
