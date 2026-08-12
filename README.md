@@ -22,6 +22,12 @@ cross-reactor materialization and ordering explicit in the plan.
 Poly is being implemented from scratch. The executable milestones, acceptance
 criteria, and validation tags are tracked in [ROADMAP.md](ROADMAP.md).
 
+The converged workspace model is specified in
+[Workspace files contract](docs/reference/workspace-files.md): the root node
+owns committed `poly.yaml` and `poly.lock.yaml`, while independently versioned
+child repositories and generated `.poly/` state are excluded through a
+Poly-managed root `.gitignore` block.
+
 ## Development
 
 Python 3.12 and [uv](https://docs.astral.sh/uv/) are required.
