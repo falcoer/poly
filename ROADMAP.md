@@ -102,136 +102,219 @@ authoritative evidence that CI validated its target commit.
 
 Milestones 0.1 through 0.7 validate the technical foundation declared in their
 bounded scopes. They do not yet constitute acceptance of the original
-end-to-end workspace-construction use case. Milestones 0.8 through 0.12 close
-the functional gaps identified during the first user review. No later feature
+end-to-end workspace-construction use case.
+
+The normative target for authored workspace files and root-repository isolation
+is [the workspace files contract](docs/reference/workspace-files.md). Milestones
+0.8 through 0.12 implement that contract in dependency order. A milestone is
+not complete because its internal API exists: every acceptance statement must
+be demonstrated through its public CLI and persisted reports. No later feature
 milestone may start before the 0.12 acceptance journey is validated.
 
-## 0.8 — Declarative workspace and canonical module identity
+Cross-milestone invariants:
+
+- the root node owns and versions the composition;
+- child repositories remain independent Git repositories, never implicit
+  submodules and never tracked as content by the root repository;
+- authored intent lives in `poly.yaml`, reproducible resolution in
+  `poly.lock.yaml`, and disposable generated state below `.poly/`;
+- one declared node keeps one stable identifier through all driver
+  contributions and user-visible operations;
+- every structural change is a planned, logged, reportable job action.
+
+## 0.8 — Root-owned workspace contract and canonical identity
 
 - Status: `pending`
 - Tag: `roadmap/0.8-workspace-manifest`
-- Scope: a user-authored, versioned `poly.yaml` manifest; schema validation;
-  strict separation between desired workspace composition and generated
-  `.poly` state; reconciliation of declared modules with driver observations.
+- Depends on: validated 0.7 baseline.
+- Scope: implement the version 1 `poly.yaml` and `poly.lock.yaml` formats
+  defined by the workspace files contract; compile them into generated state;
+  reconcile declared nodes with driver observations; manage root Git isolation.
 - Acceptance:
-  - `poly.yaml` is sufficient to describe stable module identifiers, paths,
-    source declarations, requested references, and optional declared natures;
-  - generated inventories, plans, runs, and logs remain JSON documents below
-    `.poly` and never become the authored source of truth;
-  - Git, Maven, and later inspectors enrich the declared module rather than
-    creating unrelated competing identities;
-  - one module keeps the user-selected identifier across construction,
-    inspection, selection, planning, execution, and reporting;
-  - undeclared repositories may still be discovered with deterministic
-    generated identifiers and an explicit observed-only status;
-  - malformed manifests, duplicate identifiers/paths, path escapes, and
-    unsupported schema versions fail before any structural action.
-- Checks: YAML/schema fixtures, declared/observed reconciliation tests,
-  identity-stability tests, and migration or explicit rejection tests for the
-  provisional `.poly/workspace.json` format.
-- Excluded: remote source materialization, which belongs to 0.10.
+  - `poly.yaml` resides at the root node and is the only authored source of
+    workspace composition;
+  - the manifest explicitly represents one root node, parent/child topology,
+    repository boundaries, technical modules, stable identifiers, relative
+    paths, Git source declarations, requested refs, and optional natures;
+  - `poly.lock.yaml` maps child source-node identifiers to immutable resolved
+    commits and carries a canonical manifest digest without locking the root
+    repository inside itself;
+  - repository nodes and technical module nodes remain distinct concepts;
+  - generated `.poly/state/workspace.json` and inventory documents are fully
+    rebuildable and never contain indispensable authored intent;
+  - Git, Maven, and later inspectors enrich the declared node rather than
+    creating an unrelated competing identity;
+  - observed undeclared repositories use deterministic identifiers and an
+    explicit `observed-only` state without modifying the manifest;
+  - `init` creates or reconciles a delimited Poly-managed root
+    `.gitignore` block containing `/.poly/` and exact child-repository paths;
+  - `add` and node removal update only that managed block, preserve all
+    user-owned ignore rules, and never ignore `poly.yaml` or
+    `poly.lock.yaml`;
+  - manifest, lock, state, and ignore-file writes are atomic, deterministic,
+    idempotent, and leave actionable diagnostics on failure;
+  - malformed schemas, unknown fields, duplicate identifiers, path collisions
+    (including case-insensitive Windows collisions), graph cycles, path escapes,
+    stale locks, malformed ignore markers, and embedded credentials fail before
+    any structural action.
+- Checks: normative YAML fixtures and schema validation; YAML round-trip tests
+  preserving comments/order where files are edited; manifest canonicalization
+  and digest tests; tree and path-safety property tests; declared/observed
+  identity tests; generated-state deletion/rebuild test; `.gitignore`
+  creation/reconciliation/preservation/idempotence tests on Windows and Linux;
+  migration or explicit rejection tests for provisional
+  `.poly/workspace.json`.
+- Demonstration: create a root manifest with two Git repository nodes and one
+  nested Maven module, compile it twice, delete `.poly/`, rebuild it, and show
+  equivalent canonical inventories while the root `git status` exposes only
+  authored composition changes.
+- Excluded: cloning or checking out child sources, which belongs to 0.10.
 
 ## 0.9 — Unified jobs and verb-first CLI
 
 - Status: `pending`
 - Tag: `roadmap/0.9-unified-jobs-cli`
+- Depends on: 0.8 manifest compilation and stable identities.
 - Scope: make construction participate in normal driver negotiation and expose
   driver verbs directly through `poly <verb>`.
 - Acceptance:
-  - `init` and `add` are ordinary negotiated jobs with frozen plans,
-    actions, controller capabilities, logs, reports, and resumable state;
-  - the constructor is a system driver using the same public planning and
-    execution contracts as other drivers;
-  - the CLI contains no private `ConstructionPlanner` path that bypasses
-    driver proposal and plan negotiation;
+  - `init`, `add`, and lock reconciliation are ordinary negotiated jobs with
+    frozen plans, action dependencies, controller capabilities, logs, reports,
+    and resumable state;
+  - the constructor is a system driver using the same public proposal,
+    planning, and execution contracts as other drivers;
+  - no private `ConstructionPlanner` CLI path bypasses common negotiation;
   - `poly <verb>` negotiates and executes by default, including
     `poly status`, `poly verify`, `poly init`, and `poly add`;
-  - `--plan` exposes the frozen plan without execution, while
-    `poly plan <verb>` and `poly run <verb>` may remain stable expert/CI
-    forms over exactly the same application service;
-  - management commands such as `inspect`, `drivers`, `controllers`, and
-    `report` are reserved and verbs from drivers are resolved dynamically;
-  - initialization can negotiate from an empty pre-workspace context.
-- Checks: equivalence tests between direct and expert CLI forms, construction
-  negotiation tests with multiple contributing drivers, report/log tests, and
-  tests proving that planning is side-effect free.
+  - `--plan` produces the same frozen plan without execution, while
+    `poly plan <verb>` and `poly run <verb>` remain optional expert/CI
+    façades over the same application service;
+  - typed convenience options such as `poly add <id> --repo ... --ref ...`
+    translate into the same canonical job request as generic parameters;
+  - management commands `inspect`, `drivers`, `controllers`, and `report`
+    are reserved; driver verbs are resolved dynamically with collision
+    diagnostics;
+  - initialization can plan from an empty pre-workspace context and may expose
+    bootstrap and hydration as phases of one parent job without allowing an
+    executor to invent actions at runtime.
+- Checks: direct/expert CLI equivalence, reserved-name and collision tests,
+  empty-context construction, multiple-driver contribution, phase/dependency
+  reporting, resumption, and proof that planning is side-effect free.
+- Demonstration: plan and execute the same `add` request through direct and
+  expert forms and compare plan identifiers, actions, logs, and final report.
 - Excluded: Git clone/fetch/checkout implementation, which belongs to 0.10.
 
-## 0.10 — Git materialization and workspace hydration
+## 0.10 — Root bootstrap and recursive Git hydration
 
 - Status: `pending`
 - Tag: `roadmap/0.10-git-materialization`
-- Scope: Git construction capabilities for creating a complete workspace from
-  `poly.yaml` and for adding remote or already-present repositories.
+- Depends on: 0.8 workspace contract and 0.9 unified jobs.
+- Scope: restore the original Polyrepo Studio use case: bootstrap or adopt one
+  root control repository, then automatically hydrate every Git-backed
+  descendant declared by its committed manifest and lock.
 - Acceptance:
-  - `poly init` can hydrate every Git-backed module declared by a manifest;
-  - `poly add <id> --repo <url> --ref <ref> --path <path>` declares,
-    materializes, inspects, and reports one module as one job;
+  - `poly init <root-repository> <target> [--ref <ref>]` clones or safely
+    adopts the root node, then reads the exact committed `poly.yaml` and
+    `poly.lock.yaml` it owns;
+  - bootstrap and hydration are visible phases of one reportable `init` job;
+    the second frozen plan is derived only after the root manifest is available
+    and is recorded before child side effects begin;
+  - every declared Git-backed descendant is restored automatically; no repeated
+    `poly add` is required after cloning the root repository;
+  - hydration follows the declared parent topology, supports nested independent
+    repositories, and never creates or requires Git submodules;
+  - the Git driver exposes clone, safe adoption, explicit fetch when permitted,
+    ref resolution, checkout, and final HEAD verification as separate actions;
+  - the lock wins during normal restoration: branch or tag intent is resolved
+    to and verified against the recorded immutable commit;
+  - an explicit update/lock operation is the only normal route that advances a
+    moving reference and atomically changes `poly.lock.yaml`;
+  - `poly add <id> --repo <url> --ref <ref> --path <path>` edits the manifest,
+    resolves the lock, reconciles `.gitignore`, materializes, inspects, and
+    reports the same node as one composite job;
   - `poly add <id> --path <existing-path>` validates and adopts an existing
     checkout without cloning or silently changing it;
-  - clone, fetch when explicitly required, reference resolution, checkout, and
-    final HEAD verification are separate visible Git-driver actions;
-  - branches, tags, and immutable commit SHAs are supported and the resolved
-    commit is recorded in the canonical report;
-  - rerunning a satisfied job is idempotent, while non-empty targets, mismatched
-    remotes or references, dirty worktrees, and partial clones produce explicit
-    policy diagnostics instead of destructive implicit repair;
-  - constructor and Git actions declare dependencies and rollback/recovery
-    boundaries without hiding filesystem side effects;
-  - nested repositories remain independent modules and no Git submodule is
-    introduced implicitly.
-- Checks: local bare-remote fixtures with branch/tag/SHA hydration, existing
-  checkout adoption, dirty/mismatch/partial-failure cases, idempotence, recovery,
-  and Windows/Linux path behavior.
-- Excluded: commit, push, merge, and publication workflows.
+  - rerunning a satisfied hydration is a no-op with an equivalent inventory;
+    mismatched URLs/commits, dirty worktrees, non-empty targets, missing
+    credentials, partial clones, stale locks, and interrupted jobs produce
+    explicit policy diagnostics rather than destructive implicit repair;
+  - a root-level `git add .` and commit never stages child repository content,
+    while changes to `poly.yaml`, `poly.lock.yaml`, and the managed
+    `.gitignore` block remain visible.
+- Checks: local bare root and child remotes; branch/tag/SHA lock resolution;
+  fresh root bootstrap; existing-root and child adoption; multi-level topology;
+  restore without `add`; dirty/mismatch/non-empty/partial/interruption cases;
+  idempotence and recovery; root Git index isolation; Windows/Linux paths.
+- Demonstration: from an empty directory, initialize from a root repository
+  containing only composition files, restore at least two independent child
+  repositories, verify exact locked commits, modify a child, and prove the root
+  repository neither stages nor commits that child modification.
+- Excluded: commit, push, merge, and publication workflows for child
+  repositories.
 
 ## 0.11 — Runtime driver lifecycle and inventory
 
 - Status: `pending`
 - Tag: `roadmap/0.11-driver-runtime`
+- Depends on: 0.9 common runtime; integration is exercised against the hydrated
+  workspace delivered by 0.10.
 - Scope: connect built-in, system, and installed external drivers to the actual
   runtime and make their state observable.
 - Acceptance:
   - the production registry loads validated `poly.drivers` entry points in a
-    deterministic order in addition to built-in and system drivers;
-  - an installed conformant external driver can inspect, propose, and execute
-    through the normal `poly` CLI without private core imports;
+    deterministic order alongside built-in and system drivers;
+  - an installed conformant external driver enriches existing canonical nodes,
+    proposes actions, and executes through `poly <verb>` without private core
+    imports;
   - `poly drivers` lists name, version, origin, protocol version,
-    capabilities, contributed verbs, and load status;
-  - rejected, incompatible, duplicate, or failing drivers are isolated and
-    reported with actionable diagnostics;
-  - driver discovery results are included in canonical machine-readable
-    reporting and do not vary with entry-point enumeration order.
-- Checks: installed-wheel integration tests, successful external-driver
-  end-to-end execution, rejection/isolation fixtures, deterministic listing,
-  and text/JSON/YAML/XML rendering parity.
-- Excluded: operating-system sandboxing of hostile driver code and public
-  package-index publication.
+    capabilities, contributed verbs, load status, and rejection diagnostics;
+  - duplicate identities, incompatible protocols, import failures, and verb
+    collisions are isolated and never make load order decide behavior;
+  - driver discovery and contributions appear in canonical machine-readable
+    reports and remain stable across entry-point enumeration order.
+- Checks: installed-wheel execution on a 0.10 hydrated workspace, rejection and
+  isolation fixtures, shuffled entry-point ordering, duplicate/collision
+  diagnostics, and text/JSON/YAML/XML parity.
+- Demonstration: install the generated sample driver wheel, list it, use its
+  direct verb against a declared node, and retrieve its actions and logs through
+  the normal job report.
+- Excluded: operating-system sandboxing of hostile code and public package-index
+  publication.
 
-## 0.12 — Workstation acceptance and reviewable distribution
+## 0.12 — Clean-workstation functional acceptance
 
 - Status: `pending`
 - Tag: `roadmap/0.12-functional-baseline`
+- Depends on: validated 0.8, 0.9, 0.10, and 0.11. This is a release gate, not a
+  documentation-only milestone.
 - Scope: prove the original minimum Poly journey on clean Windows and Linux
-  environments and make the exact validated package directly installable for
-  user review.
+  environments and publish the exact reviewable build.
 - Acceptance:
-  - CI publishes the wheel and source distribution built from the exact
-    validated commit as retained downloadable artifacts;
-  - a reviewer can install the validated build without cloning Poly's source;
-  - from an empty target directory and one `poly.yaml`, `poly init`
-    materializes a workspace containing multiple Git repositories and a
-    multi-module Maven reactor;
+  - CI retains wheel and source distribution artifacts built from the exact
+    validated commit, with checksums and version metadata;
+  - a reviewer installs that wheel without cloning Poly's source;
+  - from an empty directory and a root repository URL, one `poly init`
+    restores committed `poly.yaml`/`poly.lock.yaml`, the managed
+    `.gitignore`, multiple independent child repositories, and a multi-module
+    Maven reactor at their locked commits;
   - `poly drivers`, `poly inspect`, `poly status`, and `poly verify`
-    operate on the same stable module identifiers;
-  - construction and verification jobs can be recovered with
-    `poly report <run-id>`, including action logs and resolved Git commits;
-  - repeating hydration produces no unintended changes and an equivalent
-    canonical inventory and plan;
-  - the README contains one copy-paste PowerShell journey and one POSIX-shell
-    journey exercising the released artifact rather than a source checkout.
-- Checks: clean-machine GitHub Actions matrix, packaged-wheel installation,
-  end-to-end manifest hydration, Git plus Maven execution, report recovery,
-  idempotence, and documentation smoke tests.
-- Excluded: Web UI, parallel execution, full Git write lifecycle, remote package
+    operate on the same stable identifiers declared in the root manifest;
+  - init and verification reports expose phases, action logs, driver ownership,
+    resolved commits, failures, and recovery through `poly report <run-id>`;
+  - deleting `.poly/` and re-running reconstruction loses no composition
+    information and yields an equivalent canonical inventory;
+  - repeating hydration produces no unintended filesystem, Git-index, manifest,
+    lock, or ignore changes;
+  - changing a child worktree does not dirty the root repository, while changing
+    a composition file does;
+  - README provides copy-paste PowerShell and POSIX journeys using the retained
+    package artifact and the same checked-in acceptance fixture.
+- Checks: clean GitHub Actions Windows/Linux matrix; packaged-wheel installation;
+  root bootstrap plus recursive Git hydration; Maven execution; external driver
+  loading; report recovery; generated-state deletion; idempotence; root/child
+  Git isolation; documentation command smoke tests.
+- Evidence retained by CI: package artifacts and checksums, acceptance reports
+  in all supported formats, action logs, final canonical inventory, root and
+  child Git status snapshots, and the exact fixture commit identifiers.
+- Excluded: Web UI, parallel execution, child commit/push/merge, remote package
   publication, and production sandbox hardening.
