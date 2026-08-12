@@ -1,0 +1,33 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from poly.driver import InspectionContext
+from poly.driver.testkit import (
+    assert_inspection_side_effect_free,
+    assert_manifest_compatible,
+    assert_planning_deterministic,
+)
+from poly.model import Inventory, PlanningRequest
+
+from __PACKAGE_NAME__.driver import SampleInspector, SamplePlanner, driver
+
+
+def test_manifest_and_registration_are_compatible() -> None:
+    registration = driver()
+    registration.validate()
+    assert_manifest_compatible(registration.manifest)
+
+
+def test_inspection_and_planning_are_pure_and_deterministic(tmp_path: Path) -> None:
+    (tmp_path / "sample.project").write_text("sample\n", encoding="utf-8")
+    inspector = SampleInspector()
+    context = InspectionContext(tmp_path)
+    assert_inspection_side_effect_free(inspector, context)
+    inventory = Inventory(inspector.inspect(context).nodes)
+    request = PlanningRequest("sample-status", inventory, (inventory.nodes[0].id,))
+
+    proposal = assert_planning_deterministic(SamplePlanner(), request, tmp_path)
+
+    assert proposal.actions[0].requested_node_ids == request.selected_node_ids
+    assert proposal.actions[0].verb == "sample-status"

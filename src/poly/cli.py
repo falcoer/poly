@@ -20,6 +20,7 @@ from poly.control_plane import (
     LocalController,
 )
 from poly.driver import DriverRegistry, ExecutionContext
+from poly.driver.scaffold import DriverScaffoldError, scaffold_driver
 from poly.drivers import git_driver, maven_driver
 from poly.model import Node
 from poly.persistence import StateError, StateStore
@@ -49,6 +50,17 @@ def build_registry() -> DriverRegistry:
 def main(arguments: list[str] | None = None) -> int:
     parser = _parser()
     options = parser.parse_args(arguments)
+    if options.command == "driver":
+        try:
+            scaffolded = scaffold_driver(
+                options.name,
+                options.path,
+                poly_source=options.poly_source,
+            )
+        except DriverScaffoldError as error:
+            parser.error(str(error))
+        print(f"Created {scaffolded.distribution_name} in {scaffolded.target}")
+        return 0
     workspace = options.workspace.resolve()
     if not workspace.is_dir():
         parser.error(f"workspace does not exist or is not a directory: {workspace}")
@@ -149,6 +161,17 @@ def _parser() -> argparse.ArgumentParser:
 
     controllers = commands.add_parser("controllers", help="list controller capabilities")
     _report_options(controllers)
+
+    driver = commands.add_parser("driver", help="develop external drivers")
+    driver_commands = driver.add_subparsers(dest="driver_command", required=True)
+    new_driver = driver_commands.add_parser("new", help="create a driver repository")
+    new_driver.add_argument("name", help="lowercase kebab-case technology name")
+    new_driver.add_argument("--path", type=Path, required=True)
+    new_driver.add_argument(
+        "--poly-source",
+        type=Path,
+        help="use a local Poly checkout instead of the validated Git tag",
+    )
     return parser
 
 

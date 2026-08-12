@@ -77,7 +77,7 @@ authoritative evidence that CI validated its target commit.
 
 ## 0.6 — Constructor, persistence, and control-plane
 
-- Status: `implemented-awaiting-ci`
+- Status: `validated`
 - Tag: `roadmap/0.6-constructor-control-plane`
 - Scope: `init`/`add` construction plans, versioned inventory/run persistence,
   and local/remote controller contracts.
@@ -88,7 +88,7 @@ authoritative evidence that CI validated its target commit.
 
 ## 0.7 — External driver kit
 
-- Status: `pending`
+- Status: `implemented-awaiting-ci`
 - Tag: `roadmap/0.7-external-driver-kit`
 - Scope: repository template, CI, packaging conventions, examples, and a
   dedicated development skill backed by the reusable conformance testkit.

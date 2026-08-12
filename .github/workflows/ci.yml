@@ -33,8 +33,41 @@ jobs:
       - run: uv run pytest
       - run: uv build
 
-  milestone-tag:
+  external-driver-clean-room:
     needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          prune-cache: true
+      - run: uv sync --locked --all-groups
+      - name: Generate external driver
+        run: |
+          target="$RUNNER_TEMP/poly-driver-sample-tech"
+          uv run poly driver new sample-tech \
+            --path "$target" \
+            --poly-source "$GITHUB_WORKSPACE"
+          echo "target=$target" >> "$GITHUB_ENV"
+      - name: Validate external driver
+        run: |
+          cd "$target"
+          uv sync --all-groups
+          uv run poly-driver-test validate
+          uv run poly-driver-test inspect poly_driver_sample_tech:driver --workspace tests/fixtures/workspace
+          uv run poly-driver-test determinism poly_driver_sample_tech:driver --workspace tests/fixtures/workspace --verb sample-status
+          uv run ruff format --check .
+          uv run ruff check .
+          uv run mypy src tests
+          uv run pytest
+          uv build
+
+  milestone-tag:
+    needs: [quality, external-driver-clean-room]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:

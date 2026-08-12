@@ -19,6 +19,7 @@ dependencies = []
 
 [project.scripts]
 poly = "poly.cli:main"
+poly-driver-test = "poly.driver.cli:main"
 
 [dependency-groups]
 dev = [

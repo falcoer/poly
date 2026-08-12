@@ -50,5 +50,6 @@ from poly.driver.testkit import assert_planning_deterministic
 proposal = assert_planning_deterministic(provider, request, fixture_workspace)
 ```
 
-The testkit is evidence, not documentation-only guidance. Later milestones add
-technology-neutral fixtures and a clean-room external driver repository.
+The testkit is evidence, not documentation-only guidance. The external driver
+generator uses it in a technology-neutral fixture and in clean-room CI. See
+[External drivers](external.md) for the complete repository workflow.

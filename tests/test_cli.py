@@ -205,3 +205,28 @@ def test_cli_init_add_persist_and_render_construction_runs(
         "process.execute",
         "workspace.construct",
     ]
+
+
+def test_cli_generates_external_driver_repository(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "driver"
+    source = Path(__file__).parents[1]
+
+    assert (
+        main(
+            [
+                "driver",
+                "new",
+                "sample-tech",
+                "--path",
+                str(target),
+                "--poly-source",
+                str(source),
+            ]
+        )
+        == 0
+    )
+
+    assert "Created poly-driver-sample-tech" in capsys.readouterr().out
+    assert (target / "poly-driver.toml").is_file()

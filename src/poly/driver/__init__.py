@@ -10,6 +10,17 @@ from poly.driver.api import (
     InspectionResult,
     PlanningProvider,
 )
+from poly.driver.discovery import (
+    DRIVER_ENTRY_POINT_GROUP,
+    DRIVER_SPEC_VERSION,
+    DriverDiscoveryError,
+    DriverLoadDiagnostic,
+    DriverLoadResult,
+    ExternalDriverSpec,
+    discover_external_drivers,
+    load_entrypoint,
+    load_external_driver,
+)
 from poly.driver.manifest import (
     DRIVER_API_VERSION,
     DriverCapability,
@@ -17,20 +28,39 @@ from poly.driver.manifest import (
     DriverProtocolError,
 )
 from poly.driver.registry import DriverRegistration, DriverRegistry
+from poly.driver.scaffold import (
+    DriverScaffold,
+    DriverScaffoldError,
+    DriverScaffoldResult,
+    scaffold_driver,
+)
 
 __all__ = [
     "DRIVER_API_VERSION",
+    "DRIVER_ENTRY_POINT_GROUP",
+    "DRIVER_SPEC_VERSION",
     "ActionHandler",
     "DriverCapability",
+    "DriverDiscoveryError",
     "DriverExecutionResult",
+    "DriverLoadDiagnostic",
+    "DriverLoadResult",
     "DriverManifest",
     "DriverProtocolError",
     "DriverRegistration",
     "DriverRegistry",
+    "DriverScaffold",
+    "DriverScaffoldError",
+    "DriverScaffoldResult",
     "ExecutionContext",
+    "ExternalDriverSpec",
     "InspectionContext",
     "InspectionDiagnostic",
     "InspectionProvider",
     "InspectionResult",
     "PlanningProvider",
+    "discover_external_drivers",
+    "load_entrypoint",
+    "load_external_driver",
+    "scaffold_driver",
 ]

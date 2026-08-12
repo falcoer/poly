@@ -1,0 +1,4 @@
+interface:
+  display_name: "Poly Driver Development"
+  short_description: "Build and validate external Poly drivers"
+  default_prompt: "Use $poly-driver-development to create and validate an external Poly driver."

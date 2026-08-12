@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "__DIST_NAME__"
+version = "0.1.0"
+description = "External Poly driver"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["__POLY_DEPENDENCY__"]
+
+[project.entry-points."poly.drivers"]
+__TECHNOLOGY__ = "__PACKAGE_NAME__:driver"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.14",
+  "pytest>=8.3",
+  "pytest-cov>=6.0",
+  "ruff>=0.9",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/__PACKAGE_NAME__"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers --cov=__PACKAGE_NAME__ --cov-report=term-missing --cov-fail-under=90"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]

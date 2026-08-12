@@ -1,0 +1,76 @@
+"""Reference implementation using only Poly's public driver SDK."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from poly.driver import (
+    DRIVER_API_VERSION,
+    DriverCapability,
+    DriverManifest,
+    DriverRegistration,
+    InspectionContext,
+    InspectionResult,
+)
+from poly.model import ActionClaim, ActionSpec, DriverProposal, Node, PlanningRequest
+
+DRIVER_NAME = "__DRIVER_NAME__"
+MARKER = "sample.project"
+
+
+@dataclass(frozen=True, slots=True)
+class SampleInspector:
+    name: str = DRIVER_NAME
+
+    def inspect(self, context: InspectionContext) -> InspectionResult:
+        marker = context.workspace / MARKER
+        nodes = (
+            (
+                Node(
+                    f"{DRIVER_NAME}:.",
+                    ".",
+                    ("sample/project",),
+                    {"sample.marker": MARKER},
+                ),
+            )
+            if marker.is_file()
+            else ()
+        )
+        return InspectionResult(self.name, nodes)
+
+
+@dataclass(frozen=True, slots=True)
+class SamplePlanner:
+    name: str = DRIVER_NAME
+    verbs: frozenset[str] = frozenset(("sample-status",))
+
+    def propose(self, request: PlanningRequest) -> DriverProposal:
+        actions = tuple(
+            ActionSpec(
+                f"sample.status:{node.id}",
+                self.name,
+                request.verb,
+                "sample/status",
+                (node.id,),
+                (node.id,),
+                claims=frozenset((ActionClaim("sample/status", f"node:{node.id}"),)),
+                command=("python", "-c", "print('sample project is available')"),
+            )
+            for node in request.inventory.select(request.selected_node_ids)
+            if "sample/project" in node.natures
+        )
+        return DriverProposal(self.name, actions)
+
+
+def driver() -> DriverRegistration:
+    return DriverRegistration(
+        DriverManifest(
+            DRIVER_NAME,
+            "0.1.0",
+            DRIVER_API_VERSION,
+            frozenset((DriverCapability.INSPECT, DriverCapability.PLAN)),
+            "Sample external driver",
+        ),
+        inspectors=(SampleInspector(),),
+        planners=(SamplePlanner(),),
+    )

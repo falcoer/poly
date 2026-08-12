@@ -35,6 +35,20 @@ uv run pytest
 uv build
 ```
 
+Generate a standalone external driver repository with the same public API and
+quality gates as built-in drivers:
+
+```shell
+poly driver new example-tech --path ../poly-driver-example-tech
+cd ../poly-driver-example-tech
+uv sync --all-groups
+uv run poly-driver-test validate
+```
+
+The generated package includes a versioned manifest, a `poly.drivers` entry
+point, deterministic fixture tests, CI, wheel/sdist packaging, and no imports
+from privileged core modules. See [External drivers](docs/drivers/external.md).
+
 ## Local CLI
 
 Inspection, planning, and execution are separate commands. `actions` is a

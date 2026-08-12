@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v9.0.0
+      - run: uv sync --all-groups
+      - run: uv run poly-driver-test validate
+      - run: uv run poly-driver-test inspect __PACKAGE_NAME__:driver --workspace tests/fixtures/workspace
+      - run: uv run poly-driver-test determinism __PACKAGE_NAME__:driver --workspace tests/fixtures/workspace --verb sample-status
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run mypy src tests
+      - run: uv run pytest
+      - run: uv build
