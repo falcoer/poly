@@ -20,12 +20,12 @@ racine soit déjà un dépôt Git.
 
 ```bash
 # Répertoire existant à initialiser ; chemin absolu ou relatif
-workspace_path="../poly-demo"
+workspace_path="poly-demo"
 # Nom humain du workspace ; chaîne non vide
 workspace_name="Poly Demo"
 
 mkdir -p "$workspace_path"
-uv run poly init \
+poly init \
   --workspace "$workspace_path" \
   --name "$workspace_name"
 ```
@@ -34,12 +34,12 @@ uv run poly init \
 
 ```powershell
 # Répertoire existant à initialiser ; chemin absolu ou relatif
-$workspacePath = "../poly-demo"
+$workspacePath = "poly-demo"
 # Nom humain du workspace ; chaîne non vide
 $workspaceName = "Poly Demo"
 
 New-Item -ItemType Directory -Path $workspacePath -Force | Out-Null
-uv run poly init `
+poly init `
   --workspace $workspacePath `
   --name $workspaceName
 ```
@@ -61,11 +61,11 @@ aucun dépôt distant.
 
 ```bash
 # Racine d'un workspace Poly initialisé
-workspace_path="../poly-demo"
+workspace_path="poly-demo"
 # Format : text, json, yaml ou xml
 report_format="json"
 
-uv run poly inspect \
+poly inspect \
   --workspace "$workspace_path" \
   --format "$report_format"
 ```
@@ -74,11 +74,11 @@ uv run poly inspect \
 
 ```powershell
 # Racine d'un workspace Poly initialisé
-$workspacePath = "../poly-demo"
+$workspacePath = "poly-demo"
 # Format : text, json, yaml ou xml
 $reportFormat = "json"
 
-uv run poly inspect `
+poly inspect `
   --workspace $workspacePath `
   --format $reportFormat
 ```
@@ -98,22 +98,22 @@ disponibles.
 
 ```bash
 # Racine du workspace à utiliser comme contexte
-workspace_path="../poly-demo"
+workspace_path="poly-demo"
 
-uv run poly drivers --workspace "$workspace_path"
-uv run poly controllers --workspace "$workspace_path"
-uv run poly actions --workspace "$workspace_path"
+poly drivers --workspace "$workspace_path"
+poly controllers --workspace "$workspace_path"
+poly actions --workspace "$workspace_path"
 ```
 
 ### PowerShell
 
 ```powershell
 # Racine du workspace à utiliser comme contexte
-$workspacePath = "../poly-demo"
+$workspacePath = "poly-demo"
 
-uv run poly drivers --workspace $workspacePath
-uv run poly controllers --workspace $workspacePath
-uv run poly actions --workspace $workspacePath
+poly drivers --workspace $workspacePath
+poly controllers --workspace $workspacePath
+poly actions --workspace $workspacePath
 ```
 
 ### Résultat attendu
@@ -132,38 +132,37 @@ refuse un nœud qui possède encore des enfants.
 
 ```bash
 # Racine du workspace Poly
-workspace_path="../poly-demo"
+workspace_path="poly-demo"
 # Identifiant stable sans espace
 node_id="api-reactor"
 # Chemin relatif au parent
 node_path="modules/api"
 
-uv run poly add "$node_id" \
+poly add "$node_id" \
   --workspace "$workspace_path" \
   --path "$node_path" \
   --nature maven/reactor
-uv run poly remove "$node_id" --workspace "$workspace_path"
+poly remove "$node_id" --workspace "$workspace_path"
 ```
 
 ### PowerShell
 
 ```powershell
 # Racine du workspace Poly
-$workspacePath = "../poly-demo"
+$workspacePath = "poly-demo"
 # Identifiant stable sans espace
 $nodeId = "api-reactor"
 # Chemin relatif au parent
 $nodePath = "modules/api"
 
-uv run poly add $nodeId `
+poly add $nodeId `
   --workspace $workspacePath `
   --path $nodePath `
   --nature maven/reactor
-uv run poly remove $nodeId --workspace $workspacePath
+poly remove $nodeId --workspace $workspacePath
 ```
 
 ### Résultat attendu
 
 La première commande ajoute le nœud à `poly.yaml`. La seconde retire seulement
 sa déclaration ; aucun répertoire utilisateur n'est effacé.
-

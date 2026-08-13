@@ -20,26 +20,26 @@ par le même service applicatif.
 
 ```bash
 # Racine du workspace
-workspace_path="../workspace-restored"
+workspace_path="workspace"
 # Verbe disponible, par exemple status ou verify
 verb="status"
 
-uv run poly "$verb" --workspace "$workspace_path" --plan
-uv run poly plan "$verb" --workspace "$workspace_path"
-uv run poly run "$verb" --workspace "$workspace_path"
+poly "$verb" --workspace "$workspace_path" --plan
+poly plan "$verb" --workspace "$workspace_path"
+poly run "$verb" --workspace "$workspace_path"
 ```
 
 ### PowerShell
 
 ```powershell
 # Racine du workspace
-$workspacePath = "../workspace-restored"
+$workspacePath = "workspace"
 # Verbe disponible, par exemple status ou verify
 $verb = "status"
 
-uv run poly $verb --workspace $workspacePath --plan
-uv run poly plan $verb --workspace $workspacePath
-uv run poly run $verb --workspace $workspacePath
+poly $verb --workspace $workspacePath --plan
+poly plan $verb --workspace $workspacePath
+poly run $verb --workspace $workspacePath
 ```
 
 ### Résultat attendu
@@ -58,16 +58,16 @@ l'inventaire Poly, pas nécessairement le chemin du module.
 
 ```bash
 # Racine contenant les POM inspectés
-workspace_path="../workspace-restored"
+workspace_path="workspace"
 # Identifiant stable du module déclaré ou inspecté
 node_id="service-api-reactor"
 
-uv run poly inspect --workspace "$workspace_path"
-uv run poly verify \
+poly inspect --workspace "$workspace_path"
+poly verify \
   --workspace "$workspace_path" \
   --select "$node_id" \
   --plan
-uv run poly verify \
+poly verify \
   --workspace "$workspace_path" \
   --select "$node_id"
 ```
@@ -76,16 +76,16 @@ uv run poly verify \
 
 ```powershell
 # Racine contenant les POM inspectés
-$workspacePath = "../workspace-restored"
+$workspacePath = "workspace"
 # Identifiant stable du module déclaré ou inspecté
 $nodeId = "service-api-reactor"
 
-uv run poly inspect --workspace $workspacePath
-uv run poly verify `
+poly inspect --workspace $workspacePath
+poly verify `
   --workspace $workspacePath `
   --select $nodeId `
   --plan
-uv run poly verify `
+poly verify `
   --workspace $workspacePath `
   --select $nodeId
 ```
@@ -104,11 +104,11 @@ Git restent visibles comme candidats rejetés sans empêcher les actions valides
 
 ```bash
 # Racine du workspace
-workspace_path="../workspace-restored"
+workspace_path="workspace"
 # Format de rapport : text, json, yaml ou xml
 report_format="text"
 
-uv run poly status \
+poly status \
   --workspace "$workspace_path" \
   --format "$report_format"
 ```
@@ -117,11 +117,11 @@ uv run poly status \
 
 ```powershell
 # Racine du workspace
-$workspacePath = "../workspace-restored"
+$workspacePath = "workspace"
 # Format de rapport : text, json, yaml ou xml
 $reportFormat = "text"
 
-uv run poly status `
+poly status `
   --workspace $workspacePath `
   --format $reportFormat
 ```
@@ -140,13 +140,13 @@ rend le même document canonique dans l'un des quatre formats publics.
 
 ```bash
 # Racine du workspace ayant exécuté le job
-workspace_path="../workspace-restored"
+workspace_path="workspace"
 # Identifiant affiché sur la ligne « Plan: » du rapport précédent
 run_id="0123456789abcdef0123"
 # Format cible : text, json, yaml ou xml
 report_format="yaml"
 
-uv run poly report "$run_id" \
+poly report "$run_id" \
   --workspace "$workspace_path" \
   --format "$report_format"
 ```
@@ -155,13 +155,13 @@ uv run poly report "$run_id" \
 
 ```powershell
 # Racine du workspace ayant exécuté le job
-$workspacePath = "../workspace-restored"
+$workspacePath = "workspace"
 # Identifiant affiché sur la ligne « Plan: » du rapport précédent
 $runId = "0123456789abcdef0123"
 # Format cible : text, json, yaml ou xml
 $reportFormat = "yaml"
 
-uv run poly report $runId `
+poly report $runId `
   --workspace $workspacePath `
   --format $reportFormat
 ```
@@ -170,4 +170,3 @@ uv run poly report $runId `
 
 Poly restitue le plan ou le rapport final correspondant. Remplacer l'identifiant
 d'exemple par celui réellement affiché lors du job.
-

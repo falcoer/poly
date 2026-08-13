@@ -38,6 +38,26 @@ runtime as technology verbs. Root bootstrap, recursive Git hydration, moving-ref
 updates, and adoption of clean local `HEAD` commits are implemented through the
 same reportable action model.
 
+## Installation
+
+Python 3.12, Git, and [uv](https://docs.astral.sh/uv/) are required. To run Poly
+once without keeping the tool installed:
+
+```shell
+uvx --from "git+https://github.com/falcoer/poly.git" poly --help
+```
+
+For daily use, install the `poly` command in an isolated environment managed by
+uv:
+
+```shell
+uv tool install "git+https://github.com/falcoer/poly.git"
+poly --help
+```
+
+Commands in this README and in the cookbook then assume that `poly` is directly
+available on `PATH`.
+
 ## Development
 
 Python 3.12 and [uv](https://docs.astral.sh/uv/) are required.

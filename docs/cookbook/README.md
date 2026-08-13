@@ -6,9 +6,10 @@ utilisent l'interface publique réellement exposée par la CLI.
 
 ## Prérequis généraux
 
-- Python 3.12, Git et [uv](https://docs.astral.sh/uv/) sont disponibles ;
-- le dépôt Poly est cloné et `uv sync --locked --all-groups` a été exécuté ;
-- les commandes sont lancées depuis le dépôt Poly avec `uv run poly` ;
+- la commande `poly` est disponible conformément à la
+  [procédure d'installation](../../README.md#installation) ;
+- les exemples sont lancés depuis un répertoire de travail pouvant recevoir les
+  dossiers `poly-demo` ou `workspace` ;
 - les dépôts Git privés utilisent l'authentification déjà configurée dans Git,
   sans identifiant incorporé dans les URL.
 
@@ -38,4 +39,3 @@ utilisent l'interface publique réellement exposée par la CLI.
 | Bootstrap récursif depuis un dépôt racine | Exécuté avec deux dépôts enfants imbriqués. |
 | URL `git.example.com` des recettes | **Non exécuté** : serveur volontairement fictif à remplacer. |
 | Exemples PowerShell | Vérifiés statiquement contre les mêmes options CLI ; non exécutés faute de PowerShell dans l'environnement de validation. |
-
