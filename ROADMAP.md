@@ -172,7 +172,7 @@ Cross-milestone invariants:
 
 ## 0.9 — Unified jobs and verb-first CLI
 
-- Status: `implemented-awaiting-ci`
+- Status: `validated`
 - Tag: `roadmap/0.9-unified-jobs-cli`
 - Depends on: 0.8 manifest compilation and stable identities.
 - Scope: make construction participate in normal driver negotiation and expose
@@ -206,7 +206,7 @@ Cross-milestone invariants:
 
 ## 0.10 — Root bootstrap and recursive Git hydration
 
-- Status: `implemented-awaiting-ci`
+- Status: `validated`
 - Tag: `roadmap/0.10-git-materialization`
 - Depends on: 0.8 workspace contract and 0.9 unified jobs.
 - Scope: restore the original Polyrepo Studio use case: bootstrap or adopt one
