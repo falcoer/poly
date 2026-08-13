@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 
@@ -142,6 +143,10 @@ def test_add_hydrate_eclipse_pull_lock_and_update_journey(
     assert _git(child, "rev-parse", "HEAD") == third
     assert validate_workspace(workspace).lock.sources[0].commit == third
 
+    # Git for Windows can mark packed or hard-linked objects as read-only.
+    # Clear that bit before simulating a checkout removed outside Poly.
+    for entry in child.rglob("*"):
+        entry.chmod(entry.stat().st_mode | stat.S_IWUSR)
     shutil.rmtree(child)
     assert main(["hydrate", "--workspace", str(workspace), "--select", "service"]) == 0
     capsys.readouterr()
