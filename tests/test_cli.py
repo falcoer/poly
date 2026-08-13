@@ -191,7 +191,7 @@ def test_cli_init_add_persist_and_render_construction_runs(
         == 0
     )
     recovered = capsys.readouterr().out
-    assert '"kind": "construction"' in recovered
+    assert '"kind": "run"' in recovered
     assert '"status": "succeeded"' in recovered
 
     assert main(["inspect", "--workspace", str(tmp_path), "--format", "json"]) == 0
@@ -206,6 +206,70 @@ def test_cli_init_add_persist_and_render_construction_runs(
         "process.execute",
         "workspace.construct",
     ]
+
+    assert main(["drivers", "--workspace", str(tmp_path), "--format", "json"]) == 0
+    drivers = json.loads(capsys.readouterr().out)
+    assert {driver["name"] for driver in drivers["drivers"]} == {
+        "poly.constructor",
+        "poly.driver.git",
+        "poly.driver.maven",
+    }
+
+
+def test_direct_and_expert_verb_forms_share_the_same_plan(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["init", "--workspace", str(tmp_path), "--name", "Example"]) == 0
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "add",
+                "service",
+                "--workspace",
+                str(tmp_path),
+                "--path",
+                "services/service",
+                "--plan",
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    direct = json.loads(capsys.readouterr().out)
+    assert not (tmp_path / "services" / "service").exists()
+
+    assert (
+        main(
+            [
+                "plan",
+                "add",
+                "--workspace",
+                str(tmp_path),
+                "--parameter",
+                "poly.node.id=service",
+                "--parameter",
+                "poly.node.path=services/service",
+                "--parameter",
+                "poly.node.kind=module",
+                "--parameter",
+                "poly.node.natures=",
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    expert = json.loads(capsys.readouterr().out)
+    assert direct["plan"] == expert["plan"]
+
+    _workspace(tmp_path / "plain")
+    assert main(["status", "--workspace", str(tmp_path / "plain"), "--format", "json"]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["request"]["verb"] == "status"
+    assert status["run"]["status"] == "succeeded"
 
 
 def test_cli_generates_external_driver_repository(

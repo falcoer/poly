@@ -15,7 +15,16 @@ from poly.driver import (
     DriverRegistration,
     ExecutionContext,
 )
-from poly.model import ActionClaim, ActionSpec, JsonValue, Plan, PlanStatus
+from poly.model import (
+    ActionClaim,
+    ActionSpec,
+    DriverProposal,
+    JsonValue,
+    Plan,
+    PlanningRequest,
+    PlanStatus,
+    RejectedCandidate,
+)
 from poly.workspace import (
     WORKSPACE_MANIFEST,
     WORKSPACE_SCHEMA,
@@ -35,6 +44,110 @@ CONSTRUCTOR_DRIVER_NAME = "poly.constructor"
 
 class ConstructionError(ValueError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class ConstructionPlanningProvider:
+    """Negotiate structural changes through the public driver planning API."""
+
+    name: str = CONSTRUCTOR_DRIVER_NAME
+    verbs: frozenset[str] = frozenset(("add", "init", "remove"))
+
+    def propose(self, request: PlanningRequest) -> DriverProposal:
+        try:
+            if request.verb == "init":
+                return DriverProposal(self.name, (self._init(request),))
+            if request.verb == "add":
+                return DriverProposal(self.name, (self._add(request),))
+            if request.verb == "remove":
+                return DriverProposal(self.name, (self._remove(request),))
+        except ConstructionError as error:
+            return DriverProposal(
+                self.name,
+                rejected=(
+                    RejectedCandidate(self.name, f"poly/construction/{request.verb}", str(error)),
+                ),
+            )
+        return DriverProposal(self.name)
+
+    def _init(self, request: PlanningRequest) -> ActionSpec:
+        name = request.parameters.get("poly.name", "Workspace").strip()
+        if not name:
+            raise ConstructionError("workspace name must not be empty")
+        initialized = any("poly/workspace" in node.natures for node in request.inventory.nodes)
+        operation = "poly/construction/reconcile" if initialized else "poly/construction/init"
+        environment = (
+            {}
+            if initialized
+            else {
+                "poly.workspace.id": workspace_id(name),
+                "poly.workspace.name": name,
+            }
+        )
+        return ActionSpec(
+            "construct.reconcile" if initialized else "construct.init",
+            self.name,
+            "init",
+            operation,
+            (),
+            claims=frozenset((ActionClaim(operation, "workspace:."),)),
+            environment=environment,
+            changes_structure=True,
+            required_capability="workspace.construct",
+        )
+
+    def _add(self, request: PlanningRequest) -> ActionSpec:
+        node_id = _required_parameter(request, "poly.node.id")
+        path = _required_parameter(request, "poly.node.path")
+        kind = request.parameters.get("poly.node.kind", "module")
+        if kind not in {"module", "repository"}:
+            raise ConstructionError(f"unsupported node kind: {kind!r}")
+        parent = request.parameters.get("poly.node.parent") or _root_node_id(request)
+        natures = tuple(
+            sorted(
+                item.strip()
+                for item in request.parameters.get("poly.node.natures", "").split(",")
+                if item.strip()
+            )
+        )
+        spec: dict[str, JsonValue] = {
+            "id": node_id,
+            "parent": parent,
+            "kind": kind,
+            "path": path,
+        }
+        if natures:
+            spec["natures"] = list(natures)
+        return ActionSpec(
+            f"construct.add:{node_id}",
+            self.name,
+            "add",
+            "poly/construction/add",
+            (),
+            claims=frozenset(
+                (
+                    ActionClaim("poly/construction/add", f"node:{node_id}"),
+                    ActionClaim("poly/construction/path", f"path:{path}"),
+                )
+            ),
+            environment={"poly.node.spec": json.dumps(spec, sort_keys=True)},
+            changes_structure=True,
+            required_capability="workspace.construct",
+        )
+
+    def _remove(self, request: PlanningRequest) -> ActionSpec:
+        node_id = _required_parameter(request, "poly.node.id")
+        return ActionSpec(
+            f"construct.remove:{node_id}",
+            self.name,
+            "remove",
+            "poly/construction/remove",
+            (),
+            claims=frozenset((ActionClaim("poly/construction/remove", f"node:{node_id}"),)),
+            environment={"poly.node.id": node_id},
+            changes_structure=True,
+            required_capability="workspace.construct",
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,9 +329,10 @@ def constructor_driver() -> DriverRegistration:
             CONSTRUCTOR_DRIVER_NAME,
             "0.2.0",
             DRIVER_API_VERSION,
-            frozenset((DriverCapability.EXECUTE,)),
+            frozenset((DriverCapability.PLAN, DriverCapability.EXECUTE)),
             "Poly root workspace composition action handler",
         ),
+        planners=(ConstructionPlanningProvider(),),
         handlers=(ConstructionActionHandler(),),
     )
 
@@ -249,6 +363,20 @@ def _construction_plan(verb: str, actions: tuple[ActionSpec, ...]) -> Plan:
     return Plan(plan_id, verb, (), actions, (), (), PlanStatus.EXECUTABLE)
 
 
+def _required_parameter(request: PlanningRequest, name: str) -> str:
+    value: str = request.parameters.get(name, "").strip()
+    if not value:
+        raise ConstructionError(f"missing required parameter: {name}")
+    return value
+
+
+def _root_node_id(request: PlanningRequest) -> str:
+    roots = [node.id for node in request.inventory.nodes if "poly/workspace" in node.natures]
+    if len(roots) != 1:
+        raise ConstructionError("workspace root node is unavailable")
+    return str(roots[0])
+
+
 __all__ = [
     "CONSTRUCTOR_DRIVER_NAME",
     "WORKSPACE_MANIFEST",
@@ -256,6 +384,7 @@ __all__ = [
     "ConstructionActionHandler",
     "ConstructionError",
     "ConstructionPlanner",
+    "ConstructionPlanningProvider",
     "constructor_driver",
     "read_workspace_definition",
 ]

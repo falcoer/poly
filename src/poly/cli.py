@@ -7,12 +7,7 @@ import sys
 from pathlib import Path
 
 from poly.application import inspect_workspace, prepare_planning
-from poly.construction import (
-    WORKSPACE_MANIFEST,
-    ConstructionError,
-    ConstructionPlanner,
-    constructor_driver,
-)
+from poly.construction import WORKSPACE_MANIFEST, constructor_driver
 from poly.control_plane import (
     ControllerDescriptor,
     ControlPlane,
@@ -27,8 +22,8 @@ from poly.persistence import StateError, StateStore
 from poly.reporting import (
     ReportDocument,
     action_catalog_document,
-    construction_document,
     controllers_document,
+    drivers_document,
     inspection_document,
     planning_document,
     render,
@@ -38,6 +33,9 @@ from poly.runtime import Executor, LocalActionRunner, RunStatus
 from poly.workspace import WorkspaceError
 
 REPORT_FORMATS = ("text", "json", "yaml", "xml")
+RESERVED_COMMANDS = frozenset(
+    ("actions", "controllers", "driver", "drivers", "inspect", "plan", "report", "run")
+)
 
 
 def build_registry() -> DriverRegistry:
@@ -49,7 +47,8 @@ def build_registry() -> DriverRegistry:
 
 
 def main(arguments: list[str] | None = None) -> int:
-    parser = _parser()
+    registry = build_registry()
+    parser = _parser(registry)
     options = parser.parse_args(arguments)
     if options.command == "driver":
         try:
@@ -65,9 +64,6 @@ def main(arguments: list[str] | None = None) -> int:
     workspace = options.workspace.resolve()
     if not workspace.is_dir():
         parser.error(f"workspace does not exist or is not a directory: {workspace}")
-    registry = build_registry()
-    if options.command in {"init", "add", "remove"}:
-        return _construct(parser, options, workspace, registry)
     if options.command == "report":
         try:
             document = StateStore(workspace).load_report(options.run_id)
@@ -80,6 +76,9 @@ def main(arguments: list[str] | None = None) -> int:
         sys.stdout.write(
             render(controllers_document(workspace, plane.descriptors()), options.format)
         )
+        return 0
+    if options.command == "drivers":
+        sys.stdout.write(render(drivers_document(workspace, registry.manifests()), options.format))
         return 0
 
     try:
@@ -95,7 +94,7 @@ def main(arguments: list[str] | None = None) -> int:
         selected = _selection(options.select, inspection.inventory.nodes)
         _validate_selection(parser, selected, tuple(node.id for node in inspection.inventory.nodes))
         try:
-            parameters = _parameters(options.parameter)
+            parameters = _command_parameters(options)
         except ValueError as error:
             parser.error(str(error))
         if options.command == "actions":
@@ -107,9 +106,11 @@ def main(arguments: list[str] | None = None) -> int:
             document = action_catalog_document(snapshots)
             exit_code = 0
         else:
-            _validate_verbs(parser, (options.verb,), inspection.available_verbs)
-            snapshot = prepare_planning(registry, inspection, options.verb, selected, parameters)
-            if options.command == "plan":
+            verb = options.verb if options.command in {"plan", "run"} else options.command
+            _validate_verbs(parser, (verb,), inspection.available_verbs)
+            snapshot = prepare_planning(registry, inspection, verb, selected, parameters)
+            plan_only = options.command == "plan" or getattr(options, "plan_only", False)
+            if plan_only:
                 document = planning_document(snapshot)
                 _save_plan_if_initialized(workspace, snapshot.plan.id, document)
                 exit_code = 0 if snapshot.plan.status.value in {"executable", "empty"} else 1
@@ -127,7 +128,7 @@ def main(arguments: list[str] | None = None) -> int:
     return exit_code
 
 
-def _parser() -> argparse.ArgumentParser:
+def _parser(registry: DriverRegistry) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="poly", description="Deterministic polyrepo engine")
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -136,8 +137,7 @@ def _parser() -> argparse.ArgumentParser:
 
     init = commands.add_parser("init", help="initialize an existing directory as a Poly workspace")
     init.add_argument("--name", help="workspace name (default: directory name)")
-    init.add_argument("--controller", default="local")
-    _report_options(init)
+    _direct_verb_options(init)
 
     add = commands.add_parser("add", help="add a declared node to an initialized workspace")
     add.add_argument("node_id")
@@ -150,13 +150,11 @@ def _parser() -> argparse.ArgumentParser:
         help="declared node kind (default: module)",
     )
     add.add_argument("--nature", action="append", default=[])
-    add.add_argument("--controller", default="local")
-    _report_options(add)
+    _direct_verb_options(add)
 
     remove = commands.add_parser("remove", help="remove a leaf node from the composition")
     remove.add_argument("node_id")
-    remove.add_argument("--controller", default="local")
-    _report_options(remove)
+    _direct_verb_options(remove)
 
     actions = commands.add_parser("actions", help="list currently applicable actions")
     actions.add_argument("verb", nargs="?", help="limit the catalog to one verb")
@@ -178,6 +176,9 @@ def _parser() -> argparse.ArgumentParser:
     controllers = commands.add_parser("controllers", help="list controller capabilities")
     _report_options(controllers)
 
+    drivers = commands.add_parser("drivers", help="list registered technology drivers")
+    _report_options(drivers)
+
     driver = commands.add_parser("driver", help="develop external drivers")
     driver_commands = driver.add_subparsers(dest="driver_command", required=True)
     new_driver = driver_commands.add_parser("new", help="create a driver repository")
@@ -188,40 +189,12 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="use a local Poly checkout instead of the validated Git tag",
     )
+    structural = {"init", "add", "remove"}
+    dynamic = sorted(set(_driver_verbs(registry)) - RESERVED_COMMANDS - structural)
+    for verb in dynamic:
+        direct = commands.add_parser(verb, help=f"plan and execute the {verb!r} driver verb")
+        _direct_verb_options(direct)
     return parser
-
-
-def _construct(
-    parser: argparse.ArgumentParser,
-    options: argparse.Namespace,
-    workspace: Path,
-    registry: DriverRegistry,
-) -> int:
-    planner = ConstructionPlanner()
-    try:
-        if options.command == "init":
-            plan = planner.plan_init(workspace, options.name or workspace.name)
-        elif options.command == "add":
-            plan = planner.plan_add(
-                workspace,
-                options.node_id,
-                options.node_path,
-                tuple(options.nature),
-                parent=options.parent,
-                kind=options.kind,
-            )
-        else:
-            plan = planner.plan_remove(workspace, options.node_id)
-    except ConstructionError as error:
-        parser.error(str(error))
-    run_directory = workspace / ".poly" / "runs" / plan.id
-    context = ExecutionContext(workspace, run_directory)
-    result = Executor(_controller_runner(registry, options.controller)).execute(plan, context)
-    document = construction_document(workspace, plan, result)
-    if (workspace / WORKSPACE_MANIFEST).is_file():
-        StateStore(workspace).save_run(plan.id, document)
-    sys.stdout.write(render(document, options.format))
-    return 0 if result.status is RunStatus.SUCCEEDED else 1
 
 
 def _controller_runner(
@@ -283,6 +256,12 @@ def _planning_options(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _direct_verb_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--plan", action="store_true", dest="plan_only")
+    parser.add_argument("--controller", default="local")
+    _planning_options(parser)
+
+
 def _selection(values: list[str], nodes: tuple[Node, ...]) -> tuple[str, ...]:
     if not values:
         return tuple(node.id for node in nodes)
@@ -300,6 +279,36 @@ def _parameters(values: list[str]) -> dict[str, str]:
             raise ValueError(f"invalid --parameter {value!r}; expected KEY=VALUE")
         parameters[key.strip()] = parameter
     return parameters
+
+
+def _command_parameters(options: argparse.Namespace) -> dict[str, str]:
+    parameters = _parameters(options.parameter)
+    if options.command == "init":
+        parameters["poly.name"] = options.name or options.workspace.resolve().name
+    elif options.command == "add":
+        parameters.update(
+            {
+                "poly.node.id": options.node_id,
+                "poly.node.path": options.node_path,
+                "poly.node.kind": options.kind,
+                "poly.node.natures": ",".join(options.nature),
+            }
+        )
+        if options.parent:
+            parameters["poly.node.parent"] = options.parent
+    elif options.command == "remove":
+        parameters["poly.node.id"] = options.node_id
+    return parameters
+
+
+def _driver_verbs(registry: DriverRegistry) -> tuple[str, ...]:
+    verbs = tuple(
+        sorted({verb for provider in registry.planning_providers() for verb in provider.verbs})
+    )
+    collisions = sorted(set(verbs) & RESERVED_COMMANDS)
+    if collisions:
+        raise ValueError(f"driver verbs collide with reserved commands: {', '.join(collisions)}")
+    return verbs
 
 
 def _validate_verbs(

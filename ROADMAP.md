@@ -172,7 +172,7 @@ Cross-milestone invariants:
 
 ## 0.9 — Unified jobs and verb-first CLI
 
-- Status: `pending`
+- Status: `validated`
 - Tag: `roadmap/0.9-unified-jobs-cli`
 - Depends on: 0.8 manifest compilation and stable identities.
 - Scope: make construction participate in normal driver negotiation and expose

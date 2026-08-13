@@ -9,7 +9,7 @@ from pathlib import Path
 
 from poly.application import InspectionSnapshot, PlanningSnapshot
 from poly.control_plane import ControllerDescriptor
-from poly.driver import InspectionDiagnostic
+from poly.driver import DriverManifest, InspectionDiagnostic
 from poly.model import (
     ActionSpec,
     JsonValue,
@@ -122,6 +122,29 @@ def controllers_document(
         "inventory": {"nodes": []},
         "diagnostics": [],
         "controllers": [descriptor.to_dict() for descriptor in descriptors],
+    }
+
+
+def drivers_document(workspace: Path, manifests: tuple[DriverManifest, ...]) -> ReportDocument:
+    return {
+        "schema": REPORT_SCHEMA,
+        "kind": "drivers",
+        "workspace": str(workspace.resolve()),
+        "available_verbs": [],
+        "inventory": {"nodes": []},
+        "diagnostics": [],
+        "drivers": [
+            {
+                "name": manifest.name,
+                "version": manifest.version,
+                "api_version": manifest.api_version,
+                "capabilities": _string_values(
+                    sorted(item.value for item in manifest.capabilities)
+                ),
+                "description": manifest.description,
+            }
+            for manifest in manifests
+        ],
     }
 
 

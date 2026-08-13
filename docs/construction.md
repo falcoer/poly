@@ -1,9 +1,23 @@
 # Workspace construction
 
-`poly init`, `poly add`, and `poly remove` are constructor operations, not
-special filesystem shortcuts. Each command first produces a finite plan whose actions declare
-`workspace.construct`, then sends that plan through the common executor and
-control-plane.
+`poly init`, `poly add`, and `poly remove` are proposals from the system driver
+`poly.constructor`, not special filesystem shortcuts. They use the public
+planning, execution, control-plane, logging, and reporting contracts.
+
+Typed CLI options translate to canonical planning parameters. These two forms
+therefore produce the same frozen plan identifier and action list:
+
+```shell
+poly add api --path services/api --plan
+poly plan add \
+  --parameter poly.node.id=api \
+  --parameter poly.node.path=services/api \
+  --parameter poly.node.kind=module \
+  --parameter poly.node.natures=
+```
+
+Without `--plan`, direct verbs execute the plan and persist the same run report
+as the expert `poly run <verb>` façade.
 
 ```shell
 poly init --workspace ./example --name example

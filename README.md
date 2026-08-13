@@ -31,7 +31,9 @@ Poly-managed root `.gitignore` block.
 The version 1 contract is implemented: manifests and locks are validated and
 compiled into rebuildable state, declared identities are enriched by Git and
 Maven inspection, and undeclared repositories remain explicit `observed-only`
-nodes. Clone/fetch/checkout hydration remains deliberately deferred to 0.10.
+nodes. Construction now uses the same negotiated, frozen plans and execution
+runtime as technology verbs. Clone/fetch/checkout hydration remains deferred to
+0.10.
 
 ## Development
 
@@ -62,20 +64,26 @@ from privileged core modules. See [External drivers](docs/drivers/external.md).
 
 ## Local CLI
 
-Inspection, planning, and execution are separate commands. `actions` is a
-fresh, side-effect-free view of what the current workspace can do.
+Driver verbs execute directly; add `--plan` for a side-effect-free frozen plan.
+The `plan` and `run` expert façades use the same application service and produce
+the same plan identifier. `actions` remains a fresh catalog of what the current
+workspace can do.
 
 ```shell
 poly inspect
+poly drivers
 poly controllers
+poly init --name example --plan
 poly init --name example
 poly add service-api --kind repository --path services/api
 poly add service-api-reactor --parent service-api --path . --nature maven/reactor
 poly remove service-api-reactor
+poly status
+poly verify --select service-api-reactor
 poly actions
 poly actions verify --select maven:platform/service-a
 poly plan verify --select maven:platform/service-a --format yaml
-poly run status --select git:. --format json
+poly run status --select root --format json
 poly report <run-id> --format xml
 ```
 
@@ -88,7 +96,9 @@ only the frozen plan printed in the same document.
 delimited root `.gitignore` block. Re-running it reconciles those generated
 artifacts without changing authored composition. `poly add` and `poly remove`
 edit the YAML round-trip document while preserving comments and user-owned
-ignore rules; they declare structure but do not materialize Git sources.
+ignore rules; they declare structure but do not yet materialize Git sources.
+All three are ordinary constructor-driver proposals rather than a private CLI
+execution path.
 
 The project advances directly on `main`. A milestone tag is created by CI only
 after every required check succeeds on the exact milestone commit.

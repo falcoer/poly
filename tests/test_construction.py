@@ -9,6 +9,7 @@ from poly.construction import (
     WORKSPACE_MANIFEST,
     ConstructionError,
     ConstructionPlanner,
+    ConstructionPlanningProvider,
     constructor_driver,
     read_workspace_definition,
 )
@@ -19,7 +20,7 @@ from poly.control_plane import (
     LocalController,
 )
 from poly.driver import DriverRegistry, ExecutionContext
-from poly.model import Plan
+from poly.model import Inventory, Plan, PlanningRequest
 from poly.runtime import Executor, LocalActionRunner, RunResult, RunStatus
 from poly.workspace import validate_manifest_value
 
@@ -128,4 +129,16 @@ def test_workspace_manifest_validation_and_handler_failures(tmp_path: Path) -> N
 def test_constructor_driver_uses_public_execution_contract() -> None:
     registration = constructor_driver()
     registration.validate()
+    assert registration.planners[0].name == registration.manifest.name
     assert registration.handlers[0].name == registration.manifest.name
+
+
+def test_constructor_plans_initialization_from_an_empty_context_without_side_effects(
+    tmp_path: Path,
+) -> None:
+    request = PlanningRequest("init", Inventory(), (), {"poly.name": "Empty Context"})
+    proposal = ConstructionPlanningProvider().propose(request)
+
+    assert proposal.actions[0].operation == "poly/construction/init"
+    assert proposal.actions[0].environment["poly.workspace.id"] == "empty-context"
+    assert not (tmp_path / WORKSPACE_MANIFEST).exists()
