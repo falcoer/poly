@@ -203,6 +203,7 @@ def test_cli_init_add_persist_and_render_construction_runs(
     assert controllers["controllers"][0]["name"] == "local"
     assert controllers["controllers"][0]["capabilities"] == [
         "driver.execute",
+        "git.materialize",
         "process.execute",
         "workspace.construct",
     ]

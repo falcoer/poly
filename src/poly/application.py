@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,13 +41,33 @@ class PlanningSnapshot:
     plan: Plan
 
 
-def inspect_workspace(registry: DriverRegistry, workspace: Path) -> InspectionSnapshot:
-    context = InspectionContext(workspace)
+def inspect_workspace(
+    registry: DriverRegistry, workspace: Path, *, remote: bool = False
+) -> InspectionSnapshot:
     compiled = (
         compile_workspace(workspace)
         if (workspace / WORKSPACE_MANIFEST).is_file()
         or (workspace / PROVISIONAL_WORKSPACE_MANIFEST).is_file()
         else None
+    )
+    locked_sources = (
+        {
+            compiled.manifest.get(source.node_id).workspace_path: {
+                "commit": source.commit,
+                "url": source.url,
+                "ref": source.requested_ref,
+            }
+            for source in compiled.lock.sources
+        }
+        if compiled is not None
+        else {}
+    )
+    context = InspectionContext(
+        workspace,
+        {
+            "poly.git.locked-sources": json.dumps(locked_sources, sort_keys=True),
+            "poly.git.remote": "true" if remote else "false",
+        },
     )
     nodes: list[Node] = []
     diagnostics: list[InspectionDiagnostic] = []
@@ -74,6 +95,7 @@ def prepare_planning(
         inspection.inventory,
         selected_node_ids,
         parameters or {},
+        workspace=inspection.workspace,
     )
     planner = Planner(registry.planning_providers(verb))
     proposals = planner.propose(request)

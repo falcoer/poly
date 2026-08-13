@@ -158,7 +158,10 @@ class CompiledWorkspace:
 
     @property
     def inventory(self) -> Inventory:
-        return Inventory(tuple(_declared_node(node) for node in self.manifest.nodes))
+        locked = {source.node_id: source for source in self.lock.sources}
+        return Inventory(
+            tuple(_declared_node(node, locked.get(node.id)) for node in self.manifest.nodes)
+        )
 
 
 def load_manifest(workspace: Path) -> WorkspaceManifest:
@@ -230,7 +233,8 @@ def reconcile_inventory(
         return Inventory(observations)
 
     manifest = declared.manifest
-    nodes_by_id = {node.id: _declared_node(node) for node in manifest.nodes}
+    locked = {source.node_id: source for source in declared.lock.sources}
+    nodes_by_id = {node.id: _declared_node(node, locked.get(node.id)) for node in manifest.nodes}
     id_map: dict[str, str] = {}
     for observed in observations:
         target = _declared_identity(manifest, observed)
@@ -282,6 +286,8 @@ def add_manifest_node(
     kind: str,
     path: str,
     natures: tuple[str, ...] = (),
+    source: SourceDeclaration | None = None,
+    locked_source: LockedSource | None = None,
 ) -> CompiledWorkspace:
     workspace = workspace.resolve()
     validate_workspace(workspace)
@@ -293,12 +299,44 @@ def add_manifest_node(
     specification["parent"] = parent
     specification["kind"] = kind
     specification["path"] = path
+    if source is not None:
+        specification["source"] = CommentedMap(source.semantic())
     if natures:
         specification["natures"] = CommentedSeq(natures)
     nodes.append(specification)
     candidate = _parse_manifest(raw_manifest, workspace)
+    if source is not None:
+        if locked_source is None or locked_source.node_id != node_id:
+            raise WorkspaceError(f"source node {node_id!r} requires a resolved lock entry")
+        sources = _mapping_value(raw_lock, "sources", "lock sources")
+        sources[node_id] = CommentedMap(locked_source.semantic())
     _update_lock_for_manifest(raw_lock, candidate)
     _write_yaml(workspace / WORKSPACE_MANIFEST, raw_manifest)
+    _write_yaml(workspace / WORKSPACE_LOCK, raw_lock)
+    return compile_workspace(workspace)
+
+
+def update_locked_sources(
+    workspace: Path, resolutions: dict[str, tuple[str, str]]
+) -> CompiledWorkspace:
+    """Atomically replace selected immutable resolutions without changing intent."""
+
+    workspace = workspace.resolve()
+    compiled = validate_workspace(workspace)
+    known = {source.node_id: source for source in compiled.lock.sources}
+    unknown = sorted(set(resolutions) - set(known))
+    if unknown:
+        raise WorkspaceError(f"unknown locked source nodes: {unknown!r}")
+    raw_lock = _load_yaml(workspace / WORKSPACE_LOCK)
+    raw_sources = _mapping_value(raw_lock, "sources", "lock sources")
+    for node_id, (commit, ref_kind) in sorted(resolutions.items()):
+        if not _COMMIT.fullmatch(commit):
+            raise WorkspaceError(f"lock source {node_id!r} has no immutable full Git commit")
+        raw_source = _mapping(raw_sources[node_id], f"lock sources.{node_id}")
+        raw_source["resolved"] = CommentedMap(
+            {"commit": commit.lower(), "ref-kind": _non_empty(ref_kind, "ref-kind")}
+        )
+    _parse_lock(raw_lock, compiled.manifest)
     _write_yaml(workspace / WORKSPACE_LOCK, raw_lock)
     return compile_workspace(workspace)
 
@@ -511,7 +549,7 @@ def _parse_source(value: object, where: str) -> SourceDeclaration | None:
     return SourceDeclaration(driver, url, ref)
 
 
-def _declared_node(node: WorkspaceNode) -> Node:
+def _declared_node(node: WorkspaceNode, locked: LockedSource | None = None) -> Node:
     metadata: Metadata = {
         "poly.state": "declared",
         "poly.kind": node.kind,
@@ -525,6 +563,13 @@ def _declared_node(node: WorkspaceNode) -> Node:
                 "poly.source.driver": node.source.driver,
                 "poly.source.url": node.source.url,
                 "poly.source.ref": node.source.ref,
+            }
+        )
+    if locked is not None:
+        metadata.update(
+            {
+                "poly.lock.commit": locked.commit,
+                "poly.lock.ref-kind": locked.ref_kind,
             }
         )
     natures = set(node.natures)

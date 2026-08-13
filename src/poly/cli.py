@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from poly.application import inspect_workspace, prepare_planning
@@ -30,12 +32,13 @@ from poly.reporting import (
     run_document,
 )
 from poly.runtime import Executor, LocalActionRunner, RunStatus
-from poly.workspace import WorkspaceError
+from poly.workspace import WorkspaceError, validate_workspace
 
 REPORT_FORMATS = ("text", "json", "yaml", "xml")
 RESERVED_COMMANDS = frozenset(
     ("actions", "controllers", "driver", "drivers", "inspect", "plan", "report", "run")
 )
+INTERNAL_VERBS = frozenset(("bootstrap",))
 
 
 def build_registry() -> DriverRegistry:
@@ -61,6 +64,8 @@ def main(arguments: list[str] | None = None) -> int:
             parser.error(str(error))
         print(f"Created {scaffolded.distribution_name} in {scaffolded.target}")
         return 0
+    if options.command == "init" and options.root_repository:
+        return _bootstrap_root(parser, options, registry)
     workspace = options.workspace.resolve()
     if not workspace.is_dir():
         parser.error(f"workspace does not exist or is not a directory: {workspace}")
@@ -82,7 +87,9 @@ def main(arguments: list[str] | None = None) -> int:
         return 0
 
     try:
-        inspection = inspect_workspace(registry, workspace)
+        inspection = inspect_workspace(
+            registry, workspace, remote=getattr(options, "remote", False)
+        )
     except WorkspaceError as error:
         parser.error(str(error))
 
@@ -133,9 +140,17 @@ def _parser(registry: DriverRegistry) -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     inspect = commands.add_parser("inspect", help="inspect the current workspace")
+    inspect.add_argument(
+        "--remote",
+        action="store_true",
+        help="compare locked Git sources with their requested remote references",
+    )
     _report_options(inspect)
 
     init = commands.add_parser("init", help="initialize an existing directory as a Poly workspace")
+    init.add_argument("root_repository", nargs="?", help="root control repository to clone")
+    init.add_argument("target", nargs="?", type=Path, help="bootstrap target directory")
+    init.add_argument("--ref", help="root repository branch, tag, or commit")
     init.add_argument("--name", help="workspace name (default: directory name)")
     _direct_verb_options(init)
 
@@ -150,6 +165,8 @@ def _parser(registry: DriverRegistry) -> argparse.ArgumentParser:
         help="declared node kind (default: module)",
     )
     add.add_argument("--nature", action="append", default=[])
+    add.add_argument("--repo", help="Git repository URL")
+    add.add_argument("--ref", help="requested Git branch, tag, or commit")
     _direct_verb_options(add)
 
     remove = commands.add_parser("remove", help="remove a leaf node from the composition")
@@ -190,11 +207,84 @@ def _parser(registry: DriverRegistry) -> argparse.ArgumentParser:
         help="use a local Poly checkout instead of the validated Git tag",
     )
     structural = {"init", "add", "remove"}
-    dynamic = sorted(set(_driver_verbs(registry)) - RESERVED_COMMANDS - structural)
+    dynamic = sorted(set(_driver_verbs(registry)) - RESERVED_COMMANDS - INTERNAL_VERBS - structural)
     for verb in dynamic:
         direct = commands.add_parser(verb, help=f"plan and execute the {verb!r} driver verb")
+        if verb == "lock":
+            direct.add_argument(
+                "--from-workspace",
+                action="store_true",
+                help="adopt clean local HEAD commits into poly.lock.yaml",
+            )
         _direct_verb_options(direct)
     return parser
+
+
+def _bootstrap_root(
+    parser: argparse.ArgumentParser,
+    options: argparse.Namespace,
+    registry: DriverRegistry,
+) -> int:
+    if options.target is None:
+        parser.error("root repository bootstrap requires a target directory")
+    target = options.target.resolve()
+    parent = target.parent
+    if not parent.is_dir():
+        parser.error(f"bootstrap target parent does not exist: {parent}")
+    if target.exists() and not target.is_dir():
+        parser.error(f"bootstrap target is not a directory: {target}")
+    inspection = inspect_workspace(registry, parent)
+    parameters = {
+        "poly.source.url": options.root_repository,
+        "poly.node.path": target.name,
+    }
+    if options.ref:
+        parameters["poly.source.ref"] = options.ref
+    snapshot = prepare_planning(registry, inspection, "bootstrap", (), parameters)
+    if options.plan_only:
+        sys.stdout.write(render(planning_document(snapshot), options.format))
+        return 0 if snapshot.plan.status.value == "executable" else 1
+    with tempfile.TemporaryDirectory(prefix="poly-bootstrap-", dir=parent) as run_path:
+        result = Executor(_controller_runner(registry, options.controller)).execute(
+            snapshot.plan, ExecutionContext(parent, Path(run_path))
+        )
+        root_document = run_document(snapshot, result)
+        if result.status is not RunStatus.SUCCEEDED:
+            sys.stdout.write(render(root_document, options.format))
+            return 1
+    try:
+        validate_workspace(target)
+        hydration_inspection = inspect_workspace(registry, target)
+    except WorkspaceError as error:
+        parser.error(f"root repository has no valid committed workspace: {error}")
+    source_ids = tuple(
+        node.id
+        for node in hydration_inspection.inventory.nodes
+        if isinstance(node.metadata.get("poly.source.url"), str)
+    )
+    hydration = prepare_planning(registry, hydration_inspection, "hydrate", source_ids)
+    run_directory = target / ".poly" / "runs" / hydration.plan.id
+    run_directory.mkdir(parents=True, exist_ok=True)
+    hydrated = Executor(_controller_runner(registry, options.controller)).execute(
+        hydration.plan, ExecutionContext(target, run_directory)
+    )
+    document = run_document(hydration, hydrated)
+    document["kind"] = "bootstrap"
+    document["phases"] = [
+        {
+            "name": "root-bootstrap",
+            "plan-id": snapshot.plan.id,
+            "status": result.status.value,
+        },
+        {
+            "name": "recursive-hydration",
+            "plan-id": hydration.plan.id,
+            "status": hydrated.status.value,
+        },
+    ]
+    StateStore(target).save_run(hydration.plan.id, document)
+    sys.stdout.write(render(document, options.format))
+    return 0 if hydrated.status in {RunStatus.SUCCEEDED, RunStatus.EMPTY} else 1
 
 
 def _controller_runner(
@@ -207,7 +297,7 @@ def _control_plane(registry: DriverRegistry) -> ControlPlane:
     descriptor = ControllerDescriptor(
         "local",
         sys.platform,
-        frozenset(("driver.execute", "process.execute", "workspace.construct")),
+        frozenset(("driver.execute", "git.materialize", "process.execute", "workspace.construct")),
     )
     local = LocalController(descriptor, LocalActionRunner(registry))
     return ControlPlane((local,))
@@ -286,19 +376,57 @@ def _command_parameters(options: argparse.Namespace) -> dict[str, str]:
     if options.command == "init":
         parameters["poly.name"] = options.name or options.workspace.resolve().name
     elif options.command == "add":
+        kind = "repository" if options.repo else options.kind
         parameters.update(
             {
                 "poly.node.id": options.node_id,
                 "poly.node.path": options.node_path,
-                "poly.node.kind": options.kind,
+                "poly.node.kind": kind,
                 "poly.node.natures": ",".join(options.nature),
             }
         )
         if options.parent:
             parameters["poly.node.parent"] = options.parent
+        repository = options.repo
+        requested_ref = options.ref
+        existing = options.workspace.resolve() / options.node_path
+        if repository is None and options.parent is None and (existing / ".git").exists():
+            repository = _git_value(existing, "remote", "get-url", "origin")
+            requested_ref = requested_ref or _git_value(
+                existing, "symbolic-ref", "--quiet", "--short", "HEAD"
+            )
+            parameters["poly.node.kind"] = "repository"
+        if repository:
+            parameters["poly.source.url"] = _repository_url(repository)
+        if requested_ref:
+            parameters["poly.source.ref"] = requested_ref
     elif options.command == "remove":
         parameters["poly.node.id"] = options.node_id
+    elif options.command == "lock" and options.from_workspace:
+        parameters["poly.lock.from-workspace"] = "true"
     return parameters
+
+
+def _git_value(directory: Path, *arguments: str) -> str | None:
+    process = subprocess.run(
+        ("git", "-C", str(directory), *arguments),
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    value = process.stdout.strip()
+    return value if process.returncode == 0 and value else None
+
+
+def _repository_url(value: str) -> str:
+    if "://" in value or value.startswith("git@"):
+        return value
+    candidate = Path(value)
+    if candidate.is_absolute() or candidate.exists():
+        return candidate.resolve().as_uri()
+    return value
 
 
 def _driver_verbs(registry: DriverRegistry) -> tuple[str, ...]:

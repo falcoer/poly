@@ -18,6 +18,7 @@ from poly.driver import (
 from poly.model import (
     ActionClaim,
     ActionSpec,
+    Constraint,
     DriverProposal,
     JsonValue,
     Plan,
@@ -28,6 +29,8 @@ from poly.model import (
 from poly.workspace import (
     WORKSPACE_MANIFEST,
     WORKSPACE_SCHEMA,
+    LockedSource,
+    SourceDeclaration,
     WorkspaceError,
     add_manifest_node,
     compile_workspace,
@@ -118,12 +121,25 @@ class ConstructionPlanningProvider:
         }
         if natures:
             spec["natures"] = list(natures)
+        repository = request.parameters.get("poly.source.url")
+        if repository:
+            if kind != "repository":
+                raise ConstructionError("a Git source requires node kind 'repository'")
+            source: dict[str, JsonValue] = {"driver": "git", "url": repository}
+            requested_ref = request.parameters.get("poly.source.ref")
+            if requested_ref:
+                source["ref"] = requested_ref
+            spec["source"] = source
+        resolution_key = f"poly/source-resolved:{node_id}"
+        manifest_key = f"poly/manifest-added:{node_id}"
         return ActionSpec(
             f"construct.add:{node_id}",
             self.name,
             "add",
             "poly/construction/add",
             (),
+            requires=(frozenset((Constraint(resolution_key),)) if repository else frozenset()),
+            produces=frozenset((Constraint(manifest_key),)),
             claims=frozenset(
                 (
                     ActionClaim("poly/construction/add", f"node:{node_id}"),
@@ -284,7 +300,7 @@ class ConstructionActionHandler:
             return DriverExecutionResult(
                 False, f"unsupported construction operation: {action.operation}"
             )
-        except (KeyError, json.JSONDecodeError, WorkspaceError) as error:
+        except (KeyError, OSError, json.JSONDecodeError, WorkspaceError) as error:
             return DriverExecutionResult(False, str(error))
 
     def _init(self, action: ActionSpec, context: ExecutionContext) -> DriverExecutionResult:
@@ -303,6 +319,29 @@ class ConstructionActionHandler:
             isinstance(nature, str) for nature in natures_value
         ):
             raise WorkspaceError("node natures must be a string list")
+        source_value = spec.get("source")
+        source = None
+        locked = None
+        if source_value is not None:
+            if not isinstance(source_value, dict):
+                raise WorkspaceError("node source must be a mapping")
+            source = SourceDeclaration(
+                str(source_value["driver"]),
+                str(source_value["url"]),
+                str(source_value["ref"]) if "ref" in source_value else None,
+            )
+            resolution_path = context.run_directory / "resolutions" / f"{node_id}.json"
+            resolution = json.loads(resolution_path.read_text(encoding="utf-8"))
+            if not isinstance(resolution, dict):
+                raise WorkspaceError("source resolution must be a mapping")
+            locked = LockedSource(
+                node_id,
+                source.driver,
+                source.url,
+                source.ref,
+                str(resolution["commit"]),
+                str(resolution["ref-kind"]),
+            )
         compiled = add_manifest_node(
             context.workspace,
             node_id=node_id,
@@ -310,6 +349,8 @@ class ConstructionActionHandler:
             kind=str(spec["kind"]),
             path=str(spec["path"]),
             natures=tuple(natures_value),
+            source=source,
+            locked_source=locked,
         )
         return DriverExecutionResult(
             True,

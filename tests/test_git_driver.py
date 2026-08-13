@@ -47,7 +47,7 @@ def test_git_driver_manifest_uses_public_sdk() -> None:
     assert_manifest_compatible(registration.manifest)
     assert registration.manifest.name == GIT_DRIVER_NAME
     assert registration.manifest.capabilities == frozenset(
-        (DriverCapability.INSPECT, DriverCapability.PLAN)
+        (DriverCapability.INSPECT, DriverCapability.PLAN, DriverCapability.EXECUTE)
     )
 
 

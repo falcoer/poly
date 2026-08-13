@@ -139,8 +139,9 @@ sources:
 - `poly init` uses the lock by default and verifies the final checkout HEAD.
 - Missing, stale, or inconsistent lock data is a diagnostic. Poly does not
   silently move a locked checkout.
-- A future explicit `poly update`/lock operation may resolve requested refs and
-  rewrite the lock atomically.
+- `poly update` resolves requested refs, safely materializes and verifies the
+  resulting commits, then rewrites the lock. `poly lock --from-workspace`
+  explicitly adopts clean local `HEAD` commits.
 - Secrets, credentials, machine-specific paths, cleanliness, and local branch
   state never belong in the lock.
 
@@ -201,3 +202,15 @@ Given only a clone of the root repository:
 7. It rebuilds `.poly/state` and emits the complete job report.
 
 No `poly add` is required during restoration.
+
+## Local worktree versus shared lock
+
+The committed lock is the reproducible shared reference, not a continuously
+updated mirror of local worktrees. Git clients such as EGit may advance a child
+branch independently. Poly preserves that checkout and reports its relationship
+to the lock. Interactive commands operate on the observed worktree; locked CI
+or restoration can require exact correspondence.
+
+An explicit adoption or update is required before the root repository records a
+new shared composition. This prevents silent lock churn while avoiding the false
+impression that an older lock is the latest branch state.

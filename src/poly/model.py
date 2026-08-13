@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 
 type JsonScalar = str | int | float | bool | None
@@ -121,6 +121,7 @@ class PlanningRequest:
     selected_node_ids: tuple[str, ...]
     parameters: dict[str, str] = field(default_factory=dict)
     initial_constraints: frozenset[Constraint] = frozenset()
+    workspace: Path | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "verb", _required(self.verb, "verb"))
@@ -130,6 +131,8 @@ class PlanningRequest:
         object.__setattr__(
             self, "parameters", MappingProxyType(dict(sorted(self.parameters.items())))
         )
+        if self.workspace is not None:
+            object.__setattr__(self, "workspace", self.workspace.resolve())
 
 
 @dataclass(frozen=True, slots=True)

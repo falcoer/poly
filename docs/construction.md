@@ -39,10 +39,12 @@ root `.gitignore`. Re-running `init` validates and reconciles these generated
 artifacts.
 
 Adding a node records its stable identifier, kind, parent-relative path, and
-optional natures without materializing a Git source. Repository paths enter the
-managed ignore block; removal deletes only the corresponding declaration and
-managed rule, never the repository directory. YAML comments and ordering, plus
-all user-owned ignore rules, are preserved.
+optional natures. With `--repo`, the same composite job resolves the requested
+Git ref, writes its immutable lock entry, updates the ignore block, and
+materializes the checkout. Without `--repo`, it remains a structural declaration.
+Repository paths enter the managed ignore block; removal deletes only the
+corresponding declaration and managed rule, never the repository directory.
+YAML comments and ordering, plus all user-owned ignore rules, are preserved.
 
 Unknown fields, duplicate identifiers, graph cycles, lexical or symlink path
 escapes, case-insensitive collisions, stale locks, embedded credentials, and

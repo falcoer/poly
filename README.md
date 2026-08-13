@@ -32,8 +32,9 @@ The version 1 contract is implemented: manifests and locks are validated and
 compiled into rebuildable state, declared identities are enriched by Git and
 Maven inspection, and undeclared repositories remain explicit `observed-only`
 nodes. Construction now uses the same negotiated, frozen plans and execution
-runtime as technology verbs. Clone/fetch/checkout hydration remains deferred to
-0.10.
+runtime as technology verbs. Root bootstrap, recursive Git hydration, moving-ref
+updates, and adoption of clean local `HEAD` commits are implemented through the
+same reportable action model.
 
 ## Development
 
@@ -75,9 +76,14 @@ poly drivers
 poly controllers
 poly init --name example --plan
 poly init --name example
-poly add service-api --kind repository --path services/api
+poly add service-api --path services/api \
+  --repo https://git.example.com/team/service-api.git --ref main
 poly add service-api-reactor --parent service-api --path . --nature maven/reactor
 poly remove service-api-reactor
+poly hydrate
+poly inspect --remote
+poly lock --from-workspace --select service-api
+poly update --select service-api
 poly status
 poly verify --select service-api-reactor
 poly actions
@@ -96,9 +102,25 @@ only the frozen plan printed in the same document.
 delimited root `.gitignore` block. Re-running it reconciles those generated
 artifacts without changing authored composition. `poly add` and `poly remove`
 edit the YAML round-trip document while preserving comments and user-owned
-ignore rules; they declare structure but do not yet materialize Git sources.
+ignore rules. A Git-backed `add --repo` resolves, locks, and materializes its
+source as one composite job; a structural add without `--repo` only declares the
+node.
 All three are ordinary constructor-driver proposals rather than a private CLI
 execution path.
+
+Clone a committed control repository and restore every locked descendant in one
+reported job:
+
+```shell
+poly init https://git.example.com/team/workspace.git ./workspace --ref main
+```
+
+Normal restoration follows `poly.lock.yaml`. A branch advanced by Eclipse/EGit
+is not reset implicitly: inspection reports `ahead-of-lock`, `behind-lock`, or
+`diverged`. `poly lock --from-workspace` explicitly adopts clean local `HEAD`
+commits; `poly update` resolves requested remote references, safely materializes
+and verifies them, then rewrites the lock. `poly inspect --remote` compares the
+lock with the remote without fetching or modifying local repositories.
 
 The project advances directly on `main`. A milestone tag is created by CI only
 after every required check succeeds on the exact milestone commit.
