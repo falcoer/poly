@@ -28,6 +28,8 @@ owns committed `poly.yaml` and `poly.lock.yaml`, while independently versioned
 child repositories and generated `.poly/` state are excluded through a
 Poly-managed root `.gitignore` block.
 
+For a command-oriented tour, see the [Poly cookbook](docs/cookbook/README.md).
+
 The version 1 contract is implemented: manifests and locks are validated and
 compiled into rebuildable state, declared identities are enriched by Git and
 Maven inspection, and undeclared repositories remain explicit `observed-only`

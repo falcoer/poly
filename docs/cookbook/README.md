@@ -1,0 +1,41 @@
+# Cookbook Poly
+
+Ce cookbook propose un tour pratique de Poly 0.10, depuis la création d'un
+workspace jusqu'à son hydratation Git et à l'exécution de jobs. Les exemples
+utilisent l'interface publique réellement exposée par la CLI.
+
+## Prérequis généraux
+
+- Python 3.12, Git et [uv](https://docs.astral.sh/uv/) sont disponibles ;
+- le dépôt Poly est cloné et `uv sync --locked --all-groups` a été exécuté ;
+- les commandes sont lancées depuis le dépôt Poly avec `uv run poly` ;
+- les dépôts Git privés utilisent l'authentification déjà configurée dans Git,
+  sans identifiant incorporé dans les URL.
+
+## Table des matières
+
+- [Prise en main et inspection](getting-started.md)
+- [Composition et cycle Git](git-workspaces.md)
+- [Planification, exécution et rapports](jobs-and-reports.md)
+- [Valeurs énumérées](enumerations.md)
+- [Glossaire](glossary.md)
+
+## Parcours conseillé
+
+1. [Initialiser un workspace local](getting-started.md#comment-initialiser-un-workspace-local-vide-).
+2. [Ajouter un dépôt enfant](git-workspaces.md#comment-ajouter-et-matérialiser-un-dépôt-git-enfant-).
+3. [Inspecter l'état local et distant](git-workspaces.md#comment-détecter-les-écarts-entre-head-le-lock-et-la-branche-distante-).
+4. [Simuler un pull EGit et adopter son résultat](git-workspaces.md#comment-adopter-dans-le-lock-un-pull-réalisé-depuis-eclipse-).
+5. [Planifier puis exécuter un job](jobs-and-reports.md#comment-prévisualiser-puis-exécuter-un-job-).
+
+## Validation des exemples
+
+| Périmètre | Validation |
+|---|---|
+| Initialisation, inspection et composition locale | Exécuté par les tests CLI. |
+| Ajout, résolution, clone, hydratation et mise à jour Git | Exécuté avec des dépôts Git locaux temporaires. |
+| Pull externe puis `lock --from-workspace` | Exécuté avec le même effet qu'un pull EGit. |
+| Bootstrap récursif depuis un dépôt racine | Exécuté avec deux dépôts enfants imbriqués. |
+| URL `git.example.com` des recettes | **Non exécuté** : serveur volontairement fictif à remplacer. |
+| Exemples PowerShell | Vérifiés statiquement contre les mêmes options CLI ; non exécutés faute de PowerShell dans l'environnement de validation. |
+
