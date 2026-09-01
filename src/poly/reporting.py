@@ -210,9 +210,7 @@ def _concise_document(
         plan_diagnostics = plan.get("diagnostics", [])
         for diagnostic in plan_diagnostics if isinstance(plan_diagnostics, list) else []:
             if isinstance(diagnostic, dict):
-                lines.append(
-                    _styled(f"⚠ WARN     {diagnostic.get('message')}", "yellow", color)
-                )
+                lines.append(_styled(f"⚠ WARN     {diagnostic.get('message')}", "yellow", color))
 
     run = document.get("run")
     if isinstance(run, dict):
@@ -226,9 +224,7 @@ def _concise_document(
     if kind == "drivers":
         _concise_named_items(lines, document.get("drivers"), "driver", verbosity, color)
     elif kind == "controllers":
-        _concise_named_items(
-            lines, document.get("controllers"), "controller", verbosity, color
-        )
+        _concise_named_items(lines, document.get("controllers"), "controller", verbosity, color)
     elif kind == "inspection":
         inventory = document.get("inventory", {})
         nodes = inventory.get("nodes", []) if isinstance(inventory, dict) else []
