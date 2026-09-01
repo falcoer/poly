@@ -124,13 +124,15 @@ def test_interactive_renderer_has_command_statuses_and_distinct_completion(
         exit_code=0,
     )
 
-    assert concise.splitlines()[0] == "> COMMAND  poly verify --select node"
-    assert "✓ OK       verify:node" in concise
-    assert concise.splitlines()[-1].startswith("✓ SUCCESS  poly verify")
+    assert concise.splitlines()[0] == "VERIFYING node ..."
+    assert concise.splitlines()[1].startswith("        PLAN")
+    assert "                ✓ OK       verify:node" in concise
+    assert concise.splitlines()[-2].startswith("        ✓ SUCCESS  poly verify")
     assert "Schema: poly.report/v1" in verbose
+    assert "        COMMAND  poly verify --select node -vv" in verbose
     assert "\x1b[32m" in verbose
     assert "COMMAND" not in quiet
-    assert quiet.splitlines()[-1].startswith("✓ SUCCESS")
+    assert quiet.splitlines()[-2].startswith("        ✓ SUCCESS")
 
 
 def test_interactive_renderer_distinguishes_failure_blocking_and_logs(tmp_path: Path) -> None:
@@ -161,7 +163,7 @@ def test_interactive_renderer_distinguishes_failure_blocking_and_logs(tmp_path: 
     assert "✗ KO       verify:node (fixture/verify) · verification failed" in output
     assert "stderr: broken" in output
     assert "⚠ WARN     follow-up · blocked by" in output
-    assert output.splitlines()[-1].startswith("✗ FAILURE  poly verify")
+    assert output.splitlines()[-2].startswith("        ✗ FAILURE  poly verify")
 
 
 def test_json_yaml_and_xml_render_the_same_canonical_document(tmp_path: Path) -> None:
