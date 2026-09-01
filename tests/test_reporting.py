@@ -133,6 +133,37 @@ def test_interactive_renderer_has_command_statuses_and_distinct_completion(
     assert quiet.splitlines()[-1].startswith("✓ SUCCESS")
 
 
+def test_interactive_renderer_distinguishes_failure_blocking_and_logs(tmp_path: Path) -> None:
+    _, planning = _snapshots(tmp_path)
+    result = RunResult(
+        "plan",
+        RunStatus.FAILED,
+        (
+            ActionResult(
+                "verify:node",
+                ActionState.FAILED,
+                ActionAttempt(False, "verification failed", 2, "", "broken"),
+            ),
+            ActionResult("follow-up", ActionState.BLOCKED, None, ("verify:node",)),
+        ),
+        (),
+        (),
+    )
+
+    output = render_cli(
+        run_document(planning, result),
+        "poly verify --select node -v",
+        verbosity=1,
+        color=False,
+        exit_code=1,
+    )
+
+    assert "✗ KO       verify:node (fixture/verify) · verification failed" in output
+    assert "stderr: broken" in output
+    assert "⚠ WARN     follow-up · blocked by" in output
+    assert output.splitlines()[-1].startswith("✗ FAILURE  poly verify")
+
+
 def test_json_yaml_and_xml_render_the_same_canonical_document(tmp_path: Path) -> None:
     _, planning = _snapshots(tmp_path)
     document = planning_document(planning)
