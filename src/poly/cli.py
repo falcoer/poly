@@ -359,7 +359,6 @@ def _report_options(parser: argparse.ArgumentParser) -> None:
     )
 
 
-
 def _write_output(
     document: ReportDocument,
     options: argparse.Namespace,
