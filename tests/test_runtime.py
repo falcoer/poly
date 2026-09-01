@@ -12,6 +12,7 @@ from poly.runtime import (
     ActionState,
     Executor,
     LocalActionRunner,
+    RunEvent,
     RunStatus,
 )
 
@@ -87,7 +88,7 @@ def test_executor_runs_ready_actions_and_blocks_failed_dependants(tmp_path: Path
 def test_executor_publishes_each_event_as_it_happens(tmp_path: Path) -> None:
     runner = StubRunner({"action": ActionAttempt(True, "done")}, [])
     context = ExecutionContext(tmp_path, tmp_path / ".poly" / "runs" / "plan")
-    events = []
+    events: list[RunEvent] = []
 
     result = Executor(runner, events.append).execute(_plan((_action("action"),)), context)
 
