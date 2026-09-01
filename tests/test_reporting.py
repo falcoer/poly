@@ -169,6 +169,30 @@ def test_interactive_renderer_distinguishes_failure_blocking_and_logs(tmp_path: 
     assert output.splitlines()[-2].startswith("        ✗ FAILURE  poly verify")
 
 
+def test_interactive_renderer_reports_none_for_an_empty_plan(tmp_path: Path) -> None:
+    _, planning = _snapshots(tmp_path)
+    empty_plan = Plan("empty-plan", "verify", ("node",), (), (), (), PlanStatus.EMPTY)
+    empty_planning = PlanningSnapshot(
+        planning.inspection,
+        planning.request,
+        (),
+        (),
+        empty_plan,
+    )
+    result = RunResult("empty-plan", RunStatus.EMPTY, (), (), ())
+
+    output = render_cli(
+        run_document(empty_planning, result),
+        "poly verify --select node",
+        color=True,
+        exit_code=0,
+    )
+
+    assert "\x1b[90m· NONE     poly verify\x1b[0m" in output
+    assert "SUCCESS" not in output
+    assert "FAILURE" not in output
+
+
 def test_streaming_renderer_separates_start_events_logs_and_completion(tmp_path: Path) -> None:
     _, planning = _snapshots(tmp_path)
     result = RunResult(
