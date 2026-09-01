@@ -20,6 +20,7 @@ from poly.reporting import (
     inspection_document,
     planning_document,
     render,
+    render_cli,
     run_document,
 )
 from poly.runtime import ActionAttempt, ActionResult, ActionState, RunResult, RunStatus
@@ -81,6 +82,55 @@ def test_run_document_keeps_attempt_logs_and_state(tmp_path: Path) -> None:
     assert action["state"] == "succeeded"
     assert action["attempt"]["stdout"] == "output"
     assert "stdout: output" in render(document, "text")
+
+
+def test_interactive_renderer_has_command_statuses_and_distinct_completion(
+    tmp_path: Path,
+) -> None:
+    _, planning = _snapshots(tmp_path)
+    result = RunResult(
+        "plan",
+        RunStatus.SUCCEEDED,
+        (
+            ActionResult(
+                "verify:node",
+                ActionState.SUCCEEDED,
+                ActionAttempt(True, "verified", 0, "details", ""),
+            ),
+        ),
+        (),
+        (),
+    )
+    document = run_document(planning, result)
+
+    concise = render_cli(
+        document,
+        "poly verify --select node",
+        color=False,
+        exit_code=0,
+    )
+    verbose = render_cli(
+        document,
+        "poly verify --select node -vv",
+        verbosity=2,
+        color=True,
+        exit_code=0,
+    )
+    quiet = render_cli(
+        document,
+        "poly verify --select node -q",
+        verbosity=-1,
+        color=False,
+        exit_code=0,
+    )
+
+    assert concise.splitlines()[0] == "› COMMAND  poly verify --select node"
+    assert "✓ OK       verify:node" in concise
+    assert concise.splitlines()[-1].startswith("✓ SUCCESS  poly verify")
+    assert "Schema: poly.report/v1" in verbose
+    assert "\x1b[32m" in verbose
+    assert "COMMAND" not in quiet
+    assert quiet.splitlines()[-1].startswith("✓ SUCCESS")
 
 
 def test_json_yaml_and_xml_render_the_same_canonical_document(tmp_path: Path) -> None:
