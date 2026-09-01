@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -29,6 +31,7 @@ from poly.reporting import (
     inspection_document,
     planning_document,
     render,
+    render_cli,
     run_document,
 )
 from poly.runtime import Executor, LocalActionRunner, RunStatus
@@ -52,7 +55,9 @@ def build_registry() -> DriverRegistry:
 def main(arguments: list[str] | None = None) -> int:
     registry = build_registry()
     parser = _parser(registry)
-    options = parser.parse_args(arguments)
+    raw_arguments = list(sys.argv[1:] if arguments is None else arguments)
+    options = parser.parse_args(raw_arguments)
+    command = shlex.join(["poly", *raw_arguments])
     if options.command == "driver":
         try:
             scaffolded = scaffold_driver(
@@ -65,7 +70,7 @@ def main(arguments: list[str] | None = None) -> int:
         print(f"Created {scaffolded.distribution_name} in {scaffolded.target}")
         return 0
     if options.command == "init" and options.root_repository:
-        return _bootstrap_root(parser, options, registry)
+        return _bootstrap_root(parser, options, registry, command)
     workspace = options.workspace.resolve()
     if not workspace.is_dir():
         parser.error(f"workspace does not exist or is not a directory: {workspace}")
@@ -74,16 +79,16 @@ def main(arguments: list[str] | None = None) -> int:
             document = StateStore(workspace).load_report(options.run_id)
         except StateError as error:
             parser.error(str(error))
-        sys.stdout.write(render(document, options.format))
+        _write_output(document, options, command, 0)
         return 0
     if options.command == "controllers":
         plane = _control_plane(registry)
-        sys.stdout.write(
-            render(controllers_document(workspace, plane.descriptors()), options.format)
-        )
+        document = controllers_document(workspace, plane.descriptors())
+        _write_output(document, options, command, 0)
         return 0
     if options.command == "drivers":
-        sys.stdout.write(render(drivers_document(workspace, registry.manifests()), options.format))
+        document = drivers_document(workspace, registry.manifests())
+        _write_output(document, options, command, 0)
         return 0
 
     try:
@@ -131,7 +136,7 @@ def main(arguments: list[str] | None = None) -> int:
                 _save_run_if_initialized(workspace, snapshot.plan.id, document)
                 exit_code = 0 if result.status in {RunStatus.SUCCEEDED, RunStatus.EMPTY} else 1
 
-    sys.stdout.write(render(document, options.format))
+    _write_output(document, options, command, exit_code)
     return exit_code
 
 
@@ -224,6 +229,7 @@ def _bootstrap_root(
     parser: argparse.ArgumentParser,
     options: argparse.Namespace,
     registry: DriverRegistry,
+    command: str,
 ) -> int:
     if options.target is None:
         parser.error("root repository bootstrap requires a target directory")
@@ -242,15 +248,16 @@ def _bootstrap_root(
         parameters["poly.source.ref"] = options.ref
     snapshot = prepare_planning(registry, inspection, "bootstrap", (), parameters)
     if options.plan_only:
-        sys.stdout.write(render(planning_document(snapshot), options.format))
-        return 0 if snapshot.plan.status.value == "executable" else 1
+        exit_code = 0 if snapshot.plan.status.value == "executable" else 1
+        _write_output(planning_document(snapshot), options, command, exit_code)
+        return exit_code
     with tempfile.TemporaryDirectory(prefix="poly-bootstrap-", dir=parent) as run_path:
         result = Executor(_controller_runner(registry, options.controller)).execute(
             snapshot.plan, ExecutionContext(parent, Path(run_path))
         )
         root_document = run_document(snapshot, result)
         if result.status is not RunStatus.SUCCEEDED:
-            sys.stdout.write(render(root_document, options.format))
+            _write_output(root_document, options, command, 1)
             return 1
     try:
         validate_workspace(target)
@@ -283,8 +290,9 @@ def _bootstrap_root(
         },
     ]
     StateStore(target).save_run(hydration.plan.id, document)
-    sys.stdout.write(render(document, options.format))
-    return 0 if hydrated.status in {RunStatus.SUCCEEDED, RunStatus.EMPTY} else 1
+    exit_code = 0 if hydrated.status in {RunStatus.SUCCEEDED, RunStatus.EMPTY} else 1
+    _write_output(document, options, command, exit_code)
+    return exit_code
 
 
 def _controller_runner(
@@ -326,6 +334,53 @@ def _report_options(parser: argparse.ArgumentParser) -> None:
         help="workspace root (default: current directory)",
     )
     parser.add_argument("--format", choices=REPORT_FORMATS, default="text")
+    verbosity = parser.add_mutually_exclusive_group()
+    verbosity.add_argument(
+        "-q",
+        "--quiet",
+        action="store_const",
+        const=-1,
+        default=0,
+        dest="verbosity",
+        help="print only the final command result",
+    )
+    verbosity.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        dest="verbosity",
+        help="increase detail; use -vv for the complete canonical report",
+    )
+    parser.add_argument(
+        "--color",
+        choices=("auto", "always", "never"),
+        default="auto",
+        help="colorize interactive text output (default: auto)",
+    )
+
+
+
+def _write_output(
+    document: ReportDocument,
+    options: argparse.Namespace,
+    command: str,
+    exit_code: int,
+) -> None:
+    if options.format != "text":
+        sys.stdout.write(render(document, options.format))
+        return
+    color = options.color == "always" or (
+        options.color == "auto" and sys.stdout.isatty() and "NO_COLOR" not in os.environ
+    )
+    sys.stdout.write(
+        render_cli(
+            document,
+            command,
+            verbosity=options.verbosity,
+            color=color,
+            exit_code=exit_code,
+        )
+    )
 
 
 def _planning_options(parser: argparse.ArgumentParser) -> None:
