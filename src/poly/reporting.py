@@ -163,6 +163,170 @@ def render(document: ReportDocument, format_name: str) -> str:
     raise ValueError(f"unsupported report format: {format_name}")
 
 
+def render_cli(
+    document: ReportDocument,
+    command: str,
+    *,
+    verbosity: int = 0,
+    color: bool = False,
+    exit_code: int = 0,
+) -> str:
+    """Render a compact interactive view without changing the canonical report."""
+
+    lines: list[str] = []
+    if verbosity >= 0:
+        lines.append(_styled(f"› COMMAND  {command}", "cyan", color))
+
+    if verbosity >= 2:
+        lines.extend(_text(document).rstrip().splitlines())
+    elif verbosity >= 0:
+        _concise_document(lines, document, verbosity, color)
+
+    lines.append(_styled("─" * 72, "muted", color))
+    lines.append(_completion_line(document, exit_code, color))
+    return "\n".join(lines) + "\n"
+
+
+def _concise_document(
+    lines: list[str], document: ReportDocument, verbosity: int, color: bool
+) -> None:
+    diagnostics = document.get("diagnostics", [])
+    for diagnostic in diagnostics if isinstance(diagnostics, list) else []:
+        if isinstance(diagnostic, dict):
+            message = diagnostic.get("message")
+            lines.append(_styled(f"⚠ WARN     {message}", "yellow", color))
+
+    plan = document.get("plan")
+    if isinstance(plan, dict):
+        planned = plan.get("planned_actions", [])
+        count = len(planned) if isinstance(planned, list) else 0
+        lines.append(
+            _styled(
+                f"› PLAN     {plan.get('id')} · {count} action(s) · {plan.get('status')}",
+                "cyan",
+                color,
+            )
+        )
+        plan_diagnostics = plan.get("diagnostics", [])
+        for diagnostic in plan_diagnostics if isinstance(plan_diagnostics, list) else []:
+            if isinstance(diagnostic, dict):
+                lines.append(
+                    _styled(f"⚠ WARN     {diagnostic.get('message')}", "yellow", color)
+                )
+
+    run = document.get("run")
+    if isinstance(run, dict):
+        actions = run.get("actions", [])
+        for action in actions if isinstance(actions, list) else []:
+            if isinstance(action, dict):
+                _concise_action(lines, action, verbosity, color)
+        return
+
+    kind = str(document.get("kind", "report"))
+    if kind == "drivers":
+        _concise_named_items(lines, document.get("drivers"), "driver", verbosity, color)
+    elif kind == "controllers":
+        _concise_named_items(
+            lines, document.get("controllers"), "controller", verbosity, color
+        )
+    elif kind == "inspection":
+        inventory = document.get("inventory", {})
+        nodes = inventory.get("nodes", []) if isinstance(inventory, dict) else []
+        count = len(nodes) if isinstance(nodes, list) else 0
+        lines.append(_styled(f"✓ OK       inspection · {count} node(s)", "green", color))
+        if verbosity >= 1:
+            for node in nodes if isinstance(nodes, list) else []:
+                if isinstance(node, dict):
+                    lines.append(f"           {node.get('id')} · {node.get('path')}")
+    elif kind == "actions":
+        catalogs = document.get("verbs", [])
+        for catalog in catalogs if isinstance(catalogs, list) else []:
+            if isinstance(catalog, dict):
+                applicable = catalog.get("applicable_actions", [])
+                count = len(applicable) if isinstance(applicable, list) else 0
+                lines.append(
+                    _styled(
+                        f"✓ OK       {catalog.get('verb')} · {count} applicable action(s)",
+                        "green",
+                        color,
+                    )
+                )
+
+
+def _concise_named_items(
+    lines: list[str],
+    value: JsonValue | None,
+    noun: str,
+    verbosity: int,
+    color: bool,
+) -> None:
+    items = value if isinstance(value, list) else []
+    lines.append(_styled(f"✓ OK       {len(items)} {noun}(s)", "green", color))
+    if verbosity >= 1:
+        for item in items:
+            if isinstance(item, dict):
+                version = f" {item.get('version')}" if item.get("version") else ""
+                lines.append(f"           {item.get('name')}{version}")
+
+
+def _concise_action(
+    lines: list[str], action: dict[str, JsonValue], verbosity: int, color: bool
+) -> None:
+    state = str(action.get("state", "unknown"))
+    marker, label, tone = _state_style(state)
+    line = f"{marker} {label:<8} {action.get('action_id')}"
+    attempt = action.get("attempt")
+    if isinstance(attempt, dict) and (verbosity >= 1 or state != "succeeded"):
+        summary = attempt.get("summary")
+        if summary:
+            line += f" · {str(summary).replace(chr(10), ' ')}"
+    blocked = action.get("blocked_by")
+    if blocked:
+        line += f" · blocked by {_compact(blocked)}"
+    lines.append(_styled(line, tone, color))
+
+    if isinstance(attempt, dict) and verbosity >= 1:
+        for stream_name in ("stdout", "stderr"):
+            stream = attempt.get(stream_name)
+            if stream:
+                for output_line in str(stream).rstrip().splitlines():
+                    lines.append(f"           {stream_name}: {output_line}")
+
+
+def _completion_line(document: ReportDocument, exit_code: int, color: bool) -> str:
+    request = document.get("request", {})
+    verb = request.get("verb") if isinstance(request, dict) else document.get("kind", "command")
+    run = document.get("run", {})
+    actions = run.get("actions", []) if isinstance(run, dict) else []
+    counts: dict[str, int] = {}
+    for action in actions if isinstance(actions, list) else []:
+        if isinstance(action, dict):
+            state = str(action.get("state", "unknown"))
+            counts[state] = counts.get(state, 0) + 1
+    result = " · ".join(f"{value} {state}" for state, value in sorted(counts.items()))
+    suffix = f" · {result}" if result else ""
+    if exit_code == 0:
+        return _styled(f"✓ SUCCESS  poly {verb}{suffix}", "green", color)
+    return _styled(f"✗ FAILURE  poly {verb}{suffix}", "red", color)
+
+
+def _state_style(state: str) -> tuple[str, str, str]:
+    if state == "succeeded":
+        return "✓", "OK", "green"
+    if state == "failed":
+        return "✗", "KO", "red"
+    if state in {"blocked", "skipped"}:
+        return "⚠", "WARN", "yellow"
+    return "›", state.upper(), "cyan"
+
+
+def _styled(value: str, tone: str, enabled: bool) -> str:
+    if not enabled:
+        return value
+    codes = {"green": "32", "red": "31", "yellow": "33", "cyan": "36", "muted": "90"}
+    return f"\x1b[{codes[tone]}m{value}\x1b[0m"
+
+
 def _node_document(node: Node) -> ReportDocument:
     return {
         "id": node.id,
