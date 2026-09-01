@@ -136,7 +136,7 @@ and a framed success or failure summary. For executed plans, the heading and
 plan are flushed before work begins; `RUNNING`, `OK`, `KO`, and `WARN` lines
 then appear as each action changes state, so long operations such as
 `poly hydrate` never wait for the final report before showing progress. Use
-`-q` for only the final result,
+`-q` for only the unchanged final result,
 `-v` to also show the exact invoked command and process output, and `-vv` for
 the complete canonical report. Colors are automatic on terminals and can be
 controlled with `--color auto|always|never`; `NO_COLOR` is honored. Structured
