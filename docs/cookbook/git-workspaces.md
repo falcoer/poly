@@ -155,7 +155,9 @@ poly hydrate `
 ### Résultat attendu
 
 Le `HEAD` du dépôt sélectionné correspond au commit de `poly.lock.yaml`. Pour
-tous les dépôts, omettre `--select`.
+tous les dépôts, omettre `--select`. En format texte, Poly affiche le titre et
+le plan avant le premier clone ou checkout, puis une ligne `RUNNING` et un état
+`OK`, `KO` ou `WARN` pour chaque action au fil de l'hydratation.
 
 ## Comment détecter les écarts entre HEAD, le lock et la branche distante ?
 

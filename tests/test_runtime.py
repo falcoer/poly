@@ -84,6 +84,22 @@ def test_executor_runs_ready_actions_and_blocks_failed_dependants(tmp_path: Path
     assert [event.sequence for event in result.events] == list(range(1, len(result.events) + 1))
 
 
+def test_executor_publishes_each_event_as_it_happens(tmp_path: Path) -> None:
+    runner = StubRunner({"action": ActionAttempt(True, "done")}, [])
+    context = ExecutionContext(tmp_path, tmp_path / ".poly" / "runs" / "plan")
+    events = []
+
+    result = Executor(runner, events.append).execute(_plan((_action("action"),)), context)
+
+    assert events == list(result.events)
+    assert [event.state for event in events] == [
+        ActionState.PLANNED,
+        ActionState.READY,
+        ActionState.RUNNING,
+        ActionState.SUCCEEDED,
+    ]
+
+
 def test_executor_does_not_run_empty_or_invalid_plans(tmp_path: Path) -> None:
     runner = StubRunner({}, [])
     context = ExecutionContext(tmp_path, tmp_path / ".poly" / "runs" / "plan")

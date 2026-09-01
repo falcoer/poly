@@ -18,6 +18,14 @@ The event stream also records `planned`, `ready`, and `running` transitions.
 Command attempts retain their exit code, standard output, standard error,
 summary, and structured driver details.
 
+For interactive text execution, the CLI subscribes to that event stream. It
+flushes the command heading and frozen-plan summary before invoking the first
+action, then flushes `running` and terminal action states immediately. The
+persisted report is still assembled from the completed `RunResult`; streaming
+does not change event ordering or the canonical machine-readable document.
+Quiet mode suppresses intermediate output, while JSON, YAML, and XML remain a
+single undecorated document.
+
 ## Local action adapter
 
 An action with a command is executed directly from the workspace with UTF-8

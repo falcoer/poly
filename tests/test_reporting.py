@@ -21,9 +21,12 @@ from poly.reporting import (
     planning_document,
     render,
     render_cli,
+    render_cli_completion,
+    render_cli_event,
+    render_cli_start,
     run_document,
 )
-from poly.runtime import ActionAttempt, ActionResult, ActionState, RunResult, RunStatus
+from poly.runtime import ActionAttempt, ActionResult, ActionState, RunEvent, RunResult, RunStatus
 
 
 def _snapshots(tmp_path: Path) -> tuple[InspectionSnapshot, PlanningSnapshot]:
@@ -164,6 +167,58 @@ def test_interactive_renderer_distinguishes_failure_blocking_and_logs(tmp_path: 
     assert "stderr: broken" in output
     assert "⚠ WARN     follow-up · blocked by" in output
     assert output.splitlines()[-2].startswith("        ✗ FAILURE  poly verify")
+
+
+def test_streaming_renderer_separates_start_events_logs_and_completion(tmp_path: Path) -> None:
+    _, planning = _snapshots(tmp_path)
+    result = RunResult(
+        "plan",
+        RunStatus.SUCCEEDED,
+        (
+            ActionResult(
+                "verify:node",
+                ActionState.SUCCEEDED,
+                ActionAttempt(True, "verified", 0, "details", ""),
+            ),
+        ),
+        (),
+        (),
+    )
+    document = run_document(planning, result)
+
+    start = render_cli_start(
+        planning_document(planning), "poly verify -v", verbosity=1, color=False
+    )
+    running = render_cli_event(
+        RunEvent(3, ActionState.RUNNING, "verify:node"),
+        planning.plan.actions[0],
+        verbosity=1,
+        color=False,
+    )
+    succeeded = render_cli_event(
+        RunEvent(4, ActionState.SUCCEEDED, "verify:node", "verified"),
+        planning.plan.actions[0],
+        verbosity=1,
+        color=False,
+    )
+    completion = render_cli_completion(document, verbosity=1, color=False, exit_code=0)
+
+    assert start.startswith("VERIFYING node ...\n")
+    assert "COMMAND  poly verify -v" in start
+    assert "PLAN     plan · 1 action(s) · executable" in start
+    assert "> RUNNING  verify:node (fixture/verify)" in running
+    assert "✓ OK       verify:node (fixture/verify) · verified" in succeeded
+    assert "stdout: details" in completion
+    assert "✓ SUCCESS  poly verify" in completion
+
+
+def test_inspection_completion_uses_cli_verb_instead_of_none(tmp_path: Path) -> None:
+    inspection, _ = _snapshots(tmp_path)
+
+    output = render_cli(inspection_document(inspection), "poly inspect", color=False, exit_code=0)
+
+    assert "✓ SUCCESS  poly inspect" in output
+    assert "poly None" not in output
 
 
 def test_json_yaml_and_xml_render_the_same_canonical_document(tmp_path: Path) -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
@@ -140,6 +141,7 @@ class Executor:
     """Execute only the actions already present in a plan."""
 
     runner: ActionRunner
+    event_listener: Callable[[RunEvent], None] | None = None
 
     def execute(self, plan: Plan, context: ExecutionContext) -> RunResult:
         if plan.status is PlanStatus.EMPTY:
@@ -166,6 +168,9 @@ class Executor:
                 )
                 for index, result in enumerate(blocked_results, start=1)
             )
+            if self.event_listener is not None:
+                for event in blocked_events:
+                    self.event_listener(event)
             return RunResult(
                 plan.id,
                 RunStatus.BLOCKED,
@@ -181,9 +186,15 @@ class Executor:
             RunEvent(index, ActionState.PLANNED, action.id)
             for index, action in enumerate(plan.actions, start=1)
         ]
+        if self.event_listener is not None:
+            for event in events:
+                self.event_listener(event)
 
         def transition(action_id: str, state: ActionState, message: str = "") -> None:
-            events.append(RunEvent(len(events) + 1, state, action_id, message))
+            event = RunEvent(len(events) + 1, state, action_id, message)
+            events.append(event)
+            if self.event_listener is not None:
+                self.event_listener(event)
 
         while remaining:
             ready = sorted(

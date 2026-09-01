@@ -140,7 +140,9 @@ sources:
 - `poly add --repo` resolves `source.ref` and atomically records its exact commit
   without creating or changing the declared child path.
 - `poly hydrate` materializes sources only from their immutable lock entries; it
-  does not reinterpret a moving selector.
+  does not reinterpret a moving selector. Its interactive text view flushes the
+  frozen plan before materialization and action state changes as they occur;
+  structured reports remain emitted only as complete canonical documents.
 - Missing, stale, or inconsistent lock data is a diagnostic. Poly does not
   silently move a locked checkout.
 - `poly update` resolves requested refs, safely materializes and verifies the

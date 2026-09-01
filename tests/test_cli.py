@@ -1,12 +1,24 @@
 from __future__ import annotations
 
+import io
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from poly.cli import main
+
+
+class RecordingOutput(io.StringIO):
+    def __init__(self) -> None:
+        super().__init__()
+        self.flushes: list[str] = []
+
+    def flush(self) -> None:
+        self.flushes.append(self.getvalue())
+        super().flush()
 
 
 def _workspace(path: Path) -> None:
@@ -97,6 +109,20 @@ def test_cli_executes_git_status_and_reports_logs(
     assert report["run"]["actions"][0]["state"] == "succeeded"
     assert report["run"]["actions"][0]["attempt"]["exit_code"] == 0
     assert (tmp_path / ".poly" / "runs" / report["plan"]["id"]).is_dir()
+
+
+def test_cli_flushes_heading_and_action_progress_before_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = RecordingOutput()
+    monkeypatch.setattr(sys, "stdout", output)
+
+    assert main(["init", "--workspace", str(tmp_path), "--name", "Streaming"]) == 0
+
+    assert any("INITIALIZING" in value and "SUCCESS" not in value for value in output.flushes)
+    assert any("> RUNNING" in value and "SUCCESS" not in value for value in output.flushes)
+    assert "✓ OK" in output.getvalue()
+    assert "✓ SUCCESS  poly init" in output.getvalue()
 
 
 def test_cli_rejects_unknown_verbs_and_invalid_parameters(

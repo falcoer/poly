@@ -6,6 +6,7 @@ les sélections et les rapports persistés.
 ## Table des matières
 
 - [Comment prévisualiser puis exécuter un job ?](#comment-prévisualiser-puis-exécuter-un-job-)
+- [Comment suivre une opération longue ?](#comment-suivre-une-opération-longue-)
 - [Comment vérifier un module Maven précis ?](#comment-vérifier-un-module-maven-précis-)
 - [Comment consulter le statut de tous les dépôts Git ?](#comment-consulter-le-statut-de-tous-les-dépôts-git-)
 - [Comment relire un rapport persistant dans un autre format ?](#comment-relire-un-rapport-persistant-dans-un-autre-format-)
@@ -47,6 +48,34 @@ poly run $verb --workspace $workspacePath
 Les deux premières commandes ont le même identifiant de plan et aucun effet
 d'exécution. La troisième produit un rapport contenant les transitions de
 chaque action.
+
+## Comment suivre une opération longue ?
+
+Le format texte interactif affiche et vide immédiatement le titre de la
+commande et le plan figé. Chaque action affiche ensuite `RUNNING` au démarrage,
+puis `OK`, `KO` ou `WARN` dès que son état terminal est connu. Le résumé final
+n'est donc plus le premier retour visible d'un `hydrate`, d'un build ou d'un
+test long.
+
+### Bash
+
+```bash
+poly hydrate --workspace workspace
+```
+
+### PowerShell
+
+```powershell
+poly hydrate --workspace workspace
+```
+
+### Résultat attendu
+
+Les lignes arrivent au fil de l'eau dans le terminal. `-q` conserve uniquement
+le résultat final ; `-v` ajoute la commande exacte et les sorties de processus ;
+`-vv` ajoute le rapport canonique complet en fin d'exécution. Les formats
+`json`, `yaml` et `xml` restent émis en un document complet, sans lignes de
+progression intercalées.
 
 ## Comment vérifier un module Maven précis ?
 

@@ -17,7 +17,7 @@ from poly.model import (
     Plan,
     RejectedCandidate,
 )
-from poly.runtime import ActionResult, RunEvent, RunResult
+from poly.runtime import ActionResult, ActionState, RunEvent, RunResult
 
 type ReportDocument = dict[str, JsonValue]
 REPORT_SCHEMA = "poly.report/v1"
@@ -213,6 +213,71 @@ def render_cli(
     return "\n".join(lines) + "\n"
 
 
+def render_cli_start(
+    document: ReportDocument,
+    command: str,
+    *,
+    verbosity: int = 0,
+    color: bool = False,
+) -> str:
+    """Render the portion known before execution starts."""
+
+    if verbosity < 0:
+        return ""
+    lines = [_styled(_command_heading(document), "cyan", color)]
+    if verbosity >= 1:
+        lines.append(f"{_SECTION_INDENT}COMMAND  {command}")
+    _concise_plan(lines, document, color)
+    return "\n".join(lines) + "\n"
+
+
+def render_cli_event(
+    event: RunEvent,
+    action: ActionSpec | None,
+    *,
+    verbosity: int = 0,
+    color: bool = False,
+) -> str:
+    """Render an execution transition suitable for immediate terminal output."""
+
+    if verbosity < 0 or event.state not in {
+        ActionState.RUNNING,
+        ActionState.SUCCEEDED,
+        ActionState.FAILED,
+        ActionState.BLOCKED,
+    }:
+        return ""
+    marker, label, tone = _state_style(event.state.value)
+    line = f"{marker} {label:<8} {event.action_id}"
+    if action is not None:
+        line += f" ({action.operation})"
+    if event.message:
+        suffix = "blocked by " if event.state is ActionState.BLOCKED else ""
+        line += f" · {suffix}{event.message.replace(chr(10), ' ')}"
+    return f"{_DETAIL_INDENT}{_styled(line, tone, color)}\n"
+
+
+def render_cli_completion(
+    document: ReportDocument,
+    *,
+    verbosity: int = 0,
+    color: bool = False,
+    exit_code: int = 0,
+) -> str:
+    """Render logs/details and the final frame after streamed execution."""
+
+    lines: list[str] = []
+    if verbosity >= 2:
+        lines.extend(f"{_SECTION_INDENT}{line}" for line in _text(document).rstrip().splitlines())
+    elif verbosity >= 1:
+        _append_run_logs(lines, document)
+    separator = _styled("─" * 48, "muted", color)
+    lines.append(f"{_SECTION_INDENT}{separator}")
+    lines.append(f"{_SECTION_INDENT}{_completion_line(document, exit_code, color)}")
+    lines.append(f"{_SECTION_INDENT}{separator}")
+    return "\n".join(lines) + "\n"
+
+
 def _command_heading(document: ReportDocument) -> str:
     request = document.get("request", {})
     kind = str(document.get("kind", "command"))
@@ -321,6 +386,37 @@ def _concise_document(
                 lines.append(f"{_SECTION_INDENT}{_styled(status, 'green', color)}")
 
 
+def _concise_plan(lines: list[str], document: ReportDocument, color: bool) -> None:
+    plan = document.get("plan")
+    if not isinstance(plan, dict):
+        return
+    planned = plan.get("planned_actions", [])
+    count = len(planned) if isinstance(planned, list) else 0
+    plan_line = f"PLAN     {plan.get('id')} · {count} action(s) · {plan.get('status')}"
+    lines.append(f"{_SECTION_INDENT}{_styled(plan_line, 'cyan', color)}")
+    diagnostics = plan.get("diagnostics", [])
+    for diagnostic in diagnostics if isinstance(diagnostics, list) else []:
+        if isinstance(diagnostic, dict):
+            warning = f"⚠ WARN     {diagnostic.get('message')}"
+            lines.append(f"{_DETAIL_INDENT}{_styled(warning, 'yellow', color)}")
+
+
+def _append_run_logs(lines: list[str], document: ReportDocument) -> None:
+    run = document.get("run", {})
+    actions = run.get("actions", []) if isinstance(run, dict) else []
+    for action in actions if isinstance(actions, list) else []:
+        if not isinstance(action, dict):
+            continue
+        attempt = action.get("attempt")
+        if not isinstance(attempt, dict):
+            continue
+        for stream_name in ("stdout", "stderr"):
+            stream = attempt.get(stream_name)
+            if stream:
+                for output_line in str(stream).rstrip().splitlines():
+                    lines.append(f"{_LOG_INDENT}{stream_name}: {output_line}")
+
+
 def _concise_named_items(
     lines: list[str],
     value: JsonValue | None,
@@ -370,7 +466,10 @@ def _concise_action(
 
 def _completion_line(document: ReportDocument, exit_code: int, color: bool) -> str:
     request = document.get("request", {})
-    verb = request.get("verb") if isinstance(request, dict) else document.get("kind", "command")
+    kind = str(document.get("kind", "command"))
+    fallback = "inspect" if kind == "inspection" else kind
+    verb = request.get("verb", fallback) if isinstance(request, dict) else fallback
+    verb = verb or fallback
     run = document.get("run", {})
     actions = run.get("actions", []) if isinstance(run, dict) else []
     counts: dict[str, int] = {}
