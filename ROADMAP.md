@@ -252,12 +252,64 @@ Cross-milestone invariants:
 - Excluded: commit, push, merge, and publication workflows for child
   repositories.
 
+
+## 0.10.1 — Daily workspace authoring and CLI clarity
+
+- Status: `in-progress`
+- Tag: `roadmap/0.10.1-daily-workflow`
+- Depends on: validated 0.10 Git materialization baseline.
+- Scope: correct the daily authoring workflow before extending the driver
+  runtime: keep declaration and locking lightweight, make hydration explicit,
+  complete contextual nature management, and make interactive command results
+  immediately readable.
+- Implemented:
+  - interactive text output is grouped by command with an action-oriented
+    heading, indented plan and action details, and a framed final result;
+  - successful, failed, and blocked actions are distinguished with graphical
+    markers and terminal colors;
+  - `-q`, default, `-v`, and `-vv` verbosity levels are available, with
+    `--color auto|always|never` and `NO_COLOR` support;
+  - JSON, YAML, and XML retain the unchanged canonical `poly.report/v1`
+    document.
+- Acceptance still required:
+  - `poly add <id> --repo <url> --ref <selector> --path <path>` updates
+    `poly.yaml`, resolves and atomically updates `poly.lock.yaml`, reconciles
+    the managed `.gitignore` block, and reports the result without cloning,
+    fetching, adopting, checking out, or otherwise materializing the child;
+  - every successful source-backed `add` leaves a composition immediately
+    ready for `poly hydrate`; resolution failure leaves no partial manifest,
+    lock, state, or ignore change;
+  - `poly hydrate` is the explicit normal command that materializes locked
+    child repositories; root bootstrap may still expose recursive hydration as
+    a documented phase of restoring a complete workspace;
+  - selector intent remains in `poly.yaml` while `poly.lock.yaml` always
+    records the exact resolved commit used by hydration;
+  - `poly nature list` returns the available natures contributed by loaded
+    drivers in alphabetical order;
+  - contextual `poly nature add` and `poly nature remove` resolve the nearest
+    workspace and current node, accept an explicit `.`, and support multiple
+    natures in one command;
+  - `poly drivers` exposes built-in and system drivers even for an empty
+    workspace, with automated regression coverage.
+- Checks: all 0.10 checks plus proof that source-backed `add` performs no child
+  worktree side effect; atomic add failure; explicit hydration; repeated
+  hydration idempotence; contextual and multi-value nature CLI tests; driver
+  enumeration on an empty workspace; interactive rendering snapshots with and
+  without colors; unchanged structured-report parity.
+- Demonstration: generate and execute a series of `poly add` declarations for a
+  large existing polyrepo model, commit only `poly.yaml`, `poly.lock.yaml`,
+  and `.gitignore`, then explicitly hydrate the same composition in a clean
+  target while retaining readable per-command results.
+- Excluded: installed external-driver lifecycle, which remains 0.11; advanced
+  tag-pattern/SemVer selector policies; parallel hydration; child
+  commit/push/merge workflows.
+
 ## 0.11 — Runtime driver lifecycle and inventory
 
 - Status: `pending`
 - Tag: `roadmap/0.11-driver-runtime`
-- Depends on: 0.9 common runtime; integration is exercised against the hydrated
-  workspace delivered by 0.10.
+- Depends on: 0.9 common runtime and the completed 0.10.1 daily workflow;
+  integration is exercised against a hydrated workspace.
 - Scope: connect built-in, system, and installed external drivers to the actual
   runtime and make their state observable.
 - Acceptance:
@@ -285,7 +337,8 @@ Cross-milestone invariants:
 
 - Status: `pending`
 - Tag: `roadmap/0.12-functional-baseline`
-- Depends on: validated 0.8, 0.9, 0.10, and 0.11. This is a release gate, not a
+- Depends on: validated 0.8, 0.9, 0.10, 0.10.1, and 0.11. This is a release
+  gate, not a
   documentation-only milestone.
 - Scope: prove the original minimum Poly journey on clean Windows and Linux
   environments and publish the exact reviewable build.
