@@ -120,12 +120,13 @@ and `xml`; all formats are rendered from the same `poly.report/v1` document.
 `run` stores process output and state transitions in its report. It executes
 only the frozen plan printed in the same document.
 
-Interactive text output is concise by default: it recalls the invoked command,
-prints one status line per action, and ends with a distinct success or failure
-summary. Use `-q` for only the final result, `-v` for process output, and
-`-vv` for the complete canonical report. Colors are automatic on terminals
-and can be controlled with `--color auto|always|never`; `NO_COLOR` is honored.
-Structured JSON, YAML, and XML output is never decorated.
+Interactive text output is grouped into one visual block per command: an
+action-oriented heading, an indented plan, one detailed status line per action,
+and a framed success or failure summary. Use `-q` for only the final result,
+`-v` to also show the exact invoked command and process output, and `-vv` for
+the complete canonical report. Colors are automatic on terminals and can be
+controlled with `--color auto|always|never`; `NO_COLOR` is honored. Structured
+JSON, YAML, and XML output is never decorated.
 
 `poly init` creates `poly.yaml`, `poly.lock.yaml`, compiled state, and the
 delimited root `.gitignore` block. Re-running it reconciles those generated
