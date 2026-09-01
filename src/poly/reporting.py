@@ -175,7 +175,7 @@ def render_cli(
 
     lines: list[str] = []
     if verbosity >= 0:
-        lines.append(_styled(f"› COMMAND  {command}", "cyan", color))
+        lines.append(_styled(f"> COMMAND  {command}", "cyan", color))
 
     if verbosity >= 2:
         lines.extend(_text(document).rstrip().splitlines())
@@ -202,7 +202,7 @@ def _concise_document(
         count = len(planned) if isinstance(planned, list) else 0
         lines.append(
             _styled(
-                f"› PLAN     {plan.get('id')} · {count} action(s) · {plan.get('status')}",
+                f"> PLAN     {plan.get('id')} · {count} action(s) · {plan.get('status')}",
                 "cyan",
                 color,
             )
@@ -313,7 +313,7 @@ def _state_style(state: str) -> tuple[str, str, str]:
         return "✗", "KO", "red"
     if state in {"blocked", "skipped"}:
         return "⚠", "WARN", "yellow"
-    return "›", state.upper(), "cyan"
+    return ">", state.upper(), "cyan"
 
 
 def _styled(value: str, tone: str, enabled: bool) -> str:
