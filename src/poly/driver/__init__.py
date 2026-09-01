@@ -27,7 +27,13 @@ from poly.driver.manifest import (
     DriverManifest,
     DriverProtocolError,
 )
-from poly.driver.registry import DriverRegistration, DriverRegistry
+from poly.driver.registry import (
+    DriverInventoryItem,
+    DriverLoadStatus,
+    DriverOrigin,
+    DriverRegistration,
+    DriverRegistry,
+)
 from poly.driver.scaffold import (
     DriverScaffold,
     DriverScaffoldError,
@@ -43,9 +49,12 @@ __all__ = [
     "DriverCapability",
     "DriverDiscoveryError",
     "DriverExecutionResult",
+    "DriverInventoryItem",
     "DriverLoadDiagnostic",
     "DriverLoadResult",
+    "DriverLoadStatus",
     "DriverManifest",
+    "DriverOrigin",
     "DriverProtocolError",
     "DriverRegistration",
     "DriverRegistry",

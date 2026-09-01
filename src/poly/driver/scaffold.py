@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 
-DEFAULT_POLY_DEPENDENCY = (
-    "poly @ git+https://github.com/falcoer/poly.git@roadmap/0.7-external-driver-kit"
-)
+DEFAULT_POLY_DEPENDENCY = "poly>=0.11.0,<0.12"
 _TECHNOLOGY = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 
 
@@ -57,11 +56,17 @@ def scaffold_driver(
         source = poly_source.resolve()
         if not (source / "pyproject.toml").is_file():
             raise DriverScaffoldError(f"Poly source is not a Python project: {source}")
-        dependency = f"poly @ {source.as_uri()}"
+        uv_source = (
+            "[tool.uv.sources]\n"
+            f"poly = {{ path = {json.dumps(source.as_posix())}, editable = true }}"
+        )
+        return _scaffold(technology, target, dependency, uv_source)
     return _scaffold(technology, target, dependency)
 
 
-def _scaffold(technology: str, target: Path, dependency: str) -> DriverScaffoldResult:
+def _scaffold(
+    technology: str, target: Path, dependency: str, uv_source: str = ""
+) -> DriverScaffoldResult:
     slug = technology.strip()
     if not _TECHNOLOGY.fullmatch(slug):
         raise DriverScaffoldError("technology must be lowercase kebab-case and start with a letter")
@@ -81,6 +86,7 @@ def _scaffold(technology: str, target: Path, dependency: str) -> DriverScaffoldR
         "__PACKAGE_NAME__": package_name,
         "__DRIVER_NAME__": driver_name,
         "__POLY_DEPENDENCY__": dependency,
+        "__UV_SOURCE__": uv_source,
     }
     template_root = files("poly.driver.templates.python")
     outputs = {

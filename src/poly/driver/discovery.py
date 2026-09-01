@@ -122,24 +122,123 @@ def discover_external_drivers(
     )
     loaded: list[str] = []
     rejected: list[DriverLoadDiagnostic] = []
-    for entry_point in sorted(selected, key=lambda item: (item.name, item.value)):
+    resolved: list[tuple[EntryPoint, DriverRegistration]] = []
+    ordered = sorted(selected, key=_entry_point_key)
+    for entry_point in ordered:
         try:
-            registration = _registration_from_factory(entry_point.load())
-            registry.register(registration)
+            registration = _registration_from_factory(entry_point.load(), validate=False)
         except Exception as error:  # third-party import and factory boundary
-            rejected.append(
-                DriverLoadDiagnostic(entry_point.name, f"{type(error).__name__}: {error}")
+            message = f"{type(error).__name__}: {error}"
+            diagnostic = DriverLoadDiagnostic(entry_point.name, message)
+            rejected.append(diagnostic)
+            registry.reject(
+                entry_point.name,
+                origin=_entry_point_origin(entry_point),
+                entry_point=_entry_point_label(entry_point),
+                version=_entry_point_version(entry_point),
+                diagnostic=message,
             )
             continue
-        loaded.append(registration.manifest.name)
-    return DriverLoadResult(tuple(loaded), tuple(rejected))
+        try:
+            registration.validate()
+        except Exception as error:  # third-party protocol boundary
+            message = f"{type(error).__name__}: {error}"
+            rejected.append(DriverLoadDiagnostic(entry_point.name, message))
+            _reject_registration(registry, entry_point, registration, message)
+            continue
+        resolved.append((entry_point, registration))
+
+    identities: dict[str, list[tuple[EntryPoint, DriverRegistration]]] = {}
+    verbs: dict[str, set[str]] = {}
+    existing = {manifest.name for manifest in registry.manifests()}
+    for candidate in resolved:
+        registration = candidate[1]
+        identities.setdefault(registration.manifest.name, []).append(candidate)
+        for provider in registration.planners:
+            for verb in provider.verbs:
+                verbs.setdefault(verb, set()).add(registration.manifest.name)
+
+    ambiguous_identities = {name for name, values in identities.items() if len(values) > 1}
+    colliding_verbs = {verb for verb, names in verbs.items() if len(names) > 1}
+    for entry_point, registration in resolved:
+        name = registration.manifest.name
+        reasons: list[str] = []
+        if name in existing:
+            reasons.append(f"duplicate driver identity {name!r} conflicts with a core driver")
+        if name in ambiguous_identities:
+            reasons.append(f"duplicate installed driver identity {name!r}")
+        contributed = {verb for provider in registration.planners for verb in provider.verbs}
+        collisions = sorted(contributed & colliding_verbs)
+        if collisions:
+            reasons.append(f"installed driver verb collision: {collisions!r}")
+        if reasons:
+            message = "; ".join(reasons)
+            rejected.append(DriverLoadDiagnostic(entry_point.name, message))
+            _reject_registration(registry, entry_point, registration, message)
+            continue
+        registry.register(
+            registration,
+            origin=_entry_point_origin(entry_point),
+            entry_point=_entry_point_label(entry_point),
+        )
+        loaded.append(name)
+    return DriverLoadResult(tuple(sorted(loaded)), tuple(sorted(rejected)))
 
 
-def _registration_from_factory(factory_value: object) -> DriverRegistration:
+def _reject_registration(
+    registry: DriverRegistry,
+    entry_point: EntryPoint,
+    registration: DriverRegistration,
+    message: str,
+) -> None:
+    manifest = registration.manifest
+    registry.reject(
+        manifest.name,
+        origin=_entry_point_origin(entry_point),
+        entry_point=_entry_point_label(entry_point),
+        version=manifest.version,
+        api_version=manifest.api_version,
+        capabilities=tuple(item.value for item in manifest.capabilities),
+        verbs=tuple(verb for provider in registration.planners for verb in provider.verbs),
+        diagnostic=message,
+        description=manifest.description,
+        natures=manifest.natures,
+    )
+
+
+def _entry_point_label(entry_point: EntryPoint) -> str:
+    return f"{entry_point.name}={entry_point.value}"
+
+
+def _entry_point_origin(entry_point: EntryPoint) -> str:
+    distribution = entry_point.dist
+    if distribution is None:
+        return "installed:unknown"
+    name = distribution.metadata.get("Name") or "unknown"
+    return f"installed:{name}"
+
+
+def _entry_point_version(entry_point: EntryPoint) -> str | None:
+    return entry_point.dist.version if entry_point.dist is not None else None
+
+
+def _entry_point_key(entry_point: EntryPoint) -> tuple[str, str, str, str]:
+    return (
+        entry_point.name,
+        entry_point.value,
+        _entry_point_origin(entry_point),
+        _entry_point_version(entry_point) or "",
+    )
+
+
+def _registration_from_factory(
+    factory_value: object, *, validate: bool = True
+) -> DriverRegistration:
     if not callable(factory_value):
         raise DriverDiscoveryError("entrypoint must resolve to a driver factory")
     registration = cast(DriverFactory, factory_value)()
     if not isinstance(registration, DriverRegistration):
         raise DriverDiscoveryError("driver factory must return DriverRegistration")
-    registration.validate()
+    if validate:
+        registration.validate()
     return registration

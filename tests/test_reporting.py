@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 import xml.etree.ElementTree as ET
+from io import StringIO
 from pathlib import Path
+
+from ruamel.yaml import YAML
 
 from poly.application import InspectionSnapshot, PlanningSnapshot
 from poly.control_plane import ControllerDescriptor
+from poly.driver import DriverInventoryItem
 from poly.model import (
     ActionSpec,
     Inventory,
@@ -17,6 +21,7 @@ from poly.model import (
 from poly.reporting import (
     action_catalog_document,
     controllers_document,
+    drivers_document,
     inspection_document,
     planning_document,
     render,
@@ -259,6 +264,46 @@ def test_json_yaml_and_xml_render_the_same_canonical_document(tmp_path: Path) ->
     assert xml_value == document
 
 
+def test_driver_inventory_has_stable_semantic_parity_in_every_format(tmp_path: Path) -> None:
+    inventory = (
+        DriverInventoryItem(
+            "driver.example",
+            "1.2.3",
+            "installed:poly-driver-example",
+            "1.0",
+            ("inspect", "plan"),
+            ("example-run",),
+            "loaded",
+            "example=example:driver",
+        ),
+        DriverInventoryItem(
+            "broken",
+            None,
+            "installed:broken",
+            None,
+            (),
+            (),
+            "rejected",
+            "broken=missing:driver",
+            "ModuleNotFoundError: missing",
+        ),
+    )
+    document = drivers_document(tmp_path, inventory)
+
+    assert json.loads(render(document, "json")) == document
+    assert _decode_yaml(render(document, "yaml")) == document
+    assert _decode_xml(ET.fromstring(render(document, "xml"))) == document
+    text = render(document, "text")
+    assert "driver.example 1.2.3 [loaded]" in text
+    assert "broken - [rejected]" in text
+    assert "diagnostic: ModuleNotFoundError: missing" in text
+    concise = render_cli(document, "poly drivers", color=False)
+    assert "1 loaded driver(s) · 1 rejected" in concise
+    assert "driver.example 1.2.3 · installed:poly-driver-example · API 1.0" in concise
+    assert "capabilities=inspect,plan · verbs=example-run" in concise
+    assert "diagnostic: ModuleNotFoundError: missing" in concise
+
+
 def test_renderer_rejects_unknown_format(tmp_path: Path) -> None:
     inspection, _ = _snapshots(tmp_path)
 
@@ -303,3 +348,7 @@ def _decode_xml(element: ET.Element) -> object:
         text = element.text or "0"
         return float(text) if "." in text else int(text)
     return element.text or ""
+
+
+def _decode_yaml(value: str) -> object:
+    return YAML(typ="safe").load(StringIO(value))

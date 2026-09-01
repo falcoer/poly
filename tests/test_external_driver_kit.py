@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from importlib.metadata import EntryPoint
+from itertools import permutations
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,36 @@ from poly.driver import (
 )
 from poly.driver.cli import main as driver_test_main
 from poly.driver.scaffold import DriverScaffoldError, scaffold_driver
+
+
+def _driver_module(path: Path) -> None:
+    path.write_text(
+        """from dataclasses import dataclass
+from poly.driver import DRIVER_API_VERSION, DriverCapability, DriverManifest, DriverRegistration
+from poly.model import DriverProposal, PlanningRequest
+
+@dataclass(frozen=True)
+class Planner:
+    name: str
+    verbs: frozenset[str]
+    def propose(self, request: PlanningRequest) -> DriverProposal:
+        return DriverProposal(self.name)
+
+def registration(name: str, verb: str, api: str = DRIVER_API_VERSION) -> DriverRegistration:
+    return DriverRegistration(
+        DriverManifest(name, "1.2.3", api, frozenset((DriverCapability.PLAN,))),
+        planners=(Planner(name, frozenset((verb,))),),
+    )
+
+def alpha(): return registration("driver.alpha", "alpha-run")
+def bravo(): return registration("driver.bravo", "bravo-run")
+def duplicate_alpha(): return registration("driver.alpha", "other-run")
+def collide_alpha(): return registration("driver.alpha-collision", "shared-run")
+def collide_bravo(): return registration("driver.bravo-collision", "shared-run")
+def incompatible(): return registration("driver.future", "future-run", "2.0")
+""",
+        encoding="utf-8",
+    )
 
 
 def test_scaffold_generates_complete_external_repository(tmp_path: Path) -> None:
@@ -44,7 +75,8 @@ def test_scaffold_generates_complete_external_repository(tmp_path: Path) -> None
         path.read_text(encoding="utf-8") for path in target.rglob("*") if path.is_file()
     )
     assert "__DRIVER_NAME__" not in all_content
-    assert f"poly @ {source.resolve().as_uri()}" in all_content
+    assert '"poly>=0.11.0,<0.12"' in all_content
+    assert f'poly = {{ path = "{source.resolve().as_posix()}", editable = true }}' in all_content
 
     with pytest.raises(DriverScaffoldError, match="not empty"):
         scaffold_driver("another", target)
@@ -139,3 +171,77 @@ def test_installed_entry_points_are_isolated_and_rejected_before_registration(
     assert "DriverRegistration" in result.rejected[0].message
     with pytest.raises(DriverDiscoveryError, match="external driver loading failed"):
         result.require_success()
+
+
+def test_discovery_is_stable_across_entry_point_enumeration_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _driver_module(tmp_path / "ordered_drivers.py")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    candidates = (
+        EntryPoint("bravo", "ordered_drivers:bravo", "poly.drivers"),
+        EntryPoint("alpha", "ordered_drivers:alpha", "poly.drivers"),
+    )
+
+    inventories = []
+    for ordering in permutations(candidates):
+        registry = DriverRegistry()
+        result = discover_external_drivers(registry, ordering)
+        inventories.append(registry.inventory())
+        assert result.loaded == ("driver.alpha", "driver.bravo")
+
+    assert inventories[0] == inventories[1]
+
+
+def test_duplicate_identities_and_verb_collisions_reject_every_ambiguous_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _driver_module(tmp_path / "rejected_drivers.py")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    duplicate_candidates = (
+        EntryPoint("alpha", "rejected_drivers:alpha", "poly.drivers"),
+        EntryPoint("duplicate", "rejected_drivers:duplicate_alpha", "poly.drivers"),
+    )
+    collision_candidates = (
+        EntryPoint("alpha", "rejected_drivers:collide_alpha", "poly.drivers"),
+        EntryPoint("bravo", "rejected_drivers:collide_bravo", "poly.drivers"),
+    )
+
+    for candidates, message in (
+        (duplicate_candidates, "duplicate installed driver identity"),
+        (collision_candidates, "verb collision"),
+    ):
+        registry = DriverRegistry()
+        result = discover_external_drivers(registry, reversed(candidates))
+        assert result.loaded == ()
+        assert len(result.rejected) == 2
+        assert all(message in diagnostic.message for diagnostic in result.rejected)
+        assert all(item.status == "rejected" for item in registry.inventory())
+
+
+def test_incompatible_protocol_and_import_error_are_isolated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _driver_module(tmp_path / "isolated_drivers.py")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    candidates = (
+        EntryPoint("valid", "isolated_drivers:alpha", "poly.drivers"),
+        EntryPoint("future", "isolated_drivers:incompatible", "poly.drivers"),
+        EntryPoint("missing", "does_not_exist:driver", "poly.drivers"),
+    )
+
+    registry = DriverRegistry()
+    result = discover_external_drivers(registry, candidates)
+
+    assert result.loaded == ("driver.alpha",)
+    assert {item.identity for item in registry.inventory() if item.status == "rejected"} == {
+        "driver.future",
+        "missing",
+    }
+    future = next(item for item in registry.inventory() if item.identity == "driver.future")
+    assert future.api_version == "2.0"
+    assert future.version == "1.2.3"
+    assert future.verbs == ("future-run",)
+    messages = " ".join(item.diagnostic or "" for item in registry.inventory())
+    assert "requires API 2.0" in messages
+    assert "ModuleNotFoundError" in messages

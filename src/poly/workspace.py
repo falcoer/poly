@@ -643,6 +643,8 @@ def _declared_identity(manifest: WorkspaceManifest, observed: Node) -> str | Non
         modules = [node for node in candidates if node.kind == "module"]
         if len(modules) == 1:
             return modules[0].id
+    if len(candidates) == 1:
+        return candidates[0].id
     return None
 
 

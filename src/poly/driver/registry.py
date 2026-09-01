@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 from poly.driver.api import ActionHandler, InspectionProvider, PlanningProvider
 from poly.driver.manifest import DriverCapability, DriverManifest, DriverProtocolError
@@ -42,16 +43,109 @@ class DriverRegistration:
             )
 
 
+class DriverOrigin(StrEnum):
+    SYSTEM = "system"
+    BUILTIN = "builtin"
+    INSTALLED = "installed"
+
+
+class DriverLoadStatus(StrEnum):
+    LOADED = "loaded"
+    REJECTED = "rejected"
+
+
+@dataclass(frozen=True, slots=True)
+class DriverInventoryItem:
+    identity: str
+    version: str | None
+    origin: str
+    api_version: str | None
+    capabilities: tuple[str, ...]
+    verbs: tuple[str, ...]
+    status: str
+    entry_point: str | None = None
+    diagnostic: str | None = None
+    description: str = ""
+    natures: tuple[str, ...] = ()
+
+
 class DriverRegistry:
     def __init__(self) -> None:
         self._registrations: dict[str, DriverRegistration] = {}
+        self._inventory: list[DriverInventoryItem] = []
 
-    def register(self, registration: DriverRegistration) -> None:
+    def register(
+        self,
+        registration: DriverRegistration,
+        *,
+        origin: DriverOrigin | str = DriverOrigin.BUILTIN,
+        entry_point: str | None = None,
+    ) -> None:
         registration.validate()
         name = registration.manifest.name
         if name in self._registrations:
             raise DriverProtocolError(f"driver {name!r} is already registered")
         self._registrations[name] = registration
+        self._inventory.append(
+            DriverInventoryItem(
+                name,
+                registration.manifest.version,
+                origin.value if isinstance(origin, DriverOrigin) else origin,
+                registration.manifest.api_version,
+                tuple(sorted(item.value for item in registration.manifest.capabilities)),
+                tuple(
+                    sorted({verb for provider in registration.planners for verb in provider.verbs})
+                ),
+                DriverLoadStatus.LOADED.value,
+                entry_point,
+                description=registration.manifest.description,
+                natures=registration.manifest.natures,
+            )
+        )
+
+    def reject(
+        self,
+        identity: str,
+        *,
+        origin: str,
+        diagnostic: str,
+        entry_point: str | None = None,
+        version: str | None = None,
+        api_version: str | None = None,
+        capabilities: tuple[str, ...] = (),
+        verbs: tuple[str, ...] = (),
+        description: str = "",
+        natures: tuple[str, ...] = (),
+    ) -> None:
+        self._inventory.append(
+            DriverInventoryItem(
+                identity,
+                version,
+                origin,
+                api_version,
+                tuple(sorted(capabilities)),
+                tuple(sorted(verbs)),
+                DriverLoadStatus.REJECTED.value,
+                entry_point,
+                diagnostic,
+                description,
+                tuple(sorted(natures)),
+            )
+        )
+
+    def inventory(self) -> tuple[DriverInventoryItem, ...]:
+        return tuple(
+            sorted(
+                self._inventory,
+                key=lambda item: (
+                    item.identity,
+                    item.origin,
+                    item.entry_point or "",
+                    item.status,
+                    item.version or "",
+                ),
+            )
+        )
 
     def manifests(self) -> tuple[DriverManifest, ...]:
         return tuple(

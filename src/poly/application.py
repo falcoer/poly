@@ -6,7 +6,12 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from poly.driver import DriverRegistry, InspectionContext, InspectionDiagnostic
+from poly.driver import (
+    DriverInventoryItem,
+    DriverRegistry,
+    InspectionContext,
+    InspectionDiagnostic,
+)
 from poly.model import (
     ActionSpec,
     Inventory,
@@ -30,6 +35,7 @@ class InspectionSnapshot:
     inventory: Inventory
     diagnostics: tuple[InspectionDiagnostic, ...]
     available_verbs: tuple[str, ...]
+    drivers: tuple[DriverInventoryItem, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +86,7 @@ def inspect_workspace(
         reconcile_inventory(compiled, tuple(nodes)),
         tuple(sorted(diagnostics)),
         available_verbs(registry),
+        registry.inventory(),
     )
 
 

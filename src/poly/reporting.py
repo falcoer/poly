@@ -9,7 +9,7 @@ from pathlib import Path
 
 from poly.application import InspectionSnapshot, PlanningSnapshot
 from poly.control_plane import ControllerDescriptor
-from poly.driver import DriverManifest, InspectionDiagnostic
+from poly.driver import DriverInventoryItem, DriverManifest, InspectionDiagnostic
 from poly.model import (
     ActionSpec,
     JsonValue,
@@ -36,6 +36,7 @@ def inspection_document(snapshot: InspectionSnapshot) -> ReportDocument:
         "diagnostics": [
             _inspection_diagnostic_document(diagnostic) for diagnostic in snapshot.diagnostics
         ],
+        "drivers": [_driver_document(item) for item in snapshot.drivers],
     }
 
 
@@ -128,7 +129,7 @@ def controllers_document(
     }
 
 
-def drivers_document(workspace: Path, manifests: tuple[DriverManifest, ...]) -> ReportDocument:
+def drivers_document(workspace: Path, inventory: tuple[DriverInventoryItem, ...]) -> ReportDocument:
     return {
         "schema": REPORT_SCHEMA,
         "kind": "drivers",
@@ -136,18 +137,23 @@ def drivers_document(workspace: Path, manifests: tuple[DriverManifest, ...]) -> 
         "available_verbs": [],
         "inventory": {"nodes": []},
         "diagnostics": [],
-        "drivers": [
-            {
-                "name": manifest.name,
-                "version": manifest.version,
-                "api_version": manifest.api_version,
-                "capabilities": _string_values(
-                    sorted(item.value for item in manifest.capabilities)
-                ),
-                "description": manifest.description,
-            }
-            for manifest in manifests
-        ],
+        "drivers": [_driver_document(item) for item in inventory],
+    }
+
+
+def _driver_document(item: DriverInventoryItem) -> ReportDocument:
+    return {
+        "name": item.identity,
+        "version": item.version,
+        "origin": item.origin,
+        "api_version": item.api_version,
+        "capabilities": list(item.capabilities),
+        "verbs": list(item.verbs),
+        "status": item.status,
+        "entry_point": item.entry_point,
+        "diagnostic": item.diagnostic,
+        "description": item.description,
+        "natures": list(item.natures),
     }
 
 
@@ -361,7 +367,7 @@ def _concise_document(
 
     kind = str(document.get("kind", "report"))
     if kind == "drivers":
-        _concise_named_items(lines, document.get("drivers"), "driver", verbosity, color)
+        _concise_drivers(lines, document.get("drivers"), verbosity, color)
     elif kind == "natures":
         _concise_named_items(lines, document.get("natures"), "nature", verbosity, color)
     elif kind == "controllers":
@@ -432,6 +438,36 @@ def _concise_named_items(
             if isinstance(item, dict):
                 version = f" {item.get('version')}" if item.get("version") else ""
                 lines.append(f"{_DETAIL_INDENT}{item.get('name')}{version}")
+
+
+def _concise_drivers(
+    lines: list[str], value: JsonValue | None, verbosity: int, color: bool
+) -> None:
+    items = value if isinstance(value, list) else []
+    loaded = sum(1 for item in items if isinstance(item, dict) and item.get("status") == "loaded")
+    rejected = len(items) - loaded
+    summary = f"✓ OK       {loaded} loaded driver(s) · {rejected} rejected"
+    lines.append(f"{_SECTION_INDENT}{_styled(summary, 'green', color)}")
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        capabilities = item.get("capabilities", [])
+        verbs = item.get("verbs", [])
+        capability_values = capabilities if isinstance(capabilities, list) else []
+        verb_values = verbs if isinstance(verbs, list) else []
+        state = str(item.get("status"))
+        marker, label, tone = _state_style("succeeded" if state == "loaded" else "failed")
+        line = (
+            f"{marker} {label:<8} {item.get('name')} {item.get('version') or '-'} "
+            f"· {item.get('origin')} · API {item.get('api_version') or '-'} "
+            f"· capabilities={','.join(str(value) for value in capability_values) or '-'} "
+            f"· verbs={','.join(str(value) for value in verb_values) or '-'}"
+        )
+        lines.append(f"{_DETAIL_INDENT}{_styled(line, tone, color)}")
+        if item.get("diagnostic"):
+            lines.append(f"{_LOG_INDENT}diagnostic: {item.get('diagnostic')}")
+        if verbosity >= 1 and item.get("entry_point"):
+            lines.append(f"{_LOG_INDENT}entry point: {item.get('entry_point')}")
 
 
 def _concise_action(
@@ -713,10 +749,36 @@ def _text(document: ReportDocument) -> str:
     for diagnostic in diagnostics if isinstance(diagnostics, list) else []:
         if isinstance(diagnostic, dict):
             lines.append(f"Diagnostic {diagnostic.get('code')}: {diagnostic.get('message')}")
+    _text_drivers(lines, document)
     _text_planning(lines, document)
     _text_controllers(lines, document)
     _text_run(lines, document)
     return "\n".join(lines) + "\n"
+
+
+def _text_drivers(lines: list[str], document: ReportDocument) -> None:
+    drivers = document.get("drivers")
+    if not isinstance(drivers, list):
+        return
+    lines.append(f"Drivers: {len(drivers)}")
+    for driver in drivers:
+        if not isinstance(driver, dict):
+            continue
+        lines.append(
+            f"  {driver.get('name')} {driver.get('version') or '-'} "
+            f"[{driver.get('status')}] origin={driver.get('origin')} "
+            f"api={driver.get('api_version') or '-'}"
+        )
+        capabilities = driver.get("capabilities", [])
+        verbs = driver.get("verbs", [])
+        capability_values = capabilities if isinstance(capabilities, list) else []
+        verb_values = verbs if isinstance(verbs, list) else []
+        lines.append(
+            "    capabilities: " + (", ".join(str(value) for value in capability_values) or "-")
+        )
+        lines.append("    verbs: " + (", ".join(str(value) for value in verb_values) or "-"))
+        if driver.get("diagnostic"):
+            lines.append(f"    diagnostic: {driver.get('diagnostic')}")
 
 
 def _text_planning(lines: list[str], document: ReportDocument) -> None:

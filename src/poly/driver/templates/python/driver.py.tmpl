@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 
 from poly.driver import (
@@ -27,7 +28,7 @@ class SampleInspector:
         nodes = (
             (
                 Node(
-                    f"{DRIVER_NAME}:.",
+                    f"{DRIVER_NAME}:observation:.",
                     ".",
                     ("sample/project",),
                     {"sample.marker": MARKER},
@@ -54,7 +55,7 @@ class SamplePlanner:
                 (node.id,),
                 (node.id,),
                 claims=frozenset((ActionClaim("sample/status", f"node:{node.id}"),)),
-                command=("python", "-c", "print('sample project is available')"),
+                command=(sys.executable, "-c", "print('sample project is available')"),
             )
             for node in request.inventory.select(request.selected_node_ids)
             if "sample/project" in node.natures

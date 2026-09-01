@@ -20,7 +20,7 @@ from poly.control_plane import (
     ControlPlaneActionRunner,
     LocalController,
 )
-from poly.driver import DriverRegistry, ExecutionContext
+from poly.driver import DriverOrigin, DriverRegistry, ExecutionContext, discover_external_drivers
 from poly.driver.scaffold import DriverScaffoldError, scaffold_driver
 from poly.drivers import git_driver, maven_driver
 from poly.model import ActionSpec, Node
@@ -62,9 +62,10 @@ INTERNAL_VERBS = frozenset(("bootstrap", "nature-add", "nature-remove"))
 
 def build_registry() -> DriverRegistry:
     registry = DriverRegistry()
-    registry.register(constructor_driver())
-    registry.register(git_driver())
-    registry.register(maven_driver())
+    registry.register(constructor_driver(), origin=DriverOrigin.SYSTEM)
+    registry.register(git_driver(), origin=DriverOrigin.BUILTIN)
+    registry.register(maven_driver(), origin=DriverOrigin.BUILTIN)
+    discover_external_drivers(registry)
     return registry
 
 
@@ -105,7 +106,7 @@ def main(arguments: list[str] | None = None) -> int:
         _write_output(document, options, command, 0)
         return 0
     if options.command == "drivers":
-        document = drivers_document(workspace, registry.manifests())
+        document = drivers_document(workspace, registry.inventory())
         _write_output(document, options, command, 0)
         return 0
 
