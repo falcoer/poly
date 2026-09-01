@@ -4,10 +4,12 @@ import io
 import json
 import subprocess
 import sys
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
 
+from poly import __version__
 from poly.cli import main
 
 
@@ -32,6 +34,15 @@ def _workspace(path: Path) -> None:
 </project>
 """
     )
+
+
+def test_cli_reports_installed_version(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--version"])
+
+    assert exit_info.value.code == 0
+    assert capsys.readouterr().out == f"poly {__version__}\n"
+    assert version("poly") == __version__
 
 
 def test_cli_inspect_actions_and_plan_reports(

@@ -1,6 +1,6 @@
 # Cookbook Poly
 
-Ce cookbook propose un tour pratique de Poly 0.10.1, depuis la création d'un
+Ce cookbook propose un tour pratique de Poly 0.10.2, depuis la création d'un
 workspace jusqu'à son hydratation Git et à l'exécution de jobs. Les exemples
 utilisent l'interface publique réellement exposée par la CLI.
 

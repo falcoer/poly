@@ -311,11 +311,34 @@ Cross-milestone invariants:
   tag-pattern/SemVer selector policies; parallel hydration; child
   commit/push/merge workflows.
 
+## 0.10.2 — Runtime output and release identity corrections
+
+- Status: `implemented-awaiting-ci`
+- Tag: `roadmap/0.10.2-runtime-corrections`
+- Depends on: validated 0.10.1 daily workflow.
+- Scope: package the runtime corrections made after 0.10.1 and expose an
+  unambiguous installable version before beginning the 0.11 driver lifecycle.
+- Implemented:
+  - direct verbs stream action progress before their final completion block;
+  - successful runs without actions render a neutral `NONE` result;
+  - existing milestone tags are accepted only when their target remains an
+    ancestor of the CI commit;
+  - package metadata and `poly --version` both report `0.10.2` from one version
+    source.
+- Acceptance:
+  - source and wheel metadata report version `0.10.2`;
+  - `poly --version` prints `poly 0.10.2` without requiring a workspace;
+  - version metadata cannot diverge from the public Python version;
+  - the complete formatting, lint, typing, test, build, clean-room driver, and
+    Windows/Linux workspace gates remain green.
+- Excluded: installed external-driver lifecycle, which remains 0.11; any new
+  workspace or driver capability.
+
 ## 0.11 — Runtime driver lifecycle and inventory
 
 - Status: `pending`
 - Tag: `roadmap/0.11-driver-runtime`
-- Depends on: 0.9 common runtime and the completed 0.10.1 daily workflow;
+- Depends on: 0.9 common runtime and the completed 0.10.2 correction baseline;
   integration is exercised against a hydrated workspace.
 - Scope: connect built-in, system, and installed external drivers to the actual
   runtime and make their state observable.
@@ -331,7 +354,7 @@ Cross-milestone invariants:
     collisions are isolated and never make load order decide behavior;
   - driver discovery and contributions appear in canonical machine-readable
     reports and remain stable across entry-point enumeration order.
-- Checks: installed-wheel execution on a 0.10.1 hydrated workspace, rejection and
+- Checks: installed-wheel execution on a 0.10.2 hydrated workspace, rejection and
   isolation fixtures, shuffled entry-point ordering, duplicate/collision
   diagnostics, and text/JSON/YAML/XML parity.
 - Demonstration: install the generated sample driver wheel, list it, use its
@@ -344,7 +367,7 @@ Cross-milestone invariants:
 
 - Status: `pending`
 - Tag: `roadmap/0.12-functional-baseline`
-- Depends on: validated 0.8, 0.9, 0.10, 0.10.1, and 0.11. This is a release
+- Depends on: validated 0.8, 0.9, 0.10, 0.10.1, 0.10.2, and 0.11. This is a release
   gate, not a documentation-only milestone.
 - Scope: prove the original minimum Poly journey on clean Windows and Linux
   environments and publish the exact reviewable build.

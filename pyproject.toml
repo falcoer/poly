@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "poly"
-version = "0.1.0.dev0"
+dynamic = ["version"]
 description = "Deterministic construction and orchestration for polyrepo workspaces"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -31,6 +31,9 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/poly"]
+
+[tool.hatch.version]
+path = "src/poly/_version.py"
 
 [tool.mypy]
 python_version = "3.12"

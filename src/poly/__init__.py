@@ -1,5 +1,6 @@
 """Poly's deterministic polyrepo core."""
 
+from poly._version import __version__
 from poly.control_plane import (
     ControllerDescriptor,
     ControlPlane,
@@ -66,4 +67,5 @@ __all__ = [
     "RunResult",
     "RunStatus",
     "StateStore",
+    "__version__",
 ]

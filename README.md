@@ -31,11 +31,10 @@ Poly-managed root `.gitignore` block.
 For a command-oriented tour, see the [Poly cookbook](docs/cookbook/README.md).
 
 The current correction milestone is
-[0.10.1 — Daily workflow correction](docs/releases/0.10.1.md). Lightweight
-source-backed `add`, explicit hydration, contextual nature commands, empty
-workspace driver discovery, and the hierarchical interactive renderer are
-implemented and validated by the complete Linux/Windows CI gate and annotated
-roadmap tag.
+[0.10.2 — Runtime output corrections](docs/releases/0.10.2.md). It retains the
+validated 0.10.1 daily workflow and adds streamed execution progress, neutral
+empty-run rendering, and stricter milestone-tag validation. The installable
+package and `poly --version` report the same milestone version.
 
 The version 1 contract is implemented: manifests and locks are validated and
 compiled into rebuildable state, declared identities are enriched by Git and
@@ -59,6 +58,7 @@ uv:
 
 ```shell
 uv tool install "git+https://github.com/falcoer/poly.git"
+poly --version
 poly --help
 ```
 

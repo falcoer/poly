@@ -11,6 +11,7 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
+from poly._version import __version__
 from poly.application import inspect_workspace, prepare_planning
 from poly.construction import WORKSPACE_MANIFEST, constructor_driver
 from poly.control_plane import (
@@ -181,6 +182,7 @@ def main(arguments: list[str] | None = None) -> int:
 
 def _parser(registry: DriverRegistry) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="poly", description="Deterministic polyrepo engine")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
 
     inspect = commands.add_parser("inspect", help="inspect the current workspace")
