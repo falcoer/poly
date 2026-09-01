@@ -30,11 +30,12 @@ Poly-managed root `.gitignore` block.
 
 For a command-oriented tour, see the [Poly cookbook](docs/cookbook/README.md).
 
-The current correction milestone is
-[0.10.2 — Runtime output corrections](docs/releases/0.10.2.md). It retains the
-validated 0.10.1 daily workflow and adds streamed execution progress, neutral
-empty-run rendering, and stricter milestone-tag validation. The installable
-package and `poly --version` report the same milestone version.
+The current milestone is
+[0.11.0 — Runtime driver lifecycle and inventory](docs/releases/0.11.0.md).
+Installed `poly.drivers` entry points now participate in production inspection,
+planning, and execution, while `poly drivers` and every canonical runtime report
+expose loaded and rejected driver state. The installable package and
+`poly --version` report the same milestone version.
 
 The version 1 contract is implemented: manifests and locks are validated and
 compiled into rebuildable state, declared identities are enriched by Git and
@@ -60,6 +61,7 @@ uv:
 uv tool install "git+https://github.com/falcoer/poly.git"
 poly --version
 poly --help
+poly drivers --workspace /path/to/workspace --format json
 ```
 
 Commands in this README and in the cookbook then assume that `poly` is directly

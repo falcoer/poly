@@ -1,8 +1,11 @@
 # Cookbook Poly
 
-Ce cookbook propose un tour pratique de Poly 0.10.2, depuis la création d'un
+Ce cookbook propose un tour pratique de Poly 0.11.0, depuis la création d'un
 workspace jusqu'à son hydratation Git et à l'exécution de jobs. Les exemples
 utilisent l'interface publique réellement exposée par la CLI.
+
+Le parcours des pilotes installés, de leur inventaire et de leur verbe direct
+est détaillé dans [la documentation des pilotes externes](../drivers/external.md).
 
 ## Prérequis généraux
 

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   workflow_dispatch:
 
 permissions:
@@ -32,6 +32,12 @@ jobs:
       - run: uv run mypy src tests
       - run: uv run pytest
       - run: uv build
+      - name: Validate release artifact identity
+        shell: bash
+        run: |
+          test -f dist/poly-0.11.0-py3-none-any.whl
+          test -f dist/poly-0.11.0.tar.gz
+          uv run python -c 'import importlib.metadata,poly,zipfile; assert poly.__version__ == importlib.metadata.version("poly") == "0.11.0"; archive=zipfile.ZipFile("dist/poly-0.11.0-py3-none-any.whl"); metadata=archive.read("poly-0.11.0.dist-info/METADATA").decode(); assert "Name: poly\nVersion: 0.11.0\n" in metadata'
 
   external-driver-clean-room:
     needs: quality
@@ -46,6 +52,8 @@ jobs:
           enable-cache: true
           prune-cache: true
       - run: uv sync --locked --all-groups
+      - name: Build Poly distributions
+        run: uv build
       - name: Generate external driver
         run: |
           target="$RUNNER_TEMP/poly-driver-sample-tech"
@@ -65,6 +73,26 @@ jobs:
           uv run mypy src tests
           uv run pytest
           uv build
+      - name: Install wheels and exercise the production runtime
+        shell: bash
+        run: |
+          clean="$RUNNER_TEMP/poly-clean-room"
+          workspace="$RUNNER_TEMP/poly-workspace"
+          uv venv --python 3.12 "$clean"
+          uv pip install --python "$clean/bin/python" \
+            dist/poly-0.11.0-py3-none-any.whl \
+            "$target/dist/poly_driver_sample_tech-0.1.0-py3-none-any.whl"
+          poly="$clean/bin/poly"
+          "$poly" --version | grep -Fx "poly 0.11.0"
+          mkdir -p "$workspace"
+          "$poly" init --workspace "$workspace" --name "0.10.2 representative" --format json
+          printf 'sample\n' > "$workspace/sample.project"
+          "$poly" drivers --workspace "$workspace" --format json > "$RUNNER_TEMP/drivers.json"
+          python -c 'import json,os; d=json.load(open(os.environ["RUNNER_TEMP"]+"/drivers.json")); x=next(v for v in d["drivers"] if v["name"]=="poly.driver.sample-tech"); assert x["status"]=="loaded" and x["verbs"]==["sample-status"] and x["origin"].startswith("installed:")'
+          "$poly" sample-status --workspace "$workspace" --select root --format json > "$RUNNER_TEMP/run.json"
+          run_id=$(python -c 'import json,os; print(json.load(open(os.environ["RUNNER_TEMP"]+"/run.json"))["plan"]["id"])')
+          "$poly" report "$run_id" --workspace "$workspace" --format json > "$RUNNER_TEMP/report.json"
+          python -c 'import json,os; d=json.load(open(os.environ["RUNNER_TEMP"]+"/report.json")); assert d["inventory"]["nodes"][0]["id"]=="root"; assert "sample/project" in d["inventory"]["nodes"][0]["natures"]; assert d["run"]["status"]=="succeeded"; assert d["run"]["actions"][0]["attempt"]["stdout"].strip()=="sample project is available"; assert any(e["state"]=="succeeded" for e in d["run"]["events"])'
 
   workspace-contract:
     runs-on: ${{ matrix.os }}

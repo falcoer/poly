@@ -336,7 +336,7 @@ Cross-milestone invariants:
 
 ## 0.11 — Runtime driver lifecycle and inventory
 
-- Status: `pending`
+- Status: `implemented-awaiting-ci`
 - Tag: `roadmap/0.11-driver-runtime`
 - Depends on: 0.9 common runtime and the completed 0.10.2 correction baseline;
   integration is exercised against a hydrated workspace.
@@ -362,6 +362,17 @@ Cross-milestone invariants:
   the normal job report.
 - Excluded: operating-system sandboxing of hostile code and public package-index
   publication.
+- Implemented:
+  - production startup discovers installed entry points and inventories system,
+    built-in, loaded installed, and rejected installed drivers;
+  - all candidate factories are resolved before deterministic identity and verb
+    arbitration, so enumeration order cannot select a winner;
+  - installed inspectors enrich canonical declared nodes and their planners and
+    handlers participate in ordinary direct-verb execution;
+  - canonical inspection, action, plan, run, and driver reports carry driver
+    identity, origin, protocol, capabilities, verbs, status, and diagnostics;
+  - clean-room CI builds and installs the core and generated sample-driver wheels,
+    exercises the direct verb, and reloads its persisted run report.
 
 ## 0.12 — Clean-workstation functional acceptance
 
