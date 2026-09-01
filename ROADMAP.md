@@ -324,7 +324,7 @@ Cross-milestone invariants:
     collisions are isolated and never make load order decide behavior;
   - driver discovery and contributions appear in canonical machine-readable
     reports and remain stable across entry-point enumeration order.
-- Checks: installed-wheel execution on a 0.10 hydrated workspace, rejection and
+- Checks: installed-wheel execution on a 0.10.1 hydrated workspace, rejection and
   isolation fixtures, shuffled entry-point ordering, duplicate/collision
   diagnostics, and text/JSON/YAML/XML parity.
 - Demonstration: install the generated sample driver wheel, list it, use its
@@ -338,8 +338,7 @@ Cross-milestone invariants:
 - Status: `pending`
 - Tag: `roadmap/0.12-functional-baseline`
 - Depends on: validated 0.8, 0.9, 0.10, 0.10.1, and 0.11. This is a release
-  gate, not a
-  documentation-only milestone.
+  gate, not a documentation-only milestone.
 - Scope: prove the original minimum Poly journey on clean Windows and Linux
   environments and publish the exact reviewable build.
 - Acceptance:
