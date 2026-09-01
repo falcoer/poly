@@ -21,6 +21,9 @@ from poly.runtime import ActionResult, RunEvent, RunResult
 
 type ReportDocument = dict[str, JsonValue]
 REPORT_SCHEMA = "poly.report/v1"
+_SECTION_INDENT = "        "
+_DETAIL_INDENT = "                "
+_LOG_INDENT = "                        "
 
 
 def inspection_document(snapshot: InspectionSnapshot) -> ReportDocument:
@@ -175,16 +178,64 @@ def render_cli(
 
     lines: list[str] = []
     if verbosity >= 0:
-        lines.append(_styled(f"> COMMAND  {command}", "cyan", color))
+        lines.append(_styled(_command_heading(document), "cyan", color))
+        if verbosity >= 1:
+            lines.append(f"{_SECTION_INDENT}COMMAND  {command}")
 
     if verbosity >= 2:
-        lines.extend(_text(document).rstrip().splitlines())
+        lines.extend(f"{_SECTION_INDENT}{line}" for line in _text(document).rstrip().splitlines())
     elif verbosity >= 0:
         _concise_document(lines, document, verbosity, color)
 
-    lines.append(_styled("─" * 72, "muted", color))
-    lines.append(_completion_line(document, exit_code, color))
+    separator = _styled("─" * 48, "muted", color)
+    lines.append(f"{_SECTION_INDENT}{separator}")
+    lines.append(f"{_SECTION_INDENT}{_completion_line(document, exit_code, color)}")
+    lines.append(f"{_SECTION_INDENT}{separator}")
     return "\n".join(lines) + "\n"
+
+
+def _command_heading(document: ReportDocument) -> str:
+    request = document.get("request", {})
+    kind = str(document.get("kind", "command"))
+    verb = str(request.get("verb", kind)) if isinstance(request, dict) else kind
+    labels = {
+        "add": "ADDING",
+        "actions": "LISTING ACTIONS",
+        "bootstrap": "BOOTSTRAPPING",
+        "build": "BUILDING",
+        "clean": "CLEANING",
+        "controllers": "LISTING CONTROLLERS",
+        "drivers": "LISTING DRIVERS",
+        "hydrate": "HYDRATING",
+        "init": "INITIALIZING",
+        "inspection": "INSPECTING",
+        "install": "INSTALLING",
+        "lock": "LOCKING",
+        "package": "PACKAGING",
+        "remove": "REMOVING",
+        "status": "CHECKING STATUS",
+        "test": "TESTING",
+        "update": "UPDATING",
+        "verify": "VERIFYING",
+    }
+    label = labels.get(verb, f"RUNNING {verb.upper()}")
+    target = _command_target(request)
+    return f"{label}{f' {target}' if target else ''} ..."
+
+
+def _command_target(request: JsonValue) -> str:
+    if not isinstance(request, dict):
+        return ""
+    parameters = request.get("parameters", {})
+    if isinstance(parameters, dict):
+        for key in ("poly.node.id", "poly.name"):
+            value = parameters.get(key)
+            if value:
+                return str(value)
+    selected = request.get("selected_node_ids", [])
+    if isinstance(selected, list) and selected:
+        return ", ".join(str(item) for item in selected)
+    return ""
 
 
 def _concise_document(
@@ -195,7 +246,7 @@ def _concise_document(
     for diagnostic in diagnostics if isinstance(diagnostics, list) else []:
         if isinstance(diagnostic, dict):
             message = diagnostic.get("message")
-            lines.append(_styled(f"⚠ WARN     {message}", "yellow", color))
+            lines.append(f"{_DETAIL_INDENT}{_styled(f'⚠ WARN     {message}', 'yellow', color)}")
 
     plan = document.get("plan")
     if isinstance(plan, dict):
@@ -204,17 +255,13 @@ def _concise_document(
         for action in planned if isinstance(planned, list) else []:
             if isinstance(action, dict):
                 operations[str(action.get("id"))] = str(action.get("operation"))
-        lines.append(
-            _styled(
-                f"> PLAN     {plan.get('id')} · {count} action(s) · {plan.get('status')}",
-                "cyan",
-                color,
-            )
-        )
+        plan_line = f"PLAN     {plan.get('id')} · {count} action(s) · {plan.get('status')}"
+        lines.append(f"{_SECTION_INDENT}{_styled(plan_line, 'cyan', color)}")
         plan_diagnostics = plan.get("diagnostics", [])
         for diagnostic in plan_diagnostics if isinstance(plan_diagnostics, list) else []:
             if isinstance(diagnostic, dict):
-                lines.append(_styled(f"⚠ WARN     {diagnostic.get('message')}", "yellow", color))
+                warning = f"⚠ WARN     {diagnostic.get('message')}"
+                lines.append(f"{_DETAIL_INDENT}{_styled(warning, 'yellow', color)}")
 
     run = document.get("run")
     if isinstance(run, dict):
@@ -234,24 +281,20 @@ def _concise_document(
         inventory = document.get("inventory", {})
         nodes = inventory.get("nodes", []) if isinstance(inventory, dict) else []
         count = len(nodes) if isinstance(nodes, list) else 0
-        lines.append(_styled(f"✓ OK       inspection · {count} node(s)", "green", color))
+        status = _styled(f"✓ OK       inspection · {count} node(s)", "green", color)
+        lines.append(f"{_SECTION_INDENT}{status}")
         if verbosity >= 1:
             for node in nodes if isinstance(nodes, list) else []:
                 if isinstance(node, dict):
-                    lines.append(f"           {node.get('id')} · {node.get('path')}")
+                    lines.append(f"{_DETAIL_INDENT}{node.get('id')} · {node.get('path')}")
     elif kind == "actions":
         catalogs = document.get("verbs", [])
         for catalog in catalogs if isinstance(catalogs, list) else []:
             if isinstance(catalog, dict):
                 applicable = catalog.get("applicable_actions", [])
                 count = len(applicable) if isinstance(applicable, list) else 0
-                lines.append(
-                    _styled(
-                        f"✓ OK       {catalog.get('verb')} · {count} applicable action(s)",
-                        "green",
-                        color,
-                    )
-                )
+                status = f"✓ OK       {catalog.get('verb')} · {count} applicable action(s)"
+                lines.append(f"{_SECTION_INDENT}{_styled(status, 'green', color)}")
 
 
 def _concise_named_items(
@@ -262,12 +305,13 @@ def _concise_named_items(
     color: bool,
 ) -> None:
     items = value if isinstance(value, list) else []
-    lines.append(_styled(f"✓ OK       {len(items)} {noun}(s)", "green", color))
+    status = _styled(f"✓ OK       {len(items)} {noun}(s)", "green", color)
+    lines.append(f"{_SECTION_INDENT}{status}")
     if verbosity >= 1:
         for item in items:
             if isinstance(item, dict):
                 version = f" {item.get('version')}" if item.get("version") else ""
-                lines.append(f"           {item.get('name')}{version}")
+                lines.append(f"{_DETAIL_INDENT}{item.get('name')}{version}")
 
 
 def _concise_action(
@@ -290,14 +334,14 @@ def _concise_action(
     blocked = action.get("blocked_by")
     if blocked:
         line += f" · blocked by {_compact(blocked)}"
-    lines.append(_styled(line, tone, color))
+    lines.append(f"{_DETAIL_INDENT}{_styled(line, tone, color)}")
 
     if isinstance(attempt, dict) and verbosity >= 1:
         for stream_name in ("stdout", "stderr"):
             stream = attempt.get(stream_name)
             if stream:
                 for output_line in str(stream).rstrip().splitlines():
-                    lines.append(f"           {stream_name}: {output_line}")
+                    lines.append(f"{_LOG_INDENT}{stream_name}: {output_line}")
 
 
 def _completion_line(document: ReportDocument, exit_code: int, color: bool) -> str:
