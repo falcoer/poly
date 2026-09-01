@@ -8,6 +8,7 @@ des fonctions disponibles.
 - [Comment initialiser un workspace local vide ?](#comment-initialiser-un-workspace-local-vide-)
 - [Comment inspecter la composition et les technologies détectées ?](#comment-inspecter-la-composition-et-les-technologies-détectées-)
 - [Comment connaître les drivers et contrôleurs disponibles ?](#comment-connaître-les-drivers-et-contrôleurs-disponibles-)
+- [Comment lister et modifier les natures du nœud courant ?](#comment-lister-et-modifier-les-natures-du-nœud-courant-)
 - [Comment ajouter puis retirer un module structurel ?](#comment-ajouter-puis-retirer-un-module-structurel-)
 
 ## Comment initialiser un workspace local vide ?
@@ -121,6 +122,47 @@ poly actions --workspace $workspacePath
 Poly affiche les drivers `poly.constructor`, `poly.driver.git` et
 `poly.driver.maven`, le contrôleur local et le catalogue des actions
 actuellement négociables.
+
+`poly drivers` inventorie ces drivers même lorsque le répertoire de contexte ne
+contient encore aucun nœud.
+
+## Comment lister et modifier les natures du nœud courant ?
+
+`poly nature list` affiche dans l'ordre alphabétique les natures publiées par les
+drivers chargés. Depuis un sous-répertoire, `nature add` et `nature remove`
+retrouvent le workspace parent le plus proche et le nœud déclaré le plus précis.
+Un `.` explicite désigne ce nœud courant ; plusieurs natures peuvent être
+modifiées dans la même commande.
+
+### Bash
+
+```bash
+# Répertoire d'un nœud déjà déclaré dans le workspace
+node_path="workspace/modules/api"
+
+cd "$node_path"
+poly nature list
+poly nature add . maven/reactor java/project
+poly nature remove . java/project
+```
+
+### PowerShell
+
+```powershell
+# Répertoire d'un nœud déjà déclaré dans le workspace
+$nodePath = "workspace/modules/api"
+
+Set-Location $nodePath
+poly nature list
+poly nature add . maven/reactor java/project
+poly nature remove . java/project
+```
+
+### Résultat attendu
+
+Le manifeste du workspace parent conserve `maven/reactor` sur le nœud courant.
+Les deux modifications apparaissent comme des jobs planifiés et reportables ;
+aucun chemin de workspace n'est requis sur la commande.
 
 ## Comment ajouter puis retirer un module structurel ?
 

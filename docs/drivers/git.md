@@ -31,11 +31,12 @@ Non-Git nodes are retained as rejected candidates with the missing
 
 ## Materialization and lock lifecycle
 
-Git-backed construction and restoration are frozen action graphs. Resolution,
-clone or adoption, fetch-if-needed, checkout, and exact `HEAD` verification are
-separate visible actions. Parent repository verification constrains nested
-repository materialization, so a nested checkout is never created before its
-owning repository.
+Git-backed declaration and restoration are separate frozen action graphs.
+`add` contains only remote resolution and the dependent atomic composition
+write. Hydration exposes clone or adoption, fetch-if-needed, checkout, and exact
+`HEAD` verification as separate visible actions. Parent repository verification
+constrains nested materialization, so a nested checkout is never created before
+its owning repository.
 
 ```shell
 poly add api --path services/api --repo https://git.example/api.git --ref main
@@ -44,9 +45,10 @@ poly update --select api
 poly lock --from-workspace --select api
 ```
 
-`add` resolves the current requested reference into `poly.lock.yaml` and then
-materializes it. `hydrate` always follows the immutable lock and is a no-op when
-the checkout already matches. `update` resolves the moving reference, moves a
+`add` resolves the current requested reference into `poly.lock.yaml` without
+materializing it. Selector intent remains in `poly.yaml`, while the lock records
+the exact advertised commit. `hydrate` always follows that immutable lock and
+is a no-op when the checkout already matches. `update` resolves the moving reference, moves a
 clean worktree safely, verifies its new `HEAD`, and only then updates the lock.
 `lock --from-workspace` records clean local `HEAD` commits, which is the explicit
 way to adopt pulls performed by EGit or another Git client.

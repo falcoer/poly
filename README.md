@@ -31,11 +31,11 @@ Poly-managed root `.gitignore` block.
 For a command-oriented tour, see the [Poly cookbook](docs/cookbook/README.md).
 
 The current correction milestone is
-[0.10.1 — Daily workflow correction](docs/releases/0.10.1.md). Its interactive
-CLI rendering is implemented; lightweight source-backed `add`, explicit
-hydration separation, contextual nature commands, and their validation gate
-remain in progress. The milestone is not considered validated until its
-annotated roadmap tag is created by CI.
+[0.10.1 — Daily workflow correction](docs/releases/0.10.1.md). Lightweight
+source-backed `add`, explicit hydration, contextual nature commands, empty
+workspace driver discovery, and the hierarchical interactive renderer are
+implemented. The milestone is not considered validated until its complete CI
+gate succeeds and creates the annotated roadmap tag.
 
 The version 1 contract is implemented: manifests and locks are validated and
 compiled into rebuildable state, declared identities are enriched by Git and
@@ -102,12 +102,15 @@ workspace can do.
 ```shell
 poly inspect
 poly drivers
+poly nature list
 poly controllers
 poly init --name example --plan
 poly init --name example
 poly add service-api --path services/api \
   --repo https://git.example.com/team/service-api.git --ref main
 poly add service-api-reactor --parent service-api --path . --nature maven/reactor
+poly nature add . maven/reactor java/project
+poly nature remove . java/project
 poly remove service-api-reactor
 poly hydrate
 poly inspect --remote
@@ -139,12 +142,11 @@ JSON, YAML, and XML output is never decorated.
 delimited root `.gitignore` block. Re-running it reconciles those generated
 artifacts without changing authored composition. `poly add` and `poly remove`
 edit the YAML round-trip document while preserving comments and user-owned
-ignore rules. In the validated 0.10 baseline, a Git-backed `add --repo` resolves, locks, and
-materializes its source as one composite job; a structural add without `--repo`
-only declares the node. The in-progress 0.10.1 correction changes source-backed
-`add` into an atomic manifest/lock update with no child checkout; `poly
-hydrate` becomes the explicit materialization step. All construction commands
-remain ordinary driver proposals rather than a private CLI execution path.
+ignore rules. A Git-backed `add --repo` resolves the requested selector, stores
+the exact commit in `poly.lock.yaml`, and atomically updates the composition
+without creating or changing the child worktree. `poly hydrate` is the explicit
+materialization step. All construction commands remain ordinary driver
+proposals rather than a private CLI execution path.
 
 Clone a committed control repository and restore every locked descendant in one
 reported job:

@@ -313,6 +313,7 @@ def maven_driver() -> DriverRegistration:
         DRIVER_API_VERSION,
         frozenset((DriverCapability.INSPECT, DriverCapability.PLAN)),
         "Maven model inspection and reactor-aware action planning",
+        ("maven/aggregator", "maven/module", "maven/project"),
     )
     return DriverRegistration(
         manifest,

@@ -16,6 +16,37 @@ Le paramètre `--format` accepte les valeurs suivantes.
 
 Source : `src/poly/cli.py`, constante `REPORT_FORMATS`.
 
+## Couleurs du rendu interactif
+
+Le paramètre `--color` accepte les valeurs suivantes pour les rapports texte.
+
+| Valeur | Signification | Par défaut | Contraintes |
+|---|---|---:|---|
+| `auto` | Active les couleurs uniquement sur un terminal compatible. | Oui | `NO_COLOR` désactive les couleurs. |
+| `always` | Force les séquences de couleur ANSI. | Non | Réservé au format `text`. |
+| `never` | Supprime toute séquence de couleur. | Non | Réservé au format `text`. |
+
+Source : `src/poly/cli.py`, option `--color`.
+
+## Natures publiées par les drivers intégrés
+
+Cet ensemble n'est pas fermé : les drivers externes peuvent publier leurs
+propres natures. `poly nature list` donne l'inventaire faisant autorité pour
+l'installation courante.
+
+| Valeur intégrée | Signification | Driver |
+|---|---|---|
+| `git/repository` | Frontière Git observée. | `poly.driver.git` |
+| `maven/aggregator` | Projet Maven agrégeant des modules. | `poly.driver.maven` |
+| `maven/module` | Projet membre d'un réacteur Maven. | `poly.driver.maven` |
+| `maven/project` | Projet décrit par un POM Maven. | `poly.driver.maven` |
+| `poly/module` | Nœud de composition de type module. | `poly.constructor` |
+| `poly/repository` | Nœud de composition de type repository. | `poly.constructor` |
+| `poly/workspace` | Nœud racine du workspace. | `poly.constructor` |
+
+Source : manifestes enregistrés dans `src/poly/construction.py` et
+`src/poly/drivers/`.
+
 ## Types de nœud du manifeste
 
 | Valeur | Signification | Par défaut | Contraintes |
@@ -78,4 +109,3 @@ Source : `src/poly/model.py`, `PlanStatus`.
 | `empty` | Le plan ne contenait aucune action. | — | — |
 
 Source : `src/poly/runtime.py`, `RunStatus`.
-

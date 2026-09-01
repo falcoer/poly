@@ -315,10 +315,6 @@ class GitPlanningProvider:
             )
         ref = request.parameters.get("poly.source.ref", "")
         resolution = f"poly/source-resolved:{node_id}"
-        manifest = f"poly/manifest-added:{node_id}"
-        checkout = f"git/checkout-ready:{node_id}"
-        available = f"git/commit-available:{node_id}"
-        checked = f"git/head-checked:{node_id}"
         environment = {
             "poly.node.id": node_id,
             "poly.node.path": path,
@@ -335,26 +331,6 @@ class GitPlanningProvider:
                 (),
                 produces=frozenset((Constraint(resolution),)),
                 claims=frozenset((ActionClaim("git/resolve-source", f"node:{node_id}"),)),
-                environment=environment,
-                required_capability="git.materialize",
-            ),
-            self._materialization_action(
-                "prepare", node_id, path, environment, manifest, checkout, "add"
-            ),
-            self._materialization_action(
-                "fetch", node_id, path, environment, checkout, available, "add"
-            ),
-            self._materialization_action(
-                "checkout", node_id, path, environment, available, checked, "add"
-            ),
-            ActionSpec(
-                f"git.verify:{node_id}",
-                self.name,
-                "add",
-                "git/verify-head",
-                (),
-                requires=frozenset((Constraint(checked),)),
-                claims=frozenset((ActionClaim("git/verify-head", f"node:{node_id}"),)),
                 environment=environment,
                 required_capability="git.materialize",
             ),
@@ -582,11 +558,12 @@ class GitActionHandler:
         )
 
     def _resolve_remote(self, url: str, requested: str | None) -> tuple[str, str]:
-        if requested and _COMMIT.fullmatch(requested):
-            return requested.lower(), "commit"
         arguments = ["git", "ls-remote"]
+        exact_commit = requested.lower() if requested and _COMMIT.fullmatch(requested) else None
         if requested is None:
             arguments.extend(("--symref", url, "HEAD"))
+        elif exact_commit is not None:
+            arguments.append(url)
         else:
             arguments.extend((url, requested, f"refs/heads/{requested}", f"refs/tags/{requested}*"))
         process = self._run_process(tuple(arguments))
@@ -603,6 +580,10 @@ class GitActionHandler:
             commit, separator, ref_name = line.partition("\t")
             if separator and _COMMIT.fullmatch(commit):
                 refs[ref_name] = commit.lower()
+        if exact_commit is not None:
+            if exact_commit in refs.values():
+                return exact_commit, "commit"
+            raise GitInspectionError(f"commit {requested!r} is not advertised by {url}")
         if requested is None:
             head_commit = refs.get("HEAD")
             if head_commit:
@@ -823,6 +804,7 @@ def git_driver() -> DriverRegistration:
             (DriverCapability.INSPECT, DriverCapability.PLAN, DriverCapability.EXECUTE)
         ),
         description="Git repository inspection, materialization, and lock management",
+        natures=("git/repository",),
     )
     return DriverRegistration(
         manifest=manifest,

@@ -91,17 +91,15 @@ def test_add_hydrate_eclipse_pull_lock_and_update_journey(
     )
     added = json.loads(capsys.readouterr().out)
     operations = {action["operation"] for action in added["plan"]["planned_actions"]}
-    assert {
-        "git/resolve-source",
-        "poly/construction/add",
-        "git/clone",
-        "git/fetch",
-        "git/checkout",
-        "git/verify-head",
-    }.issubset(operations)
+    assert operations == {"git/resolve-source", "poly/construction/add"}
+    assert operations.isdisjoint({"git/clone", "git/fetch", "git/checkout", "git/adopt"})
     child = workspace / "services" / "service"
-    assert _git(child, "rev-parse", "HEAD") == initial
+    assert not child.exists()
     assert validate_workspace(workspace).lock.sources[0].commit == initial
+
+    assert main(["hydrate", "--workspace", str(workspace), "--select", "service"]) == 0
+    capsys.readouterr()
+    assert _git(child, "rev-parse", "HEAD") == initial
 
     second = _advance(source, "two\n")
     assert main(["inspect", "--remote", "--workspace", str(workspace), "--format", "json"]) == 0
@@ -175,8 +173,11 @@ def test_existing_checkout_is_adopted_and_dirty_update_is_refused(
 
     assert main(["add", "existing", "--workspace", str(workspace), "--path", "existing"]) == 0
     report = capsys.readouterr().out
-    assert "git/adopt" in report
+    assert "git/adopt" not in report
     assert validate_workspace(workspace).lock.sources[0].commit == initial
+    assert main(["hydrate", "--workspace", str(workspace), "--select", "existing"]) == 0
+    report = capsys.readouterr().out
+    assert "git/adopt" in report
 
     advanced = _advance(source, "advanced\n")
     (existing / "local.txt").write_text("dirty\n", encoding="utf-8")
@@ -298,3 +299,72 @@ def test_tag_and_full_sha_references_are_locked_immutably(
     assert locked["tagged"].ref_kind == "tag"
     assert locked["pinned"].commit == commit
     assert locked["pinned"].ref_kind == "commit"
+
+
+def test_add_resolution_failure_preserves_all_composition_files(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _source, remote, _commit = _remote(tmp_path, "failure")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    assert main(["init", "--workspace", str(workspace), "--name", "Atomic"]) == 0
+    capsys.readouterr()
+    paths = (
+        workspace / "poly.yaml",
+        workspace / "poly.lock.yaml",
+        workspace / ".gitignore",
+        workspace / ".poly" / "state" / "workspace.json",
+    )
+    before = {path: path.read_bytes() for path in paths}
+
+    assert (
+        main(
+            [
+                "add",
+                "broken",
+                "--workspace",
+                str(workspace),
+                "--path",
+                "broken",
+                "--repo",
+                str(remote),
+                "--ref",
+                "does-not-exist",
+            ]
+        )
+        == 1
+    )
+    assert "does not exist" in capsys.readouterr().out
+    assert {path: path.read_bytes() for path in paths} == before
+    assert not (workspace / "broken").exists()
+
+
+def test_add_rolls_back_a_mid_transaction_write_failure(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    assert main(["init", "--workspace", str(workspace), "--name", "Rollback"]) == 0
+    capsys.readouterr()
+    paths = (
+        workspace / "poly.yaml",
+        workspace / "poly.lock.yaml",
+        workspace / ".gitignore",
+        workspace / ".poly" / "state" / "workspace.json",
+    )
+    before = {path: path.read_bytes() for path in paths}
+    original_replace = Path.replace
+
+    def fail_lock_replacement(path: Path, target: Path) -> Path:
+        if path.suffix == ".tmp" and target == workspace / "poly.lock.yaml":
+            raise OSError("simulated lock replacement failure")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", fail_lock_replacement)
+    assert main(["add", "module", "--workspace", str(workspace), "--path", "module"]) == 1
+    assert "simulated lock replacement failure" in capsys.readouterr().out
+    assert {path: path.read_bytes() for path in paths} == before
+    assert not list(workspace.glob(".*.tmp"))
+    assert not list(workspace.glob(".*.bak"))

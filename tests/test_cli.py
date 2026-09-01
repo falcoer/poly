@@ -217,6 +217,54 @@ def test_cli_init_add_persist_and_render_construction_runs(
     }
 
 
+def test_drivers_and_natures_are_listed_from_an_empty_directory(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["drivers", "--workspace", str(tmp_path), "--format", "json"]) == 0
+    drivers = json.loads(capsys.readouterr().out)
+    assert [driver["name"] for driver in drivers["drivers"]] == [
+        "poly.constructor",
+        "poly.driver.git",
+        "poly.driver.maven",
+    ]
+
+    assert main(["nature", "list", "--workspace", str(tmp_path), "--format", "json"]) == 0
+    natures = json.loads(capsys.readouterr().out)
+    assert [nature["name"] for nature in natures["natures"]] == [
+        "git/repository",
+        "maven/aggregator",
+        "maven/module",
+        "maven/project",
+        "poly/module",
+        "poly/repository",
+        "poly/workspace",
+    ]
+
+
+def test_contextual_nature_add_remove_supports_dot_and_multiple_values(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert main(["init", "--workspace", str(tmp_path), "--name", "Natures"]) == 0
+    capsys.readouterr()
+    assert main(["add", "module", "--workspace", str(tmp_path), "--path", "module"]) == 0
+    capsys.readouterr()
+    module = tmp_path / "module"
+    module.mkdir()
+    monkeypatch.chdir(module)
+
+    assert main(["nature", "add", ".", "z/nature", "a/nature"]) == 0
+    added = capsys.readouterr().out
+    assert "ADDING NATURES TO module" in added
+    assert main(["nature", "remove", "a/nature"]) == 0
+    capsys.readouterr()
+
+    assert main(["inspect", "--workspace", str(tmp_path), "--format", "json"]) == 0
+    inspected = json.loads(capsys.readouterr().out)
+    current = next(node for node in inspected["inventory"]["nodes"] if node["id"] == "module")
+    assert "z/nature" in current["natures"]
+    assert "a/nature" not in current["natures"]
+
+
 def test_direct_and_expert_verb_forms_share_the_same_plan(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

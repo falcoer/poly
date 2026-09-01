@@ -32,12 +32,20 @@ class DriverManifest:
     api_version: str
     capabilities: frozenset[DriverCapability]
     description: str = ""
+    natures: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.name or any(character.isspace() for character in self.name):
             raise DriverProtocolError("driver name must be non-empty and contain no whitespace")
         if not self.version:
             raise DriverProtocolError("driver version must not be empty")
+        normalized_natures = tuple(sorted(set(self.natures)))
+        if any(
+            not nature or any(character.isspace() for character in nature)
+            for nature in normalized_natures
+        ):
+            raise DriverProtocolError("driver natures must be non-empty and contain no whitespace")
+        object.__setattr__(self, "natures", normalized_natures)
         _version_parts(self.api_version, "api_version")
 
     def ensure_compatible(self, supported: str = DRIVER_API_VERSION) -> None:
@@ -55,6 +63,7 @@ class DriverManifest:
             "api_version": self.api_version,
             "capabilities": sorted(capability.value for capability in self.capabilities),
             "description": self.description,
+            "natures": list(self.natures),
         }
 
     @classmethod
@@ -69,6 +78,7 @@ class DriverManifest:
                 api_version=str(value["api_version"]),
                 capabilities=capabilities,
                 description=str(value.get("description", "")),
+                natures=_string_list(value.get("natures", [])),
             )
         except (KeyError, TypeError, ValueError) as error:
             raise DriverProtocolError(f"invalid driver manifest: {error}") from error

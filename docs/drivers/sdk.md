@@ -6,7 +6,8 @@ privileged API for drivers shipped in the Poly repository.
 ## Manifest compatibility
 
 The current driver API is `1.0`. A driver manifest declares its identity,
-implementation version, API version, and exact capability set. Poly accepts the
+implementation version, API version, exact capability set, and the stable
+natures it contributes. Poly accepts the
 same major version up to its supported minor version. A future incompatible API
 will therefore fail during registration, before driver code can participate in
 inspection, planning, or execution.
@@ -19,6 +20,7 @@ manifest = DriverManifest(
     version="0.1.0",
     api_version="1.0",
     capabilities=frozenset((DriverCapability.INSPECT, DriverCapability.PLAN)),
+    natures=("example/project",),
 )
 ```
 

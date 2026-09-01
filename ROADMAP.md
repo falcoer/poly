@@ -255,7 +255,7 @@ Cross-milestone invariants:
 
 ## 0.10.1 — Daily workspace authoring and CLI clarity
 
-- Status: `in-progress`
+- Status: `implemented-awaiting-ci`
 - Tag: `roadmap/0.10.1-daily-workflow`
 - Depends on: validated 0.10 Git materialization baseline.
 - Scope: correct the daily authoring workflow before extending the driver
@@ -271,7 +271,14 @@ Cross-milestone invariants:
     `--color auto|always|never` and `NO_COLOR` support;
   - JSON, YAML, and XML retain the unchanged canonical `poly.report/v1`
     document.
-- Acceptance still required:
+  - source-backed `add` resolves and atomically records intent and the exact
+    lock commit without materializing a child worktree;
+  - explicit `hydrate` performs locked clone/adoption, fetch, checkout, and
+    verification and remains idempotent;
+  - contextual, multi-value nature add/remove and alphabetic nature inventory
+    are available from the nearest workspace;
+  - built-in and system drivers are inventoried from an empty workspace.
+- Acceptance implemented; awaiting complete remote CI:
   - `poly add <id> --repo <url> --ref <selector> --path <path>` updates
     `poly.yaml`, resolves and atomically updates `poly.lock.yaml`, reconciles
     the managed `.gitignore` block, and reports the result without cloning,

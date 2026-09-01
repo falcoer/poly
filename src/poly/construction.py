@@ -36,6 +36,7 @@ from poly.workspace import (
     compile_workspace,
     create_workspace_files,
     remove_manifest_node,
+    set_manifest_node_natures,
     validate_initialization_target,
     validate_manifest_value,
     validate_workspace,
@@ -54,7 +55,7 @@ class ConstructionPlanningProvider:
     """Negotiate structural changes through the public driver planning API."""
 
     name: str = CONSTRUCTOR_DRIVER_NAME
-    verbs: frozenset[str] = frozenset(("add", "init", "remove"))
+    verbs: frozenset[str] = frozenset(("add", "init", "nature-add", "nature-remove", "remove"))
 
     def propose(self, request: PlanningRequest) -> DriverProposal:
         try:
@@ -64,6 +65,8 @@ class ConstructionPlanningProvider:
                 return DriverProposal(self.name, (self._add(request),))
             if request.verb == "remove":
                 return DriverProposal(self.name, (self._remove(request),))
+            if request.verb in {"nature-add", "nature-remove"}:
+                return DriverProposal(self.name, (self._nature(request),))
         except ConstructionError as error:
             return DriverProposal(
                 self.name,
@@ -161,6 +164,36 @@ class ConstructionPlanningProvider:
             (),
             claims=frozenset((ActionClaim("poly/construction/remove", f"node:{node_id}"),)),
             environment={"poly.node.id": node_id},
+            changes_structure=True,
+            required_capability="workspace.construct",
+        )
+
+    def _nature(self, request: PlanningRequest) -> ActionSpec:
+        if len(request.selected_node_ids) != 1:
+            raise ConstructionError("nature management requires exactly one selected node")
+        node_id = request.selected_node_ids[0]
+        natures = tuple(
+            sorted(
+                item.strip()
+                for item in request.parameters.get("poly.node.natures", "").split(",")
+                if item.strip()
+            )
+        )
+        if not natures:
+            raise ConstructionError("at least one nature is required")
+        operation = f"poly/construction/{request.verb}"
+        return ActionSpec(
+            f"construct.{request.verb}:{node_id}",
+            self.name,
+            request.verb,
+            operation,
+            (node_id,),
+            requested_node_ids=(node_id,),
+            claims=frozenset((ActionClaim(operation, f"node:{node_id}"),)),
+            environment={
+                "poly.node.id": node_id,
+                "poly.node.natures": json.dumps(natures),
+            },
             changes_structure=True,
             required_capability="workspace.construct",
         )
@@ -297,6 +330,11 @@ class ConstructionActionHandler:
                 return self._add(action, context)
             if action.operation == "poly/construction/remove":
                 return self._remove(action, context)
+            if action.operation in {
+                "poly/construction/nature-add",
+                "poly/construction/nature-remove",
+            }:
+                return self._nature(action, context)
             return DriverExecutionResult(
                 False, f"unsupported construction operation: {action.operation}"
             )
@@ -363,6 +401,21 @@ class ConstructionActionHandler:
         remove_manifest_node(context.workspace, node_id)
         return DriverExecutionResult(True, f"removed node {node_id!r}")
 
+    def _nature(self, action: ActionSpec, context: ExecutionContext) -> DriverExecutionResult:
+        node_id = action.environment["poly.node.id"]
+        value = json.loads(action.environment["poly.node.natures"])
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise WorkspaceError("node natures must be a string list")
+        add = action.operation.endswith("nature-add")
+        compiled = set_manifest_node_natures(context.workspace, node_id, tuple(value), add=add)
+        current = compiled.manifest.get(node_id).natures
+        verb = "added to" if add else "removed from"
+        return DriverExecutionResult(
+            True,
+            f"natures {', '.join(value)} {verb} {node_id!r}",
+            {"natures": list(current)},
+        )
+
 
 def constructor_driver() -> DriverRegistration:
     return DriverRegistration(
@@ -372,6 +425,7 @@ def constructor_driver() -> DriverRegistration:
             DRIVER_API_VERSION,
             frozenset((DriverCapability.PLAN, DriverCapability.EXECUTE)),
             "Poly root workspace composition action handler",
+            ("poly/module", "poly/repository", "poly/workspace"),
         ),
         planners=(ConstructionPlanningProvider(),),
         handlers=(ConstructionActionHandler(),),

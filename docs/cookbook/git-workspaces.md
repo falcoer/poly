@@ -5,18 +5,19 @@ et les évolutions réalisées depuis Eclipse ou un autre client Git.
 
 ## Table des matières
 
-- [Comment ajouter et matérialiser un dépôt Git enfant ?](#comment-ajouter-et-matérialiser-un-dépôt-git-enfant-)
+- [Comment déclarer puis matérialiser un dépôt Git enfant ?](#comment-déclarer-puis-matérialiser-un-dépôt-git-enfant-)
 - [Comment restaurer un workspace complet depuis son dépôt racine ?](#comment-restaurer-un-workspace-complet-depuis-son-dépôt-racine-)
 - [Comment réhydrater les dépôts exactement au lock ?](#comment-réhydrater-les-dépôts-exactement-au-lock-)
 - [Comment détecter les écarts entre HEAD, le lock et la branche distante ?](#comment-détecter-les-écarts-entre-head-le-lock-et-la-branche-distante-)
 - [Comment adopter dans le lock un pull réalisé depuis Eclipse ?](#comment-adopter-dans-le-lock-un-pull-réalisé-depuis-eclipse-)
 - [Comment mettre à jour les dépôts depuis leurs branches distantes ?](#comment-mettre-à-jour-les-dépôts-depuis-leurs-branches-distantes-)
 
-## Comment ajouter et matérialiser un dépôt Git enfant ?
+## Comment déclarer puis matérialiser un dépôt Git enfant ?
 
-`add --repo` réalise un job composite : résolution de la référence, écriture du
-lock, ajout au manifeste et au bloc `.gitignore`, clone ou adoption, checkout et
-vérification du `HEAD`.
+`add --repo` déclare le dépôt, résout la référence et écrit son commit exact dans
+le lock sans créer le worktree. `hydrate` matérialise ensuite explicitement la
+composition verrouillée. Les fichiers de composition peuvent ainsi être relus
+et commités avant tout clone.
 
 ### Bash
 
@@ -37,6 +38,9 @@ poly add "$node_id" \
   --path "$node_path" \
   --repo "$repository_url" \
   --ref "$requested_ref"
+poly hydrate \
+  --workspace "$workspace_path" \
+  --select "$node_id"
 ```
 
 ### PowerShell
@@ -58,17 +62,24 @@ poly add $nodeId `
   --path $nodePath `
   --repo $repositoryUrl `
   --ref $requestedRef
+poly hydrate `
+  --workspace $workspacePath `
+  --select $nodeId
 ```
 
 ### Résultat attendu
 
-Le dépôt est présent à `services/api`, son commit exact figure dans
-`poly.lock.yaml` et son contenu n'est pas indexable par le dépôt racine.
+Après `add`, aucun répertoire `services/api` n'est créé ; le sélecteur reste
+dans `poly.yaml` et son commit exact figure dans `poly.lock.yaml`. Après
+`hydrate`, le dépôt est présent sur ce commit et son contenu n'est pas indexable
+par le dépôt racine.
 
 ### En cas de problème
 
-Poly refuse une cible non vide qui n'est pas le dépôt attendu, un `origin`
-différent, un clone partiel ou un worktree sale nécessitant un déplacement.
+Une référence introuvable fait échouer `add` sans changement partiel du
+manifeste, du lock, de l'état compilé ou du bloc `.gitignore`. Pendant
+l'hydratation, Poly refuse une cible non vide qui n'est pas le dépôt attendu, un
+`origin` différent, un clone partiel ou un worktree sale nécessitant un déplacement.
 
 ## Comment restaurer un workspace complet depuis son dépôt racine ?
 

@@ -29,6 +29,7 @@ from poly.reporting import (
     controllers_document,
     drivers_document,
     inspection_document,
+    natures_document,
     planning_document,
     render,
     render_cli,
@@ -39,9 +40,19 @@ from poly.workspace import WorkspaceError, validate_workspace
 
 REPORT_FORMATS = ("text", "json", "yaml", "xml")
 RESERVED_COMMANDS = frozenset(
-    ("actions", "controllers", "driver", "drivers", "inspect", "plan", "report", "run")
+    (
+        "actions",
+        "controllers",
+        "driver",
+        "drivers",
+        "inspect",
+        "nature",
+        "plan",
+        "report",
+        "run",
+    )
 )
-INTERNAL_VERBS = frozenset(("bootstrap",))
+INTERNAL_VERBS = frozenset(("bootstrap", "nature-add", "nature-remove"))
 
 
 def build_registry() -> DriverRegistry:
@@ -71,6 +82,8 @@ def main(arguments: list[str] | None = None) -> int:
         return 0
     if options.command == "init" and options.root_repository:
         return _bootstrap_root(parser, options, registry, command)
+    if options.command == "nature":
+        return _nature_command(parser, options, registry, command)
     workspace = options.workspace.resolve()
     if not workspace.is_dir():
         parser.error(f"workspace does not exist or is not a directory: {workspace}")
@@ -201,6 +214,20 @@ def _parser(registry: DriverRegistry) -> argparse.ArgumentParser:
     drivers = commands.add_parser("drivers", help="list registered technology drivers")
     _report_options(drivers)
 
+    nature = commands.add_parser("nature", help="list or edit contextual node natures")
+    nature_commands = nature.add_subparsers(dest="nature_command", required=True)
+    nature_list = nature_commands.add_parser("list", help="list natures contributed by drivers")
+    _report_options(nature_list)
+    for operation in ("add", "remove"):
+        change = nature_commands.add_parser(operation, help=f"{operation} node natures")
+        change.add_argument(
+            "values",
+            nargs="+",
+            metavar="[NODE|.] NATURE",
+            help="optional node (or '.') followed by one or more natures",
+        )
+        _direct_verb_options(change)
+
     driver = commands.add_parser("driver", help="develop external drivers")
     driver_commands = driver.add_subparsers(dest="driver_command", required=True)
     new_driver = driver_commands.add_parser("new", help="create a driver repository")
@@ -223,6 +250,101 @@ def _parser(registry: DriverRegistry) -> argparse.ArgumentParser:
             )
         _direct_verb_options(direct)
     return parser
+
+
+def _nature_command(
+    parser: argparse.ArgumentParser,
+    options: argparse.Namespace,
+    registry: DriverRegistry,
+    command: str,
+) -> int:
+    start = options.workspace.resolve()
+    if not start.is_dir():
+        parser.error(f"workspace does not exist or is not a directory: {start}")
+    workspace = _nearest_workspace(start)
+    if options.nature_command == "list":
+        document = natures_document(workspace or start, registry.manifests())
+        _write_output(document, options, command, 0)
+        return 0
+    if workspace is None:
+        parser.error(f"no Poly workspace found from {start}")
+    try:
+        inspection = inspect_workspace(registry, workspace)
+        node_id, natures = _nature_target(
+            options.values, inspection.inventory.nodes, workspace, start
+        )
+    except WorkspaceError as error:
+        parser.error(str(error))
+    snapshot = prepare_planning(
+        registry,
+        inspection,
+        f"nature-{options.nature_command}",
+        (node_id,),
+        {"poly.node.natures": ",".join(natures)},
+    )
+    if options.plan_only:
+        document = planning_document(snapshot)
+        exit_code = 0 if snapshot.plan.status.value in {"executable", "empty"} else 1
+        _write_output(document, options, command, exit_code)
+        return exit_code
+    run_directory = workspace / ".poly" / "runs" / snapshot.plan.id
+    run_directory.mkdir(parents=True, exist_ok=True)
+    result = Executor(_controller_runner(registry, options.controller)).execute(
+        snapshot.plan, ExecutionContext(workspace, run_directory)
+    )
+    document = run_document(snapshot, result)
+    _save_run_if_initialized(workspace, snapshot.plan.id, document)
+    exit_code = 0 if result.status in {RunStatus.SUCCEEDED, RunStatus.EMPTY} else 1
+    _write_output(document, options, command, exit_code)
+    return exit_code
+
+
+def _nearest_workspace(start: Path) -> Path | None:
+    for candidate in (start, *start.parents):
+        if (candidate / WORKSPACE_MANIFEST).is_file():
+            return candidate
+    return None
+
+
+def _nature_target(
+    values: list[str], nodes: tuple[Node, ...], workspace: Path, current: Path
+) -> tuple[str, tuple[str, ...]]:
+    node_ids = {node.id for node in nodes}
+    if values[0] == ".":
+        node_id = _current_node(nodes, workspace, current)
+        natures = values[1:]
+    elif values[0] in node_ids and len(values) > 1:
+        node_id = values[0]
+        natures = values[1:]
+    else:
+        node_id = _current_node(nodes, workspace, current)
+        natures = values
+    normalized = tuple(sorted({nature.strip() for nature in natures if nature.strip()}))
+    if not normalized:
+        raise WorkspaceError("at least one nature is required")
+    return node_id, normalized
+
+
+def _current_node(nodes: tuple[Node, ...], workspace: Path, current: Path) -> str:
+    candidates: list[tuple[int, int, str]] = []
+    parents = {
+        node.id: node.metadata.get("poly.parent")
+        for node in nodes
+        if isinstance(node.metadata.get("poly.parent"), str)
+    }
+    for node in nodes:
+        path = (workspace / node.path).resolve()
+        if path != current and path not in current.parents:
+            continue
+        depth = 0
+        parent = parents.get(node.id)
+        while isinstance(parent, str):
+            depth += 1
+            parent = parents.get(parent)
+        candidates.append((len(path.parts), depth, node.id))
+    if not candidates:
+        raise WorkspaceError(f"current directory does not belong to a declared node: {current}")
+    return max(candidates)[2]
 
 
 def _bootstrap_root(

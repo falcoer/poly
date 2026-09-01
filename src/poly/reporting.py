@@ -151,6 +151,25 @@ def drivers_document(workspace: Path, manifests: tuple[DriverManifest, ...]) -> 
     }
 
 
+def natures_document(workspace: Path, manifests: tuple[DriverManifest, ...]) -> ReportDocument:
+    contributors: dict[str, list[str]] = {}
+    for manifest in manifests:
+        for nature in manifest.natures:
+            contributors.setdefault(nature, []).append(manifest.name)
+    return {
+        "schema": REPORT_SCHEMA,
+        "kind": "natures",
+        "workspace": str(workspace.resolve()),
+        "available_verbs": [],
+        "inventory": {"nodes": []},
+        "diagnostics": [],
+        "natures": [
+            {"name": nature, "drivers": _string_values(sorted(contributors[nature]))}
+            for nature in sorted(contributors)
+        ],
+    }
+
+
 def render(document: ReportDocument, format_name: str) -> str:
     if format_name == "json":
         return json.dumps(document, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
@@ -211,6 +230,9 @@ def _command_heading(document: ReportDocument) -> str:
         "inspection": "INSPECTING",
         "install": "INSTALLING",
         "lock": "LOCKING",
+        "nature-add": "ADDING NATURES TO",
+        "nature-remove": "REMOVING NATURES FROM",
+        "natures": "LISTING NATURES",
         "package": "PACKAGING",
         "remove": "REMOVING",
         "status": "CHECKING STATUS",
@@ -275,6 +297,8 @@ def _concise_document(
     kind = str(document.get("kind", "report"))
     if kind == "drivers":
         _concise_named_items(lines, document.get("drivers"), "driver", verbosity, color)
+    elif kind == "natures":
+        _concise_named_items(lines, document.get("natures"), "nature", verbosity, color)
     elif kind == "controllers":
         _concise_named_items(lines, document.get("controllers"), "controller", verbosity, color)
     elif kind == "inspection":

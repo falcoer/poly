@@ -1,6 +1,6 @@
 # Cookbook Poly
 
-Ce cookbook propose un tour pratique de Poly 0.10, depuis la création d'un
+Ce cookbook propose un tour pratique de Poly 0.10.1, depuis la création d'un
 workspace jusqu'à son hydratation Git et à l'exécution de jobs. Les exemples
 utilisent l'interface publique réellement exposée par la CLI.
 
@@ -24,7 +24,7 @@ utilisent l'interface publique réellement exposée par la CLI.
 ## Parcours conseillé
 
 1. [Initialiser un workspace local](getting-started.md#comment-initialiser-un-workspace-local-vide-).
-2. [Ajouter un dépôt enfant](git-workspaces.md#comment-ajouter-et-matérialiser-un-dépôt-git-enfant-).
+2. [Déclarer puis hydrater un dépôt enfant](git-workspaces.md#comment-déclarer-puis-matérialiser-un-dépôt-git-enfant-).
 3. [Inspecter l'état local et distant](git-workspaces.md#comment-détecter-les-écarts-entre-head-le-lock-et-la-branche-distante-).
 4. [Simuler un pull EGit et adopter son résultat](git-workspaces.md#comment-adopter-dans-le-lock-un-pull-réalisé-depuis-eclipse-).
 5. [Planifier puis exécuter un job](jobs-and-reports.md#comment-prévisualiser-puis-exécuter-un-job-).
@@ -34,7 +34,7 @@ utilisent l'interface publique réellement exposée par la CLI.
 | Périmètre | Validation |
 |---|---|
 | Initialisation, inspection et composition locale | Exécuté par les tests CLI. |
-| Ajout, résolution, clone, hydratation et mise à jour Git | Exécuté avec des dépôts Git locaux temporaires. |
+| Ajout atomique sans worktree, résolution, hydratation et mise à jour Git | Exécuté avec des dépôts Git locaux temporaires. |
 | Pull externe puis `lock --from-workspace` | Exécuté avec le même effet qu'un pull EGit. |
 | Bootstrap récursif depuis un dépôt racine | Exécuté avec deux dépôts enfants imbriqués. |
 | URL `git.example.com` des recettes | **Non exécuté** : serveur volontairement fictif à remplacer. |

@@ -1,6 +1,6 @@
 # Workspace files contract
 
-This document defines the planned version 1 authored files for a Poly workspace.
+This document defines the implemented version 1 authored files for a Poly workspace.
 It is normative for milestones 0.8 through 0.12.
 
 ## Architectural invariants
@@ -137,6 +137,10 @@ sources:
 - Git entries record the normalized source URL, requested reference, immutable
   resolved commit, and resolution kind.
 - `poly init` uses the lock by default and verifies the final checkout HEAD.
+- `poly add --repo` resolves `source.ref` and atomically records its exact commit
+  without creating or changing the declared child path.
+- `poly hydrate` materializes sources only from their immutable lock entries; it
+  does not reinterpret a moving selector.
 - Missing, stale, or inconsistent lock data is a diagnostic. Poly does not
   silently move a locked checkout.
 - `poly update` resolves requested refs, safely materializes and verifies the
@@ -159,7 +163,7 @@ Poly manages a delimited block in the root repository's existing
 ```
 
 The managed block contains `/.poly/` and the exact root-relative paths of
-materialized child repository nodes. It does not ignore `poly.yaml`,
+declared child repository nodes, including paths not yet hydrated. It does not ignore `poly.yaml`,
 `poly.lock.yaml`, the complete workspace root, or unrelated sibling content.
 Exact child paths are preferred over a broad `/workspace/` rule.
 
@@ -202,6 +206,10 @@ Given only a clone of the root repository:
 7. It rebuilds `.poly/state` and emits the complete job report.
 
 No `poly add` is required during restoration.
+
+During authoring, `poly add --repo` performs only declaration and immutable
+resolution. A later explicit `poly hydrate` executes steps 4 through 6 for the
+locked child sources.
 
 ## Local worktree versus shared lock
 

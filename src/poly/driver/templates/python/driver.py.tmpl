@@ -70,6 +70,7 @@ def driver() -> DriverRegistration:
             DRIVER_API_VERSION,
             frozenset((DriverCapability.INSPECT, DriverCapability.PLAN)),
             "Sample external driver",
+            ("sample/project",),
         ),
         inspectors=(SampleInspector(),),
         planners=(SamplePlanner(),),

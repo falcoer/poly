@@ -204,7 +204,12 @@ def compile_workspace(workspace: Path) -> CompiledWorkspace:
     workspace = workspace.resolve()
     compiled = validate_workspace(workspace)
     reconcile_gitignore(workspace, compiled.manifest)
-    state: dict[str, JsonValue] = {
+    _atomic_json(workspace / COMPILED_WORKSPACE, _compiled_state(compiled))
+    return compiled
+
+
+def _compiled_state(compiled: CompiledWorkspace) -> dict[str, JsonValue]:
+    return {
         "schema": WORKSPACE_STATE_SCHEMA,
         "manifest-digest": compiled.manifest.digest,
         "workspace": {
@@ -222,8 +227,6 @@ def compile_workspace(workspace: Path) -> CompiledWorkspace:
         ],
         "lock": compiled.lock.semantic(),
     }
-    _atomic_json(workspace / COMPILED_WORKSPACE, state)
-    return compiled
 
 
 def reconcile_inventory(
@@ -311,9 +314,38 @@ def add_manifest_node(
         sources = _mapping_value(raw_lock, "sources", "lock sources")
         sources[node_id] = CommentedMap(locked_source.semantic())
     _update_lock_for_manifest(raw_lock, candidate)
-    _write_yaml(workspace / WORKSPACE_MANIFEST, raw_manifest)
-    _write_yaml(workspace / WORKSPACE_LOCK, raw_lock)
-    return compile_workspace(workspace)
+    return _commit_workspace_files(workspace, raw_manifest, raw_lock)
+
+
+def set_manifest_node_natures(
+    workspace: Path, node_id: str, natures: tuple[str, ...], *, add: bool
+) -> CompiledWorkspace:
+    """Atomically add or remove authored nature assertions on one node."""
+
+    workspace = workspace.resolve()
+    validate_workspace(workspace)
+    normalized = tuple(sorted({_non_empty(item, "nature") for item in natures}))
+    if not normalized:
+        raise WorkspaceError("at least one nature is required")
+    raw_manifest = _load_yaml(workspace / WORKSPACE_MANIFEST)
+    raw_lock = _load_yaml(workspace / WORKSPACE_LOCK)
+    nodes = _mapping_sequence(raw_manifest, "nodes", "manifest nodes")
+    matches = [value for value in nodes if _mapping(value).get("id") == node_id]
+    if len(matches) != 1:
+        raise WorkspaceError(f"unknown node: {node_id!r}")
+    node = _mapping(matches[0], f"node {node_id!r}")
+    current = set(_string_tuple(node.get("natures", []), f"node {node_id!r}.natures"))
+    if add:
+        current.update(normalized)
+    else:
+        current.difference_update(normalized)
+    if current:
+        node["natures"] = CommentedSeq(sorted(current))
+    else:
+        node.pop("natures", None)
+    candidate = _parse_manifest(raw_manifest, workspace)
+    _update_lock_for_manifest(raw_lock, candidate)
+    return _commit_workspace_files(workspace, raw_manifest, raw_lock)
 
 
 def update_locked_sources(
@@ -367,6 +399,11 @@ def remove_manifest_node(workspace: Path, node_id: str) -> CompiledWorkspace:
 
 def reconcile_gitignore(workspace: Path, manifest: WorkspaceManifest) -> Path:
     path = workspace.resolve() / ".gitignore"
+    _atomic_text(path, _managed_gitignore_text(path, manifest))
+    return path
+
+
+def _managed_gitignore_text(path: Path, manifest: WorkspaceManifest) -> str:
     prefix, suffix = _managed_ignore_parts(path)
     repositories = sorted(
         {
@@ -387,8 +424,27 @@ def reconcile_gitignore(workspace: Path, manifest: WorkspaceManifest) -> Path:
         if suffix[0] != "":
             lines.append("")
         lines.extend(suffix)
-    _atomic_text(path, "\n".join(lines).rstrip("\n") + "\n")
-    return path
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def _commit_workspace_files(
+    workspace: Path, raw_manifest: CommentedMap, raw_lock: CommentedMap
+) -> CompiledWorkspace:
+    manifest = _parse_manifest(raw_manifest, workspace)
+    lock = _parse_lock(raw_lock, manifest)
+    compiled = CompiledWorkspace(manifest, lock)
+    _atomic_text_set(
+        {
+            workspace / WORKSPACE_MANIFEST: _yaml_text(raw_manifest),
+            workspace / WORKSPACE_LOCK: _yaml_text(raw_lock),
+            workspace / ".gitignore": _managed_gitignore_text(workspace / ".gitignore", manifest),
+            workspace / COMPILED_WORKSPACE: json.dumps(
+                _compiled_state(compiled), indent=2, ensure_ascii=False, sort_keys=True
+            )
+            + "\n",
+        }
+    )
+    return compiled
 
 
 def workspace_id(value: str) -> str:
@@ -723,12 +779,16 @@ def _load_yaml(path: Path) -> CommentedMap:
 
 
 def _write_yaml(path: Path, value: object) -> None:
+    _atomic_text(path, _yaml_text(value))
+
+
+def _yaml_text(value: object) -> str:
     stream = StringIO()
     try:
         _yaml().dump(value, stream)
     except YAMLError as error:
-        raise WorkspaceError(f"cannot serialize workspace file {path}: {error}") from error
-    _atomic_text(path, stream.getvalue())
+        raise WorkspaceError(f"cannot serialize workspace YAML: {error}") from error
+    return stream.getvalue()
 
 
 def _yaml() -> YAML:
@@ -754,6 +814,44 @@ def _atomic_text(path: Path, text: str) -> None:
         with suppress(OSError):
             temporary.unlink(missing_ok=True)
         raise WorkspaceError(f"cannot atomically write {path}: {error}") from error
+
+
+def _atomic_text_set(values: dict[Path, str]) -> None:
+    """Replace a related set of files as one recoverable workspace transaction."""
+
+    transaction = f"{os.getpid()}-{id(values)}"
+    temporaries: dict[Path, Path] = {}
+    backups: dict[Path, Path | None] = {}
+    touched: list[Path] = []
+    try:
+        for path, value in values.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_name(f".{path.name}.{transaction}.tmp")
+            temporary.write_text(value, encoding="utf-8")
+            temporaries[path] = temporary
+        for path in values:
+            backup = path.with_name(f".{path.name}.{transaction}.bak") if path.exists() else None
+            if backup is not None:
+                path.replace(backup)
+            backups[path] = backup
+            touched.append(path)
+            temporaries[path].replace(path)
+    except OSError as error:
+        for path in reversed(touched):
+            backup = backups.get(path)
+            with suppress(OSError):
+                path.unlink(missing_ok=True)
+                if backup is not None and backup.exists():
+                    backup.replace(path)
+        raise WorkspaceError(f"cannot atomically update workspace files: {error}") from error
+    finally:
+        for temporary in temporaries.values():
+            with suppress(OSError):
+                temporary.unlink(missing_ok=True)
+        for backup in backups.values():
+            if backup is not None:
+                with suppress(OSError):
+                    backup.unlink(missing_ok=True)
 
 
 def _mapping(value: object, where: str = "value") -> CommentedMap:
