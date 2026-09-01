@@ -479,6 +479,9 @@ def _completion_line(document: ReportDocument, exit_code: int, color: bool) -> s
             counts[state] = counts.get(state, 0) + 1
     result = " · ".join(f"{value} {state}" for state, value in sorted(counts.items()))
     suffix = f" · {result}" if result else ""
+    plan = document.get("plan", {})
+    if isinstance(plan, dict) and plan.get("status") == "empty":
+        return _styled(f"· NONE     poly {verb}", "muted", color)
     if exit_code == 0:
         return _styled(f"✓ SUCCESS  poly {verb}{suffix}", "green", color)
     return _styled(f"✗ FAILURE  poly {verb}{suffix}", "red", color)
