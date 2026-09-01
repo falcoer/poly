@@ -190,6 +190,7 @@ def render_cli(
 def _concise_document(
     lines: list[str], document: ReportDocument, verbosity: int, color: bool
 ) -> None:
+    operations: dict[str, str] = {}
     diagnostics = document.get("diagnostics", [])
     for diagnostic in diagnostics if isinstance(diagnostics, list) else []:
         if isinstance(diagnostic, dict):
@@ -200,6 +201,9 @@ def _concise_document(
     if isinstance(plan, dict):
         planned = plan.get("planned_actions", [])
         count = len(planned) if isinstance(planned, list) else 0
+        for action in planned if isinstance(planned, list) else []:
+            if isinstance(action, dict):
+                operations[str(action.get("id"))] = str(action.get("operation"))
         lines.append(
             _styled(
                 f"> PLAN     {plan.get('id')} · {count} action(s) · {plan.get('status')}",
@@ -217,7 +221,8 @@ def _concise_document(
         actions = run.get("actions", [])
         for action in actions if isinstance(actions, list) else []:
             if isinstance(action, dict):
-                _concise_action(lines, action, verbosity, color)
+                operation = operations.get(str(action.get("action_id")))
+                _concise_action(lines, action, operation, verbosity, color)
         return
 
     kind = str(document.get("kind", "report"))
@@ -266,13 +271,19 @@ def _concise_named_items(
 
 
 def _concise_action(
-    lines: list[str], action: dict[str, JsonValue], verbosity: int, color: bool
+    lines: list[str],
+    action: dict[str, JsonValue],
+    operation: str | None,
+    verbosity: int,
+    color: bool,
 ) -> None:
     state = str(action.get("state", "unknown"))
     marker, label, tone = _state_style(state)
     line = f"{marker} {label:<8} {action.get('action_id')}"
+    if operation:
+        line += f" ({operation})"
     attempt = action.get("attempt")
-    if isinstance(attempt, dict) and (verbosity >= 1 or state != "succeeded"):
+    if isinstance(attempt, dict):
         summary = attempt.get("summary")
         if summary:
             line += f" · {str(summary).replace(chr(10), ' ')}"
