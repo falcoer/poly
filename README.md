@@ -34,8 +34,8 @@ The current correction milestone is
 [0.10.1 — Daily workflow correction](docs/releases/0.10.1.md). Lightweight
 source-backed `add`, explicit hydration, contextual nature commands, empty
 workspace driver discovery, and the hierarchical interactive renderer are
-implemented. The milestone is not considered validated until its complete CI
-gate succeeds and creates the annotated roadmap tag.
+implemented and validated by the complete Linux/Windows CI gate and annotated
+roadmap tag.
 
 The version 1 contract is implemented: manifests and locks are validated and
 compiled into rebuildable state, declared identities are enriched by Git and

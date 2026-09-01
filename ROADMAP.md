@@ -255,7 +255,7 @@ Cross-milestone invariants:
 
 ## 0.10.1 — Daily workspace authoring and CLI clarity
 
-- Status: `implemented-awaiting-ci`
+- Status: `validated`
 - Tag: `roadmap/0.10.1-daily-workflow`
 - Depends on: validated 0.10 Git materialization baseline.
 - Scope: correct the daily authoring workflow before extending the driver
@@ -278,7 +278,7 @@ Cross-milestone invariants:
   - contextual, multi-value nature add/remove and alphabetic nature inventory
     are available from the nearest workspace;
   - built-in and system drivers are inventoried from an empty workspace.
-- Acceptance implemented; awaiting complete remote CI:
+- Acceptance validated by complete remote CI:
   - `poly add <id> --repo <url> --ref <selector> --path <path>` updates
     `poly.yaml`, resolves and atomically updates `poly.lock.yaml`, reconciles
     the managed `.gitignore` block, and reports the result without cloning,
