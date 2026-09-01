@@ -124,7 +124,7 @@ def test_interactive_renderer_has_command_statuses_and_distinct_completion(
         exit_code=0,
     )
 
-    assert concise.splitlines()[0] == "› COMMAND  poly verify --select node"
+    assert concise.splitlines()[0] == "> COMMAND  poly verify --select node"
     assert "✓ OK       verify:node" in concise
     assert concise.splitlines()[-1].startswith("✓ SUCCESS  poly verify")
     assert "Schema: poly.report/v1" in verbose
