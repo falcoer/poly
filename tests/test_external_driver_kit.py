@@ -75,7 +75,7 @@ def test_scaffold_generates_complete_external_repository(tmp_path: Path) -> None
         path.read_text(encoding="utf-8") for path in target.rglob("*") if path.is_file()
     )
     assert "__DRIVER_NAME__" not in all_content
-    assert '"poly>=0.11.0,<0.12"' in all_content
+    assert '"poly>=0.12.0,<0.13"' in all_content
     assert f'poly = {{ path = "{source.resolve().as_posix()}", editable = true }}' in all_content
 
     with pytest.raises(DriverScaffoldError, match="not empty"):
