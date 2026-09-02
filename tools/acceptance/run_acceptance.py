@@ -130,7 +130,7 @@ def _write_action_logs(output: Path, documents: dict[str, dict[str, Any]]) -> No
     for report_name, document in documents.items():
         plan = document.get("plan") or {}
         owners = {
-            str(action.get("action_id")): action.get("driver")
+            str(action.get("id")): action.get("driver")
             for action in plan.get("planned_actions", [])
             if isinstance(action, dict)
         }
