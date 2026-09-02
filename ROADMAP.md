@@ -437,8 +437,9 @@ Cross-milestone invariants:
 - Tag: `roadmap/0.12.1-interactive-cli`
 - Depends on: validated 0.12 functional baseline.
 - Scope: consolidate the interactive command block, replace transient action
-  lines in place, expose useful execution timing, and distinguish user intent
-  visually from Poly-generated state without changing plan semantics.
+  lines in place, expose useful execution timing, distinguish user intent
+  visually from Poly-generated state, and establish the structured result
+  channel required for safe parallel rendering without changing plan semantics.
 - Acceptance:
   - the complete command block is delimited by horizontal separators starting
     at the terminal's left margin;
@@ -452,6 +453,26 @@ Cross-milestone invariants:
     `PLAN`;
   - action rows remain one level below `PLAN`, with wrapped details one
     additional level below their action;
+  - drivers, action handlers, and child processes never write to or reposition
+    the interactive terminal directly; the runtime captures per-action stdout
+    and stderr, and one serialized renderer owns all terminal writes;
+  - a driver execution result may expose at most one concise scalar value for
+    the action row and zero or more typed user-facing output references;
+  - scalar values are single-line, control-free canonical data and render on
+    their action row without turning arbitrary driver text into terminal output;
+  - output references distinguish files from URLs and retain an optional label
+    and media type in canonical reports;
+  - only deliverables explicitly requested or exposed by the command are
+    user-facing outputs; internal run files, captured logs, resolutions, and
+    temporary artifacts are not promoted automatically;
+  - user-facing outputs from all actions are collected deterministically below
+    the final command result in one `OUTPUT` section, including valid
+    diagnostic deliverables returned by a failed action;
+  - file and URL entries use safe terminal hyperlinks when the interactive sink
+    supports them and fall back to the same visible plain text in redirected,
+    unsupported, or structured output;
+  - terminal values, labels, paths, and URLs are sanitized against control
+    characters, embedded credentials, and terminal-escape injection;
   - in an interactive terminal, each action occupies one stable visual row and
     its transient `RUNNING` state is replaced in place by `OK`, `KO`, or
     `BLOCKED`;
@@ -471,13 +492,20 @@ Cross-milestone invariants:
     meaning, and JSON, YAML, and XML never contain terminal controls;
   - the interactive rendering state does not assume that only one action can be
     running, so it can support the bounded-parallel executor introduced in 0.13.
-- Checks: terminal-capability abstraction tests; interactive replacement tests;
-  redirected-output and no-control-sequence tests; timestamp and duration tests;
-  narrow and resized terminal cases; source-heading sanitization; Windows/Linux
-  snapshots; interruption cleanup; structured-report parity.
-- Demonstration: run a source-backed `poly add` in a terminal and through
-  redirected output, show a single final row per action in both cases, reload
-  the persisted report, and correlate its timestamped action transitions.
+- Checks: terminal-capability abstraction tests; interactive replacement and
+  synthetically interleaved multi-action event tests; proof that handlers and
+  child processes cannot write directly to the terminal; isolated stdout/stderr
+  capture; scalar-value rendering; deterministic output aggregation; safe file
+  and URL hyperlink generation with plain-text fallback; control-character,
+  credential, and escape-sequence sanitization; redirected-output and
+  no-control-sequence tests; timestamp and duration tests; narrow and resized
+  terminal cases; source-heading sanitization; Windows/Linux snapshots;
+  interruption cleanup; structured-report parity.
+- Demonstration: run a source-backed `poly add` plus driver commands returning
+  a scalar value, a generated report file, and a report URL; compare interactive
+  hyperlinks with redirected plain text, show one final row per action and one
+  aggregated `OUTPUT` section, reload the persisted report, and correlate its
+  timestamped action transitions.
 - Excluded: execution parallelism itself, terminal dashboards, progress
   percentages, spinners, and historical report animation.
 
