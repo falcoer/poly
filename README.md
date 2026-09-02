@@ -31,12 +31,11 @@ Poly-managed root `.gitignore` block.
 For a command-oriented tour, see the [Poly cookbook](docs/cookbook/README.md).
 
 The current milestone is
-[0.12.0 — Clean-workstation functional acceptance](docs/releases/0.12.0.md).
-It packages the complete minimum Poly journey as an installable wheel and proves
-it on clean Linux and Windows GitHub Actions jobs that do not checkout Poly
-source. The retained fixture contains a root control repository, two independent
-locked child repositories, a multi-module Maven reactor, and an installed
-external driver. Until the post-merge tag gate succeeds, the milestone remains
+[0.12.1 — Stable interactive CLI presentation](docs/releases/0.12.1.md).
+It consolidates command-block rendering, captures handler and child-process
+output per action, adds timestamped execution evidence, and exposes scalar
+values plus typed file/URL deliverables without changing planning semantics.
+Until the post-merge tag gate succeeds, the milestone remains
 `implemented-awaiting-ci`, not `validated`.
 
 The version 1 contract is implemented: manifests and locks are validated and
@@ -58,7 +57,7 @@ uvx --from "git+https://github.com/falcoer/poly.git" poly --help
 uv tool install "git+https://github.com/falcoer/poly.git"
 ```
 
-For **0.12 functional acceptance**, reviewers install the retained CI wheel
+For **0.12.1 functional acceptance**, reviewers install the retained CI wheel
 instead of cloning Poly. Replace the run id and commit with the values from the
 accepted CI run; artifact names deliberately include the exact build commit.
 
@@ -69,14 +68,14 @@ run_id="<accepted-run-id>"
 commit="<accepted-commit>"
 
 gh run download "$run_id" -R falcoer/poly \
-  -n "poly-0.12.0-distributions-$commit" -D poly-dist
+  -n "poly-0.12.1-distributions-$commit" -D poly-dist
 gh run download "$run_id" -R falcoer/poly \
-  -n "poly-0.12.0-acceptance-fixture-$commit" -D poly-fixture
+  -n "poly-0.12.1-acceptance-fixture-$commit" -D poly-fixture
 
 (cd poly-dist && sha256sum -c SHA256SUMS)
 python3.12 -m venv .venv
 . .venv/bin/activate
-python -m pip install ./poly-dist/poly-0.12.0-py3-none-any.whl \
+python -m pip install ./poly-dist/poly-0.12.1-py3-none-any.whl \
   ./poly-fixture/poly_driver_sample_tech-0.1.0-py3-none-any.whl
 
 ./poly-fixture/scripts/run-posix.sh \
@@ -91,19 +90,19 @@ $runId = "<accepted-run-id>"
 $commit = "<accepted-commit>"
 
 gh run download $runId -R falcoer/poly `
-  -n "poly-0.12.0-distributions-$commit" -D poly-dist
+  -n "poly-0.12.1-distributions-$commit" -D poly-dist
 gh run download $runId -R falcoer/poly `
-  -n "poly-0.12.0-acceptance-fixture-$commit" -D poly-fixture
+  -n "poly-0.12.1-acceptance-fixture-$commit" -D poly-fixture
 
 $sumLine = Get-Content .\poly-dist\SHA256SUMS |
-  Where-Object { $_ -match "poly-0.12.0-py3-none-any.whl$" }
+  Where-Object { $_ -match "poly-0.12.1-py3-none-any.whl$" }
 $expected = ($sumLine -split "\s+")[0].ToLowerInvariant()
-$actual = (Get-FileHash .\poly-dist\poly-0.12.0-py3-none-any.whl -Algorithm SHA256).Hash.ToLowerInvariant()
+$actual = (Get-FileHash .\poly-dist\poly-0.12.1-py3-none-any.whl -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $expected) { throw "Poly wheel SHA-256 mismatch" }
 
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install `
-  .\poly-dist\poly-0.12.0-py3-none-any.whl `
+  .\poly-dist\poly-0.12.1-py3-none-any.whl `
   .\poly-fixture\poly_driver_sample_tech-0.1.0-py3-none-any.whl
 
 & .\poly-fixture\scripts\run-powershell.ps1 `

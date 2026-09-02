@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import re
+import unicodedata
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from poly.application import InspectionSnapshot, PlanningSnapshot
 from poly.control_plane import ControllerDescriptor
@@ -24,6 +27,7 @@ REPORT_SCHEMA = "poly.report/v1"
 _SECTION_INDENT = "        "
 _DETAIL_INDENT = "                "
 _LOG_INDENT = "                        "
+_FALLBACK_WIDTH = 72
 
 
 def inspection_document(snapshot: InspectionSnapshot) -> ReportDocument:
@@ -198,24 +202,31 @@ def render_cli(
     verbosity: int = 0,
     color: bool = False,
     exit_code: int = 0,
+    width: int = _FALLBACK_WIDTH,
+    hyperlinks: bool = False,
 ) -> str:
     """Render a compact interactive view without changing the canonical report."""
 
     lines: list[str] = []
+    separator = _styled("─" * _usable_width(width), "muted", color)
     if verbosity >= 0:
-        lines.append(_styled(_command_heading(document), "cyan", color))
+        lines.append(separator)
+        lines.append(_command_heading(document))
         if verbosity >= 1:
             lines.append(f"{_SECTION_INDENT}COMMAND  {command}")
 
     if verbosity >= 2:
-        lines.extend(f"{_SECTION_INDENT}{line}" for line in _text(document).rstrip().splitlines())
+        lines.extend(
+            f"{_SECTION_INDENT}{_safe_visible(line)}"
+            for line in _text(document).rstrip().splitlines()
+        )
     elif verbosity >= 0:
-        _concise_document(lines, document, verbosity, color)
+        _concise_document(lines, document, verbosity, color, width)
 
-    separator = _styled("─" * 48, "muted", color)
-    lines.append(f"{_SECTION_INDENT}{separator}")
+    lines.append(separator)
     lines.append(f"{_SECTION_INDENT}{_completion_line(document, exit_code, color)}")
-    lines.append(f"{_SECTION_INDENT}{separator}")
+    _append_outputs(lines, document, hyperlinks=hyperlinks)
+    lines.append(separator)
     return "\n".join(lines) + "\n"
 
 
@@ -225,12 +236,16 @@ def render_cli_start(
     *,
     verbosity: int = 0,
     color: bool = False,
+    width: int = _FALLBACK_WIDTH,
 ) -> str:
     """Render the portion known before execution starts."""
 
     if verbosity < 0:
         return ""
-    lines = [_styled(_command_heading(document), "cyan", color)]
+    lines = [
+        _styled("─" * _usable_width(width), "muted", color),
+        _command_heading(document),
+    ]
     if verbosity >= 1:
         lines.append(f"{_SECTION_INDENT}COMMAND  {command}")
     _concise_plan(lines, document, color)
@@ -243,6 +258,7 @@ def render_cli_event(
     *,
     verbosity: int = 0,
     color: bool = False,
+    width: int = _FALLBACK_WIDTH,
 ) -> str:
     """Render an execution transition suitable for immediate terminal output."""
 
@@ -254,13 +270,20 @@ def render_cli_event(
     }:
         return ""
     marker, label, tone = _state_style(event.state.value)
-    line = f"{marker} {label:<8} {event.action_id}"
+    line = f"{marker} {label:<8} {_safe_visible(event.action_id)}"
     if action is not None:
-        line += f" ({action.operation})"
-    if event.message:
+        line += f" ({_safe_visible(action.operation)})"
+    if event.value is not None:
+        rendered_value = (
+            f"{event.value.label}: {event.value.value}"
+            if event.value.label
+            else str(event.value.value)
+        )
+        line += f" · {_safe_visible(rendered_value)}"
+    elif event.message:
         suffix = "blocked by " if event.state is ActionState.BLOCKED else ""
-        line += f" · {suffix}{event.message.replace(chr(10), ' ')}"
-    return f"{_DETAIL_INDENT}{_styled(line, tone, color)}\n"
+        line += f" · {suffix}{_safe_visible(event.message)}"
+    return _render_action_lines(line, tone, color, width)
 
 
 def render_cli_completion(
@@ -269,18 +292,24 @@ def render_cli_completion(
     verbosity: int = 0,
     color: bool = False,
     exit_code: int = 0,
+    width: int = _FALLBACK_WIDTH,
+    hyperlinks: bool = False,
 ) -> str:
     """Render logs/details and the final frame after streamed execution."""
 
     lines: list[str] = []
     if verbosity >= 2:
-        lines.extend(f"{_SECTION_INDENT}{line}" for line in _text(document).rstrip().splitlines())
+        lines.extend(
+            f"{_SECTION_INDENT}{_safe_visible(line)}"
+            for line in _text(document).rstrip().splitlines()
+        )
     elif verbosity >= 1:
         _append_run_logs(lines, document)
-    separator = _styled("─" * 48, "muted", color)
-    lines.append(f"{_SECTION_INDENT}{separator}")
+    separator = _styled("─" * _usable_width(width), "muted", color)
+    lines.append(separator)
     lines.append(f"{_SECTION_INDENT}{_completion_line(document, exit_code, color)}")
-    lines.append(f"{_SECTION_INDENT}{separator}")
+    _append_outputs(lines, document, hyperlinks=hyperlinks)
+    lines.append(separator)
     return "\n".join(lines) + "\n"
 
 
@@ -313,6 +342,13 @@ def _command_heading(document: ReportDocument) -> str:
     }
     label = labels.get(verb, f"RUNNING {verb.upper()}")
     target = _command_target(request)
+    if verb == "add" and isinstance(request, dict):
+        parameters = request.get("parameters", {})
+        if isinstance(parameters, dict) and parameters.get("poly.source.url"):
+            source = _safe_source_url(str(parameters["poly.source.url"]))
+            requested_ref = parameters.get("poly.source.ref")
+            ref = f" (ref: {_safe_visible(str(requested_ref))})" if requested_ref else ""
+            return f"{label}{f' {target}' if target else ''} from {source}{ref} ..."
     return f"{label}{f' {target}' if target else ''} ..."
 
 
@@ -332,7 +368,7 @@ def _command_target(request: JsonValue) -> str:
 
 
 def _concise_document(
-    lines: list[str], document: ReportDocument, verbosity: int, color: bool
+    lines: list[str], document: ReportDocument, verbosity: int, color: bool, width: int
 ) -> None:
     operations: dict[str, str] = {}
     diagnostics = document.get("diagnostics", [])
@@ -362,7 +398,7 @@ def _concise_document(
         for action in actions if isinstance(actions, list) else []:
             if isinstance(action, dict):
                 operation = operations.get(str(action.get("action_id")))
-                _concise_action(lines, action, operation, verbosity, color)
+                _concise_action(lines, action, operation, verbosity, color, width)
         return
 
     kind = str(document.get("kind", "report"))
@@ -420,7 +456,48 @@ def _append_run_logs(lines: list[str], document: ReportDocument) -> None:
             stream = attempt.get(stream_name)
             if stream:
                 for output_line in str(stream).rstrip().splitlines():
-                    lines.append(f"{_LOG_INDENT}{stream_name}: {output_line}")
+                    lines.append(f"{_LOG_INDENT}{stream_name}: {_safe_visible(output_line)}")
+
+
+def _append_outputs(
+    lines: list[str], document: ReportDocument, *, hyperlinks: bool = False
+) -> None:
+    run = document.get("run", {})
+    actions = run.get("actions", []) if isinstance(run, dict) else []
+    outputs: list[tuple[str, str, str | None, str | None]] = []
+    seen: set[tuple[str, str, str | None, str | None]] = set()
+    for action in actions if isinstance(actions, list) else []:
+        if not isinstance(action, dict):
+            continue
+        attempt = action.get("attempt")
+        references = attempt.get("outputs", []) if isinstance(attempt, dict) else []
+        for reference in references if isinstance(references, list) else []:
+            if not isinstance(reference, dict):
+                continue
+            key = (
+                str(reference.get("kind", "")),
+                str(reference.get("target", "")),
+                str(reference["label"]) if reference.get("label") is not None else None,
+                str(reference["media_type"]) if reference.get("media_type") is not None else None,
+            )
+            if (
+                key in seen
+                or key[0] not in {"file", "url"}
+                or not _is_safe_text(key[1])
+                or _output_href(key[0], key[1]) is None
+            ):
+                continue
+            seen.add(key)
+            outputs.append(key)
+    if not outputs:
+        return
+    lines.append(f"{_SECTION_INDENT}> OUTPUT")
+    for kind, target, label, _media_type in outputs:
+        visible = _safe_visible(f"{label}: {target}" if label else target)
+        href = _output_href(kind, target)
+        if hyperlinks and href is not None:
+            visible = f"\x1b]8;;{href}\x1b\\{visible}\x1b]8;;\x1b\\"
+        lines.append(f"{_DETAIL_INDENT}{visible}")
 
 
 def _concise_named_items(
@@ -476,28 +553,35 @@ def _concise_action(
     operation: str | None,
     verbosity: int,
     color: bool,
+    width: int,
 ) -> None:
     state = str(action.get("state", "unknown"))
     marker, label, tone = _state_style(state)
-    line = f"{marker} {label:<8} {action.get('action_id')}"
+    line = f"{marker} {label:<8} {_safe_visible(str(action.get('action_id')))}"
     if operation:
-        line += f" ({operation})"
+        line += f" ({_safe_visible(operation)})"
     attempt = action.get("attempt")
     if isinstance(attempt, dict):
+        value = attempt.get("value")
+        if isinstance(value, dict):
+            scalar = value.get("value")
+            value_label = value.get("label")
+            rendered = f"{value_label}: {scalar}" if value_label else str(scalar)
+            line += f" · {_safe_visible(rendered)}"
         summary = attempt.get("summary")
-        if summary:
-            line += f" · {str(summary).replace(chr(10), ' ')}"
+        if summary and not isinstance(value, dict):
+            line += f" · {_safe_visible(str(summary))}"
     blocked = action.get("blocked_by")
     if blocked:
         line += f" · blocked by {_compact(blocked)}"
-    lines.append(f"{_DETAIL_INDENT}{_styled(line, tone, color)}")
+    lines.extend(_render_action_lines(line, tone, color, width).rstrip().splitlines())
 
     if isinstance(attempt, dict) and verbosity >= 1:
         for stream_name in ("stdout", "stderr"):
             stream = attempt.get(stream_name)
             if stream:
                 for output_line in str(stream).rstrip().splitlines():
-                    lines.append(f"{_LOG_INDENT}{stream_name}: {output_line}")
+                    lines.append(f"{_LOG_INDENT}{stream_name}: {_safe_visible(output_line)}")
 
 
 def _completion_line(document: ReportDocument, exit_code: int, color: bool) -> str:
@@ -521,6 +605,126 @@ def _completion_line(document: ReportDocument, exit_code: int, color: bool) -> s
     if exit_code == 0:
         return _styled(f"✓ SUCCESS  poly {verb}{suffix}", "green", color)
     return _styled(f"✗ FAILURE  poly {verb}{suffix}", "red", color)
+
+
+def _usable_width(width: int) -> int:
+    return max(24, width if width > 0 else _FALLBACK_WIDTH)
+
+
+def _render_action_lines(line: str, tone: str, color: bool, width: int) -> str:
+    available = _usable_width(width)
+    prefix = _DETAIL_INDENT
+    if _display_width(prefix) + _display_width(line) <= available or " · " not in line:
+        return f"{prefix}{_styled(line, tone, color)}\n"
+    primary, detail = line.split(" · ", 1)
+    primary_width = max(1, available - _display_width(prefix))
+    primary_chunks = (
+        [primary]
+        if _display_width(primary) <= primary_width
+        else _wrap_display(primary, primary_width)
+    )
+    detail_width = max(1, available - _display_width(_LOG_INDENT) - 2)
+    chunks = _wrap_display(detail, detail_width)
+    rendered = [f"{prefix}{_styled(chunk, tone, color)}" for chunk in primary_chunks]
+    rendered.extend(f"{_LOG_INDENT}· {chunk}" for chunk in chunks)
+    return "\n".join(rendered) + "\n"
+
+
+def _display_width(value: str) -> int:
+    return sum(
+        0
+        if unicodedata.combining(character)
+        else 2
+        if unicodedata.east_asian_width(character) in {"W", "F"}
+        else 1
+        for character in value
+    )
+
+
+def _wrap_display(value: str, width: int) -> list[str]:
+    lines: list[str] = []
+    current = ""
+    for word in value.split():
+        candidate = f"{current} {word}" if current else word
+        if _display_width(candidate) <= width:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+            current = ""
+        chunk = ""
+        for character in word:
+            if chunk and _display_width(chunk + character) > width:
+                lines.append(chunk)
+                chunk = ""
+            chunk += character
+        current = chunk
+    if current or not lines:
+        lines.append(current)
+    return lines
+
+
+def _is_safe_text(value: str) -> bool:
+    return bool(value) and not any(
+        ord(character) < 32 or ord(character) == 127 for character in value
+    )
+
+
+def _safe_visible(value: str) -> str:
+    if _is_safe_text(value):
+        return value
+    return (
+        "".join(
+            character if ord(character) >= 32 and ord(character) != 127 else "?"
+            for character in value.replace("\x1b", "?")
+        )
+        .replace("\n", "?")
+        .replace("\r", "?")
+    )
+
+
+def _safe_source_url(value: str) -> str:
+    safe = _safe_visible(value)
+    if "://" not in safe:
+        return safe
+    parsed = urlsplit(safe)
+    hostname = parsed.hostname or ""
+    if ":" in hostname and not hostname.startswith("["):
+        hostname = f"[{hostname}]"
+    try:
+        parsed_port = parsed.port
+    except ValueError:
+        return "<invalid-source>"
+    port = f":{parsed_port}" if parsed_port is not None else ""
+    return urlunsplit(
+        (parsed.scheme, f"{hostname}{port}", parsed.path, parsed.query, parsed.fragment)
+    )
+
+
+def _output_href(kind: str, target: str) -> str | None:
+    if not _is_safe_text(target):
+        return None
+    if kind == "url":
+        parsed = urlsplit(target)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            return None
+        return target
+    if kind == "file":
+        if re.match(r"^[A-Za-z]:[\\/]", target):
+            drive = target[0].upper()
+            suffix = target[2:].replace("\\", "/")
+            return f"file:///{drive}:{quote(suffix, safe='/')}"
+        path = Path(target)
+        try:
+            return path.resolve().as_uri()
+        except ValueError:
+            return None
+    return None
 
 
 def _state_style(state: str) -> tuple[str, str, str]:
@@ -618,6 +822,9 @@ def _action_result_document(result: ActionResult) -> ReportDocument:
         "action_id": result.action_id,
         "state": result.state.value,
         "blocked_by": list(result.blocked_by),
+        "started_at": result.started_at,
+        "completed_at": result.completed_at,
+        "duration_ms": result.duration_ms,
         "attempt": None
         if attempt is None
         else {
@@ -627,6 +834,18 @@ def _action_result_document(result: ActionResult) -> ReportDocument:
             "stdout": attempt.stdout,
             "stderr": attempt.stderr,
             "details": _json_mapping(attempt.details),
+            "value": None
+            if attempt.value is None
+            else {"value": attempt.value.value, "label": attempt.value.label},
+            "outputs": [
+                {
+                    "kind": str(output.kind),
+                    "target": output.target,
+                    "label": output.label,
+                    "media_type": output.media_type,
+                }
+                for output in attempt.outputs
+            ],
         },
     }
 
@@ -637,6 +856,10 @@ def _event_document(event: RunEvent) -> ReportDocument:
         "state": event.state.value,
         "action_id": event.action_id,
         "message": event.message,
+        "occurred_at": event.occurred_at,
+        "value": None
+        if event.value is None
+        else {"value": event.value.value, "label": event.value.label},
     }
 
 
@@ -848,6 +1071,14 @@ def _text_run(lines: list[str], document: ReportDocument) -> None:
         attempt = action.get("attempt")
         if isinstance(attempt, dict):
             lines.append(f"    {attempt.get('summary')} (exit={attempt.get('exit_code')})")
+            value = attempt.get("value")
+            if isinstance(value, dict):
+                label = f"{value.get('label')}: " if value.get("label") else ""
+                lines.append(f"    value: {label}{value.get('value')}")
+            outputs = attempt.get("outputs", [])
+            for output in outputs if isinstance(outputs, list) else []:
+                if isinstance(output, dict):
+                    lines.append(f"    output ({output.get('kind')}): {output.get('target')}")
             if attempt.get("stdout"):
                 lines.append(f"    stdout: {attempt['stdout']}")
             if attempt.get("stderr"):
@@ -861,7 +1092,7 @@ def _text_run(lines: list[str], document: ReportDocument) -> None:
             if isinstance(event, dict):
                 lines.append(
                     f"  {event.get('sequence')}. {event.get('action_id')} "
-                    f"{event.get('state')} {event.get('message')}"
+                    f"{event.get('state')} {event.get('message')} @ {event.get('occurred_at')}"
                 )
 
 

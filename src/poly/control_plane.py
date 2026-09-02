@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from poly.driver import ExecutionContext
+from poly.driver import ActionValue, ExecutionContext, OutputReference
 from poly.model import ActionSpec, JsonValue
 from poly.runtime import ActionAttempt, ActionRunner
 
@@ -182,6 +182,36 @@ def _attempt_response(value: dict[str, JsonValue]) -> ActionAttempt:
     details = value.get("details", {})
     if not isinstance(details, dict):
         raise ControlPlaneError("remote controller details must be an object")
+    scalar_value = value.get("value")
+    action_value: ActionValue | None = None
+    if scalar_value is not None:
+        if not isinstance(scalar_value, dict) or "value" not in scalar_value:
+            raise ControlPlaneError("remote controller value must be an object or null")
+        raw_scalar = scalar_value["value"]
+        if raw_scalar is None or not isinstance(raw_scalar, (str, int, float, bool)):
+            raise ControlPlaneError("remote controller scalar value has an invalid type")
+        label = scalar_value.get("label")
+        if label is not None and not isinstance(label, str):
+            raise ControlPlaneError("remote controller scalar label must be a string or null")
+        action_value = ActionValue(raw_scalar, label)
+    raw_outputs = value.get("outputs", [])
+    if not isinstance(raw_outputs, list):
+        raise ControlPlaneError("remote controller outputs must be an array")
+    try:
+        outputs = tuple(
+            OutputReference(
+                str(item["kind"]),
+                str(item["target"]),
+                str(item["label"]) if item.get("label") is not None else None,
+                str(item["media_type"]) if item.get("media_type") is not None else None,
+            )
+            for item in raw_outputs
+            if isinstance(item, dict)
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ControlPlaneError(f"remote controller output is invalid: {error}") from error
+    if len(outputs) != len(raw_outputs):
+        raise ControlPlaneError("remote controller outputs must contain objects")
     return ActionAttempt(
         success,
         str(value.get("summary", "")),
@@ -189,4 +219,6 @@ def _attempt_response(value: dict[str, JsonValue]) -> ActionAttempt:
         str(value.get("stdout", "")),
         str(value.get("stderr", "")),
         details,
+        action_value,
+        outputs,
     )

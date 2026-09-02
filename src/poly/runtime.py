@@ -4,13 +4,23 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from collections.abc import Callable
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
+from io import StringIO
 from types import MappingProxyType
 from typing import Protocol, runtime_checkable
 
-from poly.driver import DriverProtocolError, DriverRegistry, ExecutionContext
+from poly.driver import (
+    ActionValue,
+    DriverProtocolError,
+    DriverRegistry,
+    ExecutionContext,
+    OutputReference,
+)
 from poly.model import ActionSpec, JsonValue, Plan, PlanStatus
 
 
@@ -38,9 +48,12 @@ class ActionAttempt:
     stdout: str = ""
     stderr: str = ""
     details: dict[str, JsonValue] = field(default_factory=dict)
+    value: ActionValue | None = None
+    outputs: tuple[OutputReference, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "details", MappingProxyType(dict(self.details)))
+        object.__setattr__(self, "outputs", tuple(self.outputs))
 
 
 @runtime_checkable
@@ -62,10 +75,21 @@ class LocalActionRunner:
             return ActionAttempt(False, "action has neither a command nor a driver handler")
         try:
             handler = self.registry.action_handler(action.driver)
-            result = handler.execute(action, context)
+            stdout = StringIO()
+            stderr = StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                result = handler.execute(action, context)
         except (DriverProtocolError, OSError, RuntimeError, ValueError) as error:
             return ActionAttempt(False, str(error))
-        return ActionAttempt(result.success, result.summary, details=result.details)
+        return ActionAttempt(
+            result.success,
+            result.summary,
+            stdout=stdout.getvalue(),
+            stderr=stderr.getvalue(),
+            details=result.details,
+            value=result.value,
+            outputs=result.outputs,
+        )
 
     def _run_process(self, action: ActionSpec, context: ExecutionContext) -> ActionAttempt:
         assert action.command is not None
@@ -117,6 +141,8 @@ class RunEvent:
     state: ActionState
     action_id: str
     message: str = ""
+    occurred_at: str = field(default_factory=lambda: _timestamp(datetime.now(UTC)))
+    value: ActionValue | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +151,9 @@ class ActionResult:
     state: ActionState
     attempt: ActionAttempt | None = None
     blocked_by: tuple[str, ...] = ()
+    started_at: str | None = None
+    completed_at: str | None = None
+    duration_ms: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +171,8 @@ class Executor:
 
     runner: ActionRunner
     event_listener: Callable[[RunEvent], None] | None = None
+    wall_clock: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
+    monotonic_clock: Callable[[], float] = time.monotonic
 
     def execute(self, plan: Plan, context: ExecutionContext) -> RunResult:
         if plan.status is PlanStatus.EMPTY:
@@ -156,7 +187,12 @@ class Executor:
                 for action in plan.actions
             )
             planned_events = tuple(
-                RunEvent(index, ActionState.PLANNED, result.action_id)
+                RunEvent(
+                    index,
+                    ActionState.PLANNED,
+                    result.action_id,
+                    occurred_at=_timestamp(self.wall_clock()),
+                )
                 for index, result in enumerate(blocked_results, start=1)
             )
             blocked_events = planned_events + tuple(
@@ -165,6 +201,7 @@ class Executor:
                     ActionState.BLOCKED,
                     result.action_id,
                     "plan is not executable",
+                    _timestamp(self.wall_clock()),
                 )
                 for index, result in enumerate(blocked_results, start=1)
             )
@@ -183,15 +220,33 @@ class Executor:
         remaining = {action.id: action for action in plan.actions}
         results: dict[str, ActionResult] = {}
         events = [
-            RunEvent(index, ActionState.PLANNED, action.id)
+            RunEvent(
+                index,
+                ActionState.PLANNED,
+                action.id,
+                occurred_at=_timestamp(self.wall_clock()),
+            )
             for index, action in enumerate(plan.actions, start=1)
         ]
         if self.event_listener is not None:
             for event in events:
                 self.event_listener(event)
 
-        def transition(action_id: str, state: ActionState, message: str = "") -> None:
-            event = RunEvent(len(events) + 1, state, action_id, message)
+        def transition(
+            action_id: str,
+            state: ActionState,
+            message: str = "",
+            occurred_at: str | None = None,
+            value: ActionValue | None = None,
+        ) -> None:
+            event = RunEvent(
+                len(events) + 1,
+                state,
+                action_id,
+                message,
+                occurred_at or _timestamp(self.wall_clock()),
+                value,
+            )
             events.append(event)
             if self.event_listener is not None:
                 self.event_listener(event)
@@ -221,20 +276,32 @@ class Executor:
             action_id = ready[0]
             action = remaining.pop(action_id)
             transition(action_id, ActionState.READY)
-            transition(action_id, ActionState.RUNNING)
+            started_wall = self.wall_clock()
+            started_at = _timestamp(started_wall)
+            started_monotonic = self.monotonic_clock()
+            transition(action_id, ActionState.RUNNING, occurred_at=started_at)
             try:
                 attempt = self.runner.run(action, context)
             except Exception as error:  # executor boundary: a driver must not abort the run
                 attempt = ActionAttempt(
                     False, f"action runner raised {type(error).__name__}: {error}"
                 )
+            completed_at = _timestamp(self.wall_clock())
+            duration_ms = max(0, round((self.monotonic_clock() - started_monotonic) * 1000))
             if attempt.success:
                 available.update(constraint.key for constraint in action.produces)
                 state = ActionState.SUCCEEDED
             else:
                 state = ActionState.FAILED
-            results[action_id] = ActionResult(action_id, state, attempt)
-            transition(action_id, state, attempt.summary)
+            results[action_id] = ActionResult(
+                action_id,
+                state,
+                attempt,
+                started_at=started_at,
+                completed_at=completed_at,
+                duration_ms=duration_ms,
+            )
+            transition(action_id, state, attempt.summary, completed_at, attempt.value)
 
         ordered_results = tuple(results[action.id] for action in plan.actions)
         states = {result.state for result in ordered_results}
@@ -262,3 +329,9 @@ def _timeout_text(value: str | bytes | None) -> str:
     if value is None:
         return ""
     return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value
+
+
+def _timestamp(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")

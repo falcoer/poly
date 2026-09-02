@@ -7,6 +7,7 @@ import pytest
 
 from poly.driver import (
     DRIVER_API_VERSION,
+    ActionValue,
     DriverCapability,
     DriverExecutionResult,
     DriverManifest,
@@ -16,6 +17,7 @@ from poly.driver import (
     InspectionContext,
     InspectionProvider,
     InspectionResult,
+    OutputReference,
     PlanningProvider,
 )
 from poly.driver.testkit import (
@@ -129,6 +131,31 @@ def test_conformance_testkit_accepts_pure_deterministic_providers(tmp_path: Path
     assert outcome.details["count"] == 1
     with pytest.raises(TypeError):
         outcome.details["changed"] = True
+
+
+def test_structured_execution_values_and_outputs_are_validated() -> None:
+    result = DriverExecutionResult(
+        True,
+        "report generated",
+        {"diagnostic": "retained"},
+        ActionValue(82.4, "coverage"),
+        (
+            OutputReference("file", r"D:\test\quality.html", media_type="text/html"),
+            OutputReference("url", "https://example.test/report/1", "Sonar report"),
+        ),
+    )
+
+    assert result.value == ActionValue(82.4, "coverage")
+    assert str(result.outputs[0].kind) == "file"
+    assert result.outputs[1].label == "Sonar report"
+    with pytest.raises(ValueError, match="control-free"):
+        ActionValue("unsafe\x1b[31m")
+    with pytest.raises(ValueError, match="credentials"):
+        OutputReference("url", "https://user:secret@example.test/report")
+    with pytest.raises(ValueError, match="absolute HTTP"):
+        OutputReference("url", "javascript:alert(1)")
+    with pytest.raises(TypeError, match="OutputReference"):
+        DriverExecutionResult(True, outputs=({"kind": "file", "target": "bad"},))  # type: ignore[arg-type]
 
 
 def test_conformance_testkit_detects_workspace_mutation(tmp_path: Path) -> None:

@@ -2,13 +2,17 @@
 
 from poly.driver.api import (
     ActionHandler,
+    ActionValue,
     DriverExecutionResult,
     ExecutionContext,
     InspectionContext,
     InspectionDiagnostic,
     InspectionProvider,
     InspectionResult,
+    OutputKind,
+    OutputReference,
     PlanningProvider,
+    ScalarValue,
 )
 from poly.driver.discovery import (
     DRIVER_ENTRY_POINT_GROUP,
@@ -46,6 +50,7 @@ __all__ = [
     "DRIVER_ENTRY_POINT_GROUP",
     "DRIVER_SPEC_VERSION",
     "ActionHandler",
+    "ActionValue",
     "DriverCapability",
     "DriverDiscoveryError",
     "DriverExecutionResult",
@@ -67,7 +72,10 @@ __all__ = [
     "InspectionDiagnostic",
     "InspectionProvider",
     "InspectionResult",
+    "OutputKind",
+    "OutputReference",
     "PlanningProvider",
+    "ScalarValue",
     "discover_external_drivers",
     "load_entrypoint",
     "load_external_driver",

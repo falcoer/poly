@@ -2,9 +2,16 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
-from poly.driver import ExecutionContext
+from poly.driver import (
+    DriverExecutionResult,
+    DriverRegistry,
+    ExecutionContext,
+    OutputReference,
+)
 from poly.model import ActionSpec, Constraint, Plan, PlanStatus
 from poly.runtime import (
     ActionAttempt,
@@ -174,3 +181,53 @@ def test_local_runner_reports_missing_commands_and_handlers(tmp_path: Path) -> N
     assert "unable to start" in command_attempt.summary
     assert not handler_attempt.success
     assert "neither a command" in handler_attempt.summary
+
+
+def test_local_runner_captures_handler_streams_and_structured_result(tmp_path: Path) -> None:
+    class Handler:
+        def execute(self, action: ActionSpec, context: ExecutionContext) -> DriverExecutionResult:
+            print(f"working on {action.id}")
+            print("diagnostic", file=sys.stderr)
+            return DriverExecutionResult(
+                True,
+                "complete",
+                value="1.2.3",
+                outputs=(OutputReference("file", "report.txt"),),
+            )
+
+    class Registry:
+        def action_handler(self, driver: str) -> Handler:
+            assert driver == "fixture"
+            return Handler()
+
+    context = ExecutionContext(tmp_path, tmp_path / ".poly" / "runs" / "plan")
+    runner = LocalActionRunner(cast(DriverRegistry, Registry()))
+    attempt = runner.run(_action("captured"), context)
+
+    assert attempt.stdout == "working on captured\n"
+    assert attempt.stderr == "diagnostic\n"
+    assert attempt.value is not None and attempt.value.value == "1.2.3"
+    assert attempt.outputs[0].target == "report.txt"
+
+
+def test_executor_records_utc_instants_and_monotonic_duration(tmp_path: Path) -> None:
+    start = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
+    wall_values = iter(
+        (start, start + timedelta(milliseconds=1), start + timedelta(milliseconds=2), start)
+    )
+    monotonic_values = iter((10.0, 10.125))
+    runner = StubRunner({"action": ActionAttempt(True, "done")}, [])
+    context = ExecutionContext(tmp_path, tmp_path / ".poly" / "runs" / "plan")
+
+    result = Executor(
+        runner,
+        wall_clock=lambda: next(wall_values),
+        monotonic_clock=lambda: next(monotonic_values),
+    ).execute(_plan((_action("action"),)), context)
+
+    action = result.actions[0]
+    assert action.started_at == "2026-09-02T12:00:00.002Z"
+    assert action.completed_at == "2026-09-02T12:00:00.000Z"
+    assert action.duration_ms == 125
+    assert all(event.occurred_at.endswith("Z") for event in result.events)
+    assert [event.sequence for event in result.events] == [1, 2, 3, 4]

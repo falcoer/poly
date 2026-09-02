@@ -68,6 +68,34 @@ inspection and fingerprints the fixture to detect nondeterminism or side
 effects. `determinism` applies the same checks to planning and also rejects
 actions for a verb other than the requested one.
 
+## Return structured execution results
+
+Action handlers return data to Poly and never write directly to the terminal.
+Legacy results containing only `success`, `summary`, and `details` remain valid.
+An action may additionally expose one concise value and explicitly requested
+file or URL deliverables:
+
+```python
+from poly.driver import ActionValue, DriverExecutionResult, OutputReference
+
+return DriverExecutionResult(
+    True,
+    "quality report generated",
+    details={"quality_gate": "passed"},
+    value=ActionValue(82.4, "coverage"),
+    outputs=(
+        OutputReference("file", "reports/quality.html", media_type="text/html"),
+        OutputReference("url", "https://sonarqube.example/report/16787434"),
+    ),
+)
+```
+
+The value must be a control-free single-line string, finite number, or boolean.
+Output references distinguish `file` and absolute HTTP(S) `url` targets and may
+carry a label and media type. Poly captures incidental handler stdout/stderr for
+diagnosis, aggregates valid deliverables in plan order, and retains every field
+in JSON, YAML, XML, and persisted reports.
+
 ## Package and install
 
 `uv build` produces a wheel and source distribution. Installing the wheel makes
@@ -97,7 +125,7 @@ plan, and run reports in text, JSON, YAML, and XML.
 The following development journey uses only public commands and wheel
 installation. The release acceptance journey that downloads the retained CI
 wheel without checking out Poly source is documented in
-[0.12.0 release notes](../releases/0.12.0.md).
+[0.12.1 release notes](../releases/0.12.1.md).
 
 ```shell
 uv build
@@ -106,7 +134,7 @@ poly driver new sample-tech --path ../poly-driver-sample-tech --poly-source "$PW
 
 uv venv ../poly-clean-room
 uv pip install --python ../poly-clean-room/bin/python \
-  dist/poly-0.12.0-py3-none-any.whl \
+  dist/poly-0.12.1-py3-none-any.whl \
   ../poly-driver-sample-tech/dist/poly_driver_sample_tech-0.1.0-py3-none-any.whl
 
 POLY=../poly-clean-room/bin/poly

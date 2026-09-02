@@ -9,7 +9,7 @@ from ruamel.yaml import YAML
 
 from poly.application import InspectionSnapshot, PlanningSnapshot
 from poly.control_plane import ControllerDescriptor
-from poly.driver import DriverInventoryItem
+from poly.driver import ActionValue, DriverInventoryItem, OutputReference
 from poly.model import (
     ActionSpec,
     Inventory,
@@ -132,8 +132,9 @@ def test_interactive_renderer_has_command_statuses_and_distinct_completion(
         exit_code=0,
     )
 
-    assert concise.splitlines()[0] == "VERIFYING node ..."
-    assert concise.splitlines()[1].startswith("        PLAN")
+    assert concise.splitlines()[0] == "─" * 72
+    assert concise.splitlines()[1] == "VERIFYING node ..."
+    assert concise.splitlines()[2].startswith("        PLAN")
     assert "                ✓ OK       verify:node" in concise
     assert concise.splitlines()[-2].startswith("        ✓ SUCCESS  poly verify")
     assert "Schema: poly.report/v1" in verbose
@@ -168,7 +169,8 @@ def test_interactive_renderer_distinguishes_failure_blocking_and_logs(tmp_path: 
         exit_code=1,
     )
 
-    assert "✗ KO       verify:node (fixture/verify) · verification failed" in output
+    assert "✗ KO       verify:node (fixture/verify)" in output
+    assert "· verification failed" in output
     assert "stderr: broken" in output
     assert "⚠ WARN     follow-up · blocked by" in output
     assert output.splitlines()[-2].startswith("        ✗ FAILURE  poly verify")
@@ -232,7 +234,7 @@ def test_streaming_renderer_separates_start_events_logs_and_completion(tmp_path:
     )
     completion = render_cli_completion(document, verbosity=1, color=False, exit_code=0)
 
-    assert start.startswith("VERIFYING node ...\n")
+    assert start.startswith("─" * 72 + "\nVERIFYING node ...\n")
     assert "COMMAND  poly verify -v" in start
     assert "PLAN     plan · 1 action(s) · executable" in start
     assert "> RUNNING  verify:node (fixture/verify)" in running
@@ -262,6 +264,102 @@ def test_json_yaml_and_xml_render_the_same_canonical_document(tmp_path: Path) ->
     assert '"kind": "plan"' in yaml_value
     assert '"ready_action_ids":' in yaml_value
     assert xml_value == document
+
+
+def test_source_add_heading_uses_sanitized_authored_url_and_ref(tmp_path: Path) -> None:
+    _, planning = _snapshots(tmp_path)
+    request = PlanningRequest(
+        "add",
+        planning.inspection.inventory,
+        ("node",),
+        {
+            "poly.node.id": "service",
+            "poly.source.url": "https://user:secret@example.test/repo.git",
+            "poly.source.ref": "develop",
+        },
+    )
+    add_planning = PlanningSnapshot(
+        planning.inspection, request, planning.applicable_actions, (), planning.plan
+    )
+
+    output = render_cli(planning_document(add_planning), "poly add service", color=False)
+
+    assert "ADDING service from https://example.test/repo.git (ref: develop) ..." in output
+    assert "secret" not in output
+
+
+def test_scalar_values_and_outputs_render_without_losing_structured_data(
+    tmp_path: Path,
+) -> None:
+    _, planning = _snapshots(tmp_path)
+    outputs = (
+        OutputReference("file", r"D:\test\quality report.html", media_type="text/html"),
+        OutputReference("file", r"D:\test\quality report.html", media_type="text/html"),
+        OutputReference("url", "https://example.test/report/1", "Quality report"),
+    )
+    result = RunResult(
+        "plan",
+        RunStatus.FAILED,
+        (
+            ActionResult(
+                "verify:node",
+                ActionState.FAILED,
+                ActionAttempt(
+                    False,
+                    "diagnostic retained",
+                    details={"reason": "threshold"},
+                    value=ActionValue(82.4, "coverage"),
+                    outputs=outputs,
+                ),
+                started_at="2026-09-02T12:00:00.000Z",
+                completed_at="2026-09-02T12:00:00.125Z",
+                duration_ms=125,
+            ),
+        ),
+        (RunEvent(1, ActionState.FAILED, "verify:node", occurred_at="2026-09-02T12:00:00.125Z"),),
+        (),
+    )
+    document = run_document(planning, result)
+
+    plain = render_cli(document, "poly verify", exit_code=1)
+    linked = render_cli(document, "poly verify", exit_code=1, hyperlinks=True)
+    structured = json.loads(render(document, "json"))
+
+    assert "· coverage: 82.4" in plain
+    assert plain.index("FAILURE") < plain.index("> OUTPUT")
+    assert plain.count(r"D:\test\quality report.html") == 1
+    assert "\x1b]8;;file:///D:/test/quality%20report.html" in linked
+    assert "\x1b]8;;https://example.test/report/1" in linked
+    assert "\x1b]8" not in plain
+    assert structured["run"]["actions"][0]["duration_ms"] == 125
+    assert structured["run"]["actions"][0]["attempt"]["outputs"][2]["kind"] == "url"
+    assert structured["run"]["events"][0]["occurred_at"].endswith("Z")
+
+
+def test_narrow_action_detail_wraps_at_the_third_indent(tmp_path: Path) -> None:
+    _, planning = _snapshots(tmp_path)
+    event = RunEvent(
+        1,
+        ActionState.SUCCEEDED,
+        "verify:node",
+        "a deliberately long detail that must wrap safely",
+    )
+
+    output = render_cli_event(event, planning.plan.actions[0], width=48)
+
+    assert output.splitlines()[0].startswith("                ✓ OK")
+    assert any(line.startswith("                        · ") for line in output.splitlines()[1:])
+    assert all(len(line) <= 48 for line in output.splitlines())
+
+
+def test_terminal_renderer_neutralizes_controls_in_summaries(tmp_path: Path) -> None:
+    _, planning = _snapshots(tmp_path)
+    event = RunEvent(1, ActionState.FAILED, "verify:node", "bad\x1b[31m\nsummary")
+
+    output = render_cli_event(event, planning.plan.actions[0])
+
+    assert "\x1b[31m" not in output
+    assert "bad?[31m?summary" in output
 
 
 def test_driver_inventory_has_stable_semantic_parity_in_every_format(tmp_path: Path) -> None:
