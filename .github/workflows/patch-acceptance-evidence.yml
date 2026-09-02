@@ -1,0 +1,106 @@
+name: Apply final acceptance evidence corrections
+
+on:
+  push:
+    branches:
+      - milestone/0.12-clean-workstation
+    paths:
+      - .github/workflows/patch-acceptance-evidence.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: milestone/0.12-clean-workstation
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Patch retained action logs and bootstrap phase reports
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          runner = Path("tools/acceptance/run_acceptance.py")
+          value = runner.read_text(encoding="utf-8")
+          replacements = {
+              '"action-id": action.get("id"),': '"action-id": action.get("action_id"),',
+              '"owner": owners.get(str(action.get("id"))),': '"owner": owners.get(str(action.get("action_id"))),',
+              '"message": attempt.get("message"),': '"message": attempt.get("summary"),',
+          }
+          for old, new in replacements.items():
+              if old not in value and new not in value:
+                  raise SystemExit(f"missing expected runner fragment: {old}")
+              value = value.replace(old, new, 1)
+          runner.write_text(value, encoding="utf-8")
+
+          cli = Path("src/poly/cli.py")
+          value = cli.read_text(encoding="utf-8")
+          anchor = '''    document["phases"] = [
+        {
+            "name": "root-bootstrap",
+            "plan-id": snapshot.plan.id,
+            "status": result.status.value,
+        },
+        {
+            "name": "recursive-hydration",
+            "plan-id": hydration.plan.id,
+            "status": hydrated.status.value,
+        },
+    ]
+    StateStore(target).save_run(hydration.plan.id, document)
+'''
+          replacement = '''    document["phases"] = [
+        {
+            "name": "root-bootstrap",
+            "plan-id": snapshot.plan.id,
+            "status": result.status.value,
+        },
+        {
+            "name": "recursive-hydration",
+            "plan-id": hydration.plan.id,
+            "status": hydrated.status.value,
+        },
+    ]
+    document["phase_reports"] = [
+        {
+            "name": "root-bootstrap",
+            "plan": root_document["plan"],
+            "run": root_document["run"],
+        },
+        {
+            "name": "recursive-hydration",
+            "plan": document["plan"],
+            "run": document["run"],
+        },
+    ]
+    document["recovery"] = {
+        "run-id": hydration.plan.id,
+        "command": f"poly report {hydration.plan.id}",
+        "persisted": True,
+    }
+    StateStore(target).save_run(hydration.plan.id, document)
+'''
+          if anchor not in value and 'document["phase_reports"]' not in value:
+              raise SystemExit("bootstrap report anchor not found")
+          if anchor in value:
+              value = value.replace(anchor, replacement, 1)
+          cli.write_text(value, encoding="utf-8")
+          PY
+          git diff --check
+          git diff -- tools/acceptance/run_acceptance.py src/poly/cli.py
+      - name: Commit evidence corrections
+        shell: bash
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tools/acceptance/run_acceptance.py src/poly/cli.py
+          git commit -m "fix(acceptance): retain complete phase and action evidence"
+          git push origin HEAD:milestone/0.12-clean-workstation
