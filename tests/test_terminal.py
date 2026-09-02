@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 
+import pytest
+
 from poly.model import ActionSpec
 from poly.reporting import ReportDocument
 from poly.runtime import ActionState, RunEvent
@@ -101,3 +103,75 @@ def test_renderer_owns_start_completion_and_ignores_non_visual_events() -> None:
     assert "VERIFYING node" in value
     assert "SUCCESS  poly verify" in value
     assert value.count("a (fixture/verify)") == 0
+
+
+def test_native_progress_tracks_terminal_actions_and_clears_on_completion() -> None:
+    output = InteractiveOutput()
+    actions = (_action("a"), _action("b"))
+    document: ReportDocument = {
+        "schema": "poly.report/v1",
+        "kind": "run",
+        "request": {"verb": "verify", "selected_node_ids": ["node"], "parameters": {}},
+        "plan": {"id": "plan", "status": "executable", "planned_actions": []},
+        "run": {"actions": []},
+    }
+    renderer = SerializedRunRenderer(
+        output,
+        actions,
+        capabilities=TerminalCapabilities(True, True, True, 80, True),
+    )
+
+    renderer.start(document, "poly verify")
+    renderer.handle(RunEvent(1, ActionState.RUNNING, "a"))
+    renderer.handle(RunEvent(2, ActionState.SUCCEEDED, "a"))
+    renderer.handle(RunEvent(3, ActionState.FAILED, "b"))
+    renderer.finish(document, 1)
+
+    value = output.getvalue()
+    assert "\x1b]9;4;1;0\x07" in value
+    assert "\x1b]9;4;1;50\x07" in value
+    assert "\x1b]9;4;2;100\x07" in value
+    assert value.endswith("\x1b]9;4;0;0\x07")
+
+
+def test_native_progress_is_cleared_on_abort() -> None:
+    output = InteractiveOutput()
+    renderer = SerializedRunRenderer(
+        output,
+        (_action("a"),),
+        capabilities=TerminalCapabilities(True, True, True, 80, True),
+    )
+    document: ReportDocument = {
+        "schema": "poly.report/v1",
+        "kind": "run",
+        "plan": {"id": "plan", "status": "executable", "planned_actions": []},
+    }
+
+    renderer.start(document, "poly verify")
+    renderer.abort()
+
+    assert "\x1b]9;4;0;0\x07\x1b[0m\n" in output.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("environment", "expected"),
+    [
+        ({"TERM_PROGRAM": "iTerm.app"}, True),
+        ({"WT_SESSION": "session"}, True),
+        ({"TERM_PROGRAM": "Apple_Terminal"}, False),
+        ({"TERM_PROGRAM": "iTerm.app", "CI": "true"}, False),
+        ({"TERM_PROGRAM": "iTerm.app", "TMUX": "socket"}, False),
+    ],
+)
+def test_native_progress_capability_detection(
+    monkeypatch: pytest.MonkeyPatch, environment: dict[str, str], expected: bool
+) -> None:
+    for name in ("CI", "TERM", "TERM_PROGRAM", "TMUX", "WT_SESSION"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+
+    capabilities = TerminalCapabilities.detect(InteractiveOutput())
+
+    assert capabilities.native_progress is expected
