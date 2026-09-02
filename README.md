@@ -31,11 +31,13 @@ Poly-managed root `.gitignore` block.
 For a command-oriented tour, see the [Poly cookbook](docs/cookbook/README.md).
 
 The current milestone is
-[0.11.0 — Runtime driver lifecycle and inventory](docs/releases/0.11.0.md).
-Installed `poly.drivers` entry points now participate in production inspection,
-planning, and execution, while `poly drivers` and every canonical runtime report
-expose loaded and rejected driver state. The installable package and
-`poly --version` report the same milestone version.
+[0.12.0 — Clean-workstation functional acceptance](docs/releases/0.12.0.md).
+It packages the complete minimum Poly journey as an installable wheel and proves
+it on clean Linux and Windows GitHub Actions jobs that do not checkout Poly
+source. The retained fixture contains a root control repository, two independent
+locked child repositories, a multi-module Maven reactor, and an installed
+external driver. Until the post-merge tag gate succeeds, the milestone remains
+`implemented-awaiting-ci`, not `validated`.
 
 The version 1 contract is implemented: manifests and locks are validated and
 compiled into rebuildable state, declared identities are enriched by Git and
@@ -47,25 +49,75 @@ same reportable action model.
 
 ## Installation
 
-Python 3.12, Git, and [uv](https://docs.astral.sh/uv/) are required. To run Poly
-once without keeping the tool installed:
+Python 3.12 and Git are required. Maven and a Java runtime are required when
+executing Maven verbs. For development snapshots, `uvx` and `uv tool install`
+remain convenient:
 
 ```shell
 uvx --from "git+https://github.com/falcoer/poly.git" poly --help
-```
-
-For daily use, install the `poly` command in an isolated environment managed by
-uv:
-
-```shell
 uv tool install "git+https://github.com/falcoer/poly.git"
-poly --version
-poly --help
-poly drivers --workspace /path/to/workspace --format json
 ```
 
-Commands in this README and in the cookbook then assume that `poly` is directly
-available on `PATH`.
+For **0.12 functional acceptance**, reviewers install the retained CI wheel
+instead of cloning Poly. Replace the run id and commit with the values from the
+accepted CI run; artifact names deliberately include the exact build commit.
+
+### POSIX retained-artifact journey
+
+```bash
+run_id="<accepted-run-id>"
+commit="<accepted-commit>"
+
+gh run download "$run_id" -R falcoer/poly \
+  -n "poly-0.12.0-distributions-$commit" -D poly-dist
+gh run download "$run_id" -R falcoer/poly \
+  -n "poly-0.12.0-acceptance-fixture-$commit" -D poly-fixture
+
+(cd poly-dist && sha256sum -c SHA256SUMS)
+python3.12 -m venv .venv
+. .venv/bin/activate
+python -m pip install ./poly-dist/poly-0.12.0-py3-none-any.whl \
+  ./poly-fixture/poly_driver_sample_tech-0.1.0-py3-none-any.whl
+
+./poly-fixture/scripts/run-posix.sh \
+  "$PWD/.venv/bin/python" "$PWD/.venv/bin/poly" \
+  "$PWD/poly-fixture" "$PWD/poly-evidence"
+```
+
+### PowerShell retained-artifact journey
+
+```powershell
+$runId = "<accepted-run-id>"
+$commit = "<accepted-commit>"
+
+gh run download $runId -R falcoer/poly `
+  -n "poly-0.12.0-distributions-$commit" -D poly-dist
+gh run download $runId -R falcoer/poly `
+  -n "poly-0.12.0-acceptance-fixture-$commit" -D poly-fixture
+
+$sumLine = Get-Content .\poly-dist\SHA256SUMS |
+  Where-Object { $_ -match "poly-0.12.0-py3-none-any.whl$" }
+$expected = ($sumLine -split "\s+")[0].ToLowerInvariant()
+$actual = (Get-FileHash .\poly-dist\poly-0.12.0-py3-none-any.whl -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw "Poly wheel SHA-256 mismatch" }
+
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install `
+  .\poly-dist\poly-0.12.0-py3-none-any.whl `
+  .\poly-fixture\poly_driver_sample_tech-0.1.0-py3-none-any.whl
+
+& .\poly-fixture\scripts\run-powershell.ps1 `
+  -PythonExe .\.venv\Scripts\python.exe `
+  -PolyExe .\.venv\Scripts\poly.exe `
+  -FixtureDir .\poly-fixture `
+  -OutputDir .\poly-evidence
+```
+
+Both routes execute the same checked-in acceptance logic and require no Poly
+source checkout. The fixture is test input; `poly-dist` and `poly-evidence` are
+generated/downloaded artifacts; within a real workspace only committed
+`poly.yaml`, `poly.lock.yaml`, and the root `.gitignore` composition contract
+are persistent, while `.poly/` is disposable generated state.
 
 ## Development
 
@@ -168,8 +220,10 @@ commits; `poly update` resolves requested remote references, safely materializes
 and verifies them, then rewrites the lock. `poly inspect --remote` compares the
 lock with the remote without fetching or modifying local repositories.
 
-The project advances directly on `main`. A milestone tag is created by CI only
-after every required check succeeds on the exact milestone commit.
+0.12 excludes the Web UI, parallel execution, child commit/push/merge, public
+package-index publication, and hostile-driver sandboxing. A milestone tag is
+created by CI only after every required check succeeds on the exact milestone
+commit.
 
 ## Core rule
 

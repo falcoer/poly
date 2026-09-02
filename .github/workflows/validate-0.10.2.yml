@@ -1,0 +1,132 @@
+name: Validate 0.10.2 baseline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: validate-0.10.2
+  cancel-in-progress: false
+
+env:
+  POLY_0102_SHA: 1c1346cb032b3429095091f173e5c6a5b766383c
+  POLY_0102_TAG: roadmap/0.10.2-runtime-corrections
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.POLY_0102_SHA }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          prune-cache: true
+      - run: uv sync --locked --all-groups
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run mypy src tests
+      - name: Test with coverage
+        run: uv run pytest
+      - name: Build exact 0.10.2 distributions
+        run: uv build
+      - name: Validate 0.10.2 release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dist/poly-0.10.2-py3-none-any.whl
+          test -f dist/poly-0.10.2.tar.gz
+          uv run python - <<'PY'
+          import importlib.metadata
+          import zipfile
+          import poly
+          assert poly.__version__ == "0.10.2"
+          assert importlib.metadata.version("poly") == "0.10.2"
+          with zipfile.ZipFile("dist/poly-0.10.2-py3-none-any.whl") as archive:
+              metadata = archive.read("poly-0.10.2.dist-info/METADATA").decode()
+          assert "Name: poly\nVersion: 0.10.2\n" in metadata
+          PY
+
+  external-driver-clean-room:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.POLY_0102_SHA }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          prune-cache: true
+      - run: uv sync --locked --all-groups
+      - name: Generate external driver
+        shell: bash
+        run: |
+          target="$RUNNER_TEMP/poly-driver-sample-tech"
+          uv run poly driver new sample-tech --path "$target" --poly-source "$GITHUB_WORKSPACE"
+          echo "target=$target" >> "$GITHUB_ENV"
+      - name: Validate generated external driver
+        shell: bash
+        run: |
+          cd "$target"
+          uv sync --all-groups
+          uv run poly-driver-test validate
+          uv run poly-driver-test inspect poly_driver_sample_tech:driver --workspace tests/fixtures/workspace
+          uv run poly-driver-test determinism poly_driver_sample_tech:driver --workspace tests/fixtures/workspace --verb sample-status
+          uv run ruff format --check .
+          uv run ruff check .
+          uv run mypy src tests
+          uv run pytest
+          uv build
+
+  workspace-contract:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.POLY_0102_SHA }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          prune-cache: true
+      - run: uv sync --locked --all-groups
+      - run: uv run pytest
+
+  tag:
+    needs: [quality, external-driver-clean-room, workspace-contract]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.POLY_0102_SHA }}
+          fetch-depth: 0
+      - name: Verify or create immutable annotated 0.10.2 tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          if git rev-parse -q --verify "refs/tags/$POLY_0102_TAG" >/dev/null; then
+            test "$(git cat-file -t "$POLY_0102_TAG")" = tag
+            test "$(git rev-list -n 1 "$POLY_0102_TAG")" = "$POLY_0102_SHA"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$POLY_0102_TAG" -m "Validated roadmap milestone $POLY_0102_TAG" "$POLY_0102_SHA"
+          git push origin "refs/tags/$POLY_0102_TAG"
