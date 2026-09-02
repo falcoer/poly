@@ -115,6 +115,15 @@ def test_remote_controller_uses_versioned_request_and_response_contract(
                 "stdout": "done",
                 "stderr": "",
                 "details": {"host": "remote"},
+                "value": {"value": 82.4, "label": "coverage"},
+                "outputs": [
+                    {
+                        "kind": "url",
+                        "target": "https://example.test/report",
+                        "label": "report",
+                        "media_type": "text/html",
+                    }
+                ],
             }
 
     transport = Transport()
@@ -129,6 +138,8 @@ def test_remote_controller_uses_versioned_request_and_response_contract(
     assert result.success
     assert result.stdout == "done"
     assert result.details["host"] == "remote"
+    assert result.value is not None and result.value.label == "coverage"
+    assert result.outputs[0].target == "https://example.test/report"
     assert transport.request is not None
     assert transport.request["schema"] == "poly.controller.request/v1"
     assert transport.request["capability"] == "process.execute"

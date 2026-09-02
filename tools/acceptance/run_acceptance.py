@@ -164,7 +164,7 @@ def run(poly: Path, fixture: Path, output: Path, platform_name: str) -> None:
         raise AssertionError(f"acceptance workspace already exists: {workspace}")
 
     version = _run([str(poly), "--version"]).stdout.strip()
-    assert version == "poly 0.12.0", version
+    assert version == "poly 0.12.1", version
     root_remote = (fixture / "remotes" / "root.git").resolve()
     bootstrap = _json_command(
         poly,

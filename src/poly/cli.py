@@ -8,7 +8,6 @@ import shlex
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable
 from pathlib import Path
 
 from poly._version import __version__
@@ -23,7 +22,7 @@ from poly.control_plane import (
 from poly.driver import DriverOrigin, DriverRegistry, ExecutionContext, discover_external_drivers
 from poly.driver.scaffold import DriverScaffoldError, scaffold_driver
 from poly.drivers import git_driver, maven_driver
-from poly.model import ActionSpec, Node
+from poly.model import Node
 from poly.persistence import StateError, StateStore
 from poly.reporting import (
     ReportDocument,
@@ -35,12 +34,10 @@ from poly.reporting import (
     planning_document,
     render,
     render_cli,
-    render_cli_completion,
-    render_cli_event,
-    render_cli_start,
     run_document,
 )
-from poly.runtime import Executor, LocalActionRunner, RunEvent, RunStatus
+from poly.runtime import Executor, LocalActionRunner, RunStatus
+from poly.terminal import SerializedRunRenderer, TerminalCapabilities
 from poly.workspace import WorkspaceError, validate_workspace
 
 REPORT_FORMATS = ("text", "json", "yaml", "xml")
@@ -152,29 +149,33 @@ def main(arguments: list[str] | None = None) -> int:
                 context = ExecutionContext(workspace, run_directory)
                 runner = _controller_runner(registry, options.controller)
                 streamed = options.format == "text"
-                listener = _event_listener(snapshot.plan.actions, options) if streamed else None
-                if streamed:
-                    _write_stream(
-                        render_cli_start(
-                            planning_document(snapshot),
-                            command,
-                            verbosity=options.verbosity,
-                            color=_color_enabled(options),
-                        )
+                renderer = (
+                    SerializedRunRenderer(
+                        sys.stdout,
+                        snapshot.plan.actions,
+                        options.verbosity,
+                        _color_enabled(options),
                     )
-                result = Executor(runner, listener).execute(snapshot.plan, context)
+                    if streamed
+                    else None
+                )
+                if streamed:
+                    assert renderer is not None
+                    renderer.start(planning_document(snapshot), command)
+                try:
+                    result = Executor(runner, renderer.handle if renderer else None).execute(
+                        snapshot.plan, context
+                    )
+                except BaseException:
+                    if renderer is not None:
+                        renderer.abort()
+                    raise
                 document = run_document(snapshot, result)
                 _save_run_if_initialized(workspace, snapshot.plan.id, document)
                 exit_code = 0 if result.status in {RunStatus.SUCCEEDED, RunStatus.EMPTY} else 1
                 if streamed:
-                    _write_stream(
-                        render_cli_completion(
-                            document,
-                            verbosity=options.verbosity,
-                            color=_color_enabled(options),
-                            exit_code=exit_code,
-                        )
-                    )
+                    assert renderer is not None
+                    renderer.finish(document, exit_code)
 
     if not streamed:
         _write_output(document, options, command, exit_code)
@@ -319,31 +320,34 @@ def _nature_command(
     run_directory = workspace / ".poly" / "runs" / snapshot.plan.id
     run_directory.mkdir(parents=True, exist_ok=True)
     streamed = options.format == "text"
-    if streamed:
-        _write_stream(
-            render_cli_start(
-                planning_document(snapshot),
-                command,
-                verbosity=options.verbosity,
-                color=_color_enabled(options),
-            )
+    renderer = (
+        SerializedRunRenderer(
+            sys.stdout,
+            snapshot.plan.actions,
+            options.verbosity,
+            _color_enabled(options),
         )
-    result = Executor(
-        _controller_runner(registry, options.controller),
-        _event_listener(snapshot.plan.actions, options) if streamed else None,
-    ).execute(snapshot.plan, ExecutionContext(workspace, run_directory))
+        if streamed
+        else None
+    )
+    if streamed:
+        assert renderer is not None
+        renderer.start(planning_document(snapshot), command)
+    try:
+        result = Executor(
+            _controller_runner(registry, options.controller),
+            renderer.handle if renderer else None,
+        ).execute(snapshot.plan, ExecutionContext(workspace, run_directory))
+    except BaseException:
+        if renderer is not None:
+            renderer.abort()
+        raise
     document = run_document(snapshot, result)
     _save_run_if_initialized(workspace, snapshot.plan.id, document)
     exit_code = 0 if result.status in {RunStatus.SUCCEEDED, RunStatus.EMPTY} else 1
     if streamed:
-        _write_stream(
-            render_cli_completion(
-                document,
-                verbosity=options.verbosity,
-                color=_color_enabled(options),
-                exit_code=exit_code,
-            )
-        )
+        assert renderer is not None
+        renderer.finish(document, exit_code)
     else:
         _write_output(document, options, command, exit_code)
     return exit_code
@@ -540,6 +544,7 @@ def _write_output(
     if options.format != "text":
         sys.stdout.write(render(document, options.format))
         return
+    capabilities = TerminalCapabilities.detect(sys.stdout)
     sys.stdout.write(
         render_cli(
             document,
@@ -547,6 +552,8 @@ def _write_output(
             verbosity=options.verbosity,
             color=_color_enabled(options),
             exit_code=exit_code,
+            width=capabilities.width,
+            hyperlinks=capabilities.hyperlinks,
         )
     )
 
@@ -555,30 +562,6 @@ def _color_enabled(options: argparse.Namespace) -> bool:
     return options.color == "always" or (
         options.color == "auto" and sys.stdout.isatty() and "NO_COLOR" not in os.environ
     )
-
-
-def _event_listener(
-    actions: tuple[ActionSpec, ...], options: argparse.Namespace
-) -> Callable[[RunEvent], None]:
-    by_id = {action.id: action for action in actions}
-
-    def listener(event: RunEvent) -> None:
-        _write_stream(
-            render_cli_event(
-                event,
-                by_id.get(event.action_id),
-                verbosity=options.verbosity,
-                color=_color_enabled(options),
-            )
-        )
-
-    return listener
-
-
-def _write_stream(value: str) -> None:
-    if value:
-        sys.stdout.write(value)
-        sys.stdout.flush()
 
 
 def _planning_options(parser: argparse.ArgumentParser) -> None:

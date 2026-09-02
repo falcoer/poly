@@ -122,7 +122,7 @@ def test_cli_executes_git_status_and_reports_logs(
     assert (tmp_path / ".poly" / "runs" / report["plan"]["id"]).is_dir()
 
 
-def test_cli_flushes_heading_and_action_progress_before_completion(
+def test_cli_flushes_heading_and_terminal_action_before_completion(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     output = RecordingOutput()
@@ -131,8 +131,9 @@ def test_cli_flushes_heading_and_action_progress_before_completion(
     assert main(["init", "--workspace", str(tmp_path), "--name", "Streaming"]) == 0
 
     assert any("INITIALIZING" in value and "SUCCESS" not in value for value in output.flushes)
-    assert any("> RUNNING" in value and "SUCCESS" not in value for value in output.flushes)
+    assert all("> RUNNING" not in value for value in output.flushes)
     assert "✓ OK" in output.getvalue()
+    assert output.getvalue().count("✓ OK") == 1
     assert "✓ SUCCESS  poly init" in output.getvalue()
 
 

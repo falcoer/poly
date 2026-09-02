@@ -433,7 +433,7 @@ Cross-milestone invariants:
 
 ## 0.12.1 — Stable interactive CLI presentation
 
-- Status: `pending`
+- Status: `implemented-awaiting-ci`
 - Tag: `roadmap/0.12.1-interactive-cli`
 - Depends on: validated 0.12 functional baseline.
 - Scope: consolidate the interactive command block, replace transient action
