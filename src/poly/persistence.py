@@ -42,6 +42,20 @@ class StateStore:
     def save_plan(self, run_id: str, document: ReportDocument) -> Path:
         return self._save(self._run_path(run_id) / "plan.json", "plan", document)
 
+    def save_prepared_plan(self, document: ReportDocument) -> Path:
+        return self._save(self.state_directory / "plan.json", "plan", document)
+
+    def load_prepared_plan(self) -> ReportDocument:
+        return self._load(self.state_directory / "plan.json")
+
+    def clear_prepared_plan(self) -> bool:
+        path = self.state_directory / "plan.json"
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return False
+        return True
+
     def save_run(self, run_id: str, document: ReportDocument) -> Path:
         return self._save(self._run_path(run_id) / "report.json", "run", document)
 

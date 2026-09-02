@@ -48,6 +48,14 @@ capability, and contains either a complete command or a matching public action
 handler. Missing prerequisites are constraints or diagnostics; a driver must
 not invent another verb to satisfy them.
 
+API 1.1 also lets a driver contribute a typed `poly add <facade>` syntax through
+`CommandFacade`. Its `FacadeArgument` declarations build dynamic CLI help, and
+`translate(FacadeRequest)` returns only canonical string planning parameters.
+Register the facade in `DriverRegistration.facades` and declare the `facade`
+capability; duplicate `(verb, name)` identities are rejected before activation.
+The translator must be deterministic and must not modify the workspace or an
+external service.
+
 Use the generated fixture as a black-box example:
 
 ```shell
@@ -113,7 +121,7 @@ poly drivers --workspace . --format json
 ```
 
 Every entry includes `name`, `version`, `origin`, `api_version`, `capabilities`,
-`verbs`, `status`, `entry_point`, and `diagnostic`. Core origins are `system` or
+`verbs`, `facades`, `status`, `entry_point`, and `diagnostic`. Core origins are `system` or
 `builtin`; installed origins identify the contributing distribution. A status
 of `loaded` means its providers are active. A status of `rejected` means they are
 completely inactive and `diagnostic` explains the import, protocol, identity, or
@@ -125,7 +133,7 @@ plan, and run reports in text, JSON, YAML, and XML.
 The following development journey uses only public commands and wheel
 installation. The release acceptance journey that downloads the retained CI
 wheel without checking out Poly source is documented in
-[0.12.1 release notes](../releases/0.12.1.md).
+[0.12.2 release notes](../releases/0.12.2.md).
 
 ```shell
 uv build
@@ -134,7 +142,7 @@ poly driver new sample-tech --path ../poly-driver-sample-tech --poly-source "$PW
 
 uv venv ../poly-clean-room
 uv pip install --python ../poly-clean-room/bin/python \
-  dist/poly-0.12.1-py3-none-any.whl \
+  dist/poly-0.12.2-py3-none-any.whl \
   ../poly-driver-sample-tech/dist/poly_driver_sample_tech-0.1.0-py3-none-any.whl
 
 POLY=../poly-clean-room/bin/poly

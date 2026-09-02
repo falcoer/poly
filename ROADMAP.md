@@ -509,11 +509,71 @@ Cross-milestone invariants:
 - Excluded: execution parallelism itself, terminal dashboards, progress
   percentages, spinners, and historical report animation.
 
+## 0.12.2 — Prepared plans and driver-contributed add façades
+
+- Status: `implemented-awaiting-ci`
+- Tag: `roadmap/0.12.2-prepared-plans`
+- Depends on: implemented 0.12.1 interactive CLI contract.
+- Scope: let users compose several ordinary Poly commands into one frozen,
+  persistent plan before execution, and make the specialized vocabulary of
+  `poly add` an explicitly registered driver contribution rather than a closed
+  engine-owned inventory.
+- Acceptance:
+  - every direct plannable command accepts `--prepare` in addition to the
+    existing isolated `--plan` preview;
+  - `--prepare` appends the normalized request and its frozen actions to the one
+    current prepared plan without executing an action or modifying authored
+    workspace files;
+  - repeated preparation validates the complete action graph, including
+    duplicate action identifiers, claims, missing constraints, and cycles;
+  - `poly plan` renders the current prepared plan and `poly plan clean`
+    idempotently removes only its disposable `.poly/` state;
+  - the former expert syntax `poly plan <verb>` is removed, while
+    `poly <verb> --plan` remains the non-cumulative one-command preview;
+  - `poly exec` verifies that the authored workspace base has not changed and
+    executes the exact persisted frozen plan without driver inspection,
+    negotiation, or runtime action expansion;
+  - successful execution consumes the current plan while preserving its normal
+    historical run report; failed execution retains the prepared plan and its
+    report for diagnosis;
+  - a workspace has at most one current prepared plan and exposes no user-facing
+    plan identifier selection or parallel plan catalog;
+  - current-plan persistence reuses the canonical `poly.state/v1` envelope and
+    `poly.report/v1` plan document rather than introducing a batch, script, or
+    intention-file format;
+  - immediate execution refuses to bypass an existing prepared plan, while
+    isolated previews remain available;
+  - `poly add <facade> ...` resolves façades from the deterministic driver
+    registry, and the engine contains no enumeration of repository, module, or
+    technology-specific add façades;
+  - façade argument schemas and translation to canonical planning parameters
+    are side-effect-free public driver contributions with useful dynamic help;
+  - duplicate façade identities are rejected deterministically and façade
+    inventory is visible through canonical driver reports;
+  - built-in `module` and Git `repository` façades cover local modules, remote
+    repositories, and safe adoption of existing Git worktrees.
+- Checks: single and cumulative preparation; exact frozen-plan execution;
+  current-plan display/clean/consumption; empty and stale states; blocked and
+  failed plans; command/action collision and graph validation; no authored-file
+  mutation before execution; canonical report round-trip and migration;
+  removal of `poly plan <verb>`; facade discovery, dynamic help, translation,
+  collision isolation, installed-driver compatibility, Windows/Linux paths,
+  clean-room external-driver gates, and structured-renderer parity.
+- Demonstration: prepare at least three source-backed repository additions with
+  `poly add repository ... --prepare`, inspect their one combined plan, execute
+  it with `poly exec`, and prove that all authored composition changes occur
+  only during execution and that the retained run report describes the exact
+  previously displayed plan.
+- Excluded: concurrent action execution, multiple named prepared plans,
+  runtime plan expansion, automatic stale-plan replanning, blueprint/template
+  aggregation, pathless logical service nodes, and distributed execution.
+
 ## 0.13 — Bounded parallel plan execution
 
 - Status: `pending`
 - Tag: `roadmap/0.13-bounded-parallel-execution`
-- Depends on: validated 0.12.1 interactive CLI baseline.
+- Depends on: validated 0.12.1 interactive CLI baseline and validated 0.12.2
+  prepared-plan composition.
 - Scope: execute independent actions from the same ready frontier concurrently,
   with deterministic frontier selection, explicit execution-resource isolation,
   and a worker limit bounded by the capabilities visible to the Poly process.
@@ -557,10 +617,10 @@ Cross-milestone invariants:
   automatic-capacity tests; failure, exception, and interruption isolation;
   concurrent event sequencing and log separation; sequential compatibility;
   Windows/Linux execution; canonical renderer parity.
-- Demonstration: hydrate or verify several independent repositories concurrently
-  while actions targeting the same repository remain serialized, then use
-  timestamped reports to show the overlap and compare elapsed time with
-  `--jobs 1`.
+- Demonstration: prepare several independent repository additions, execute the
+  displayed frozen plan concurrently while actions targeting the same
+  repository remain serialized, then use timestamped reports to show the
+  overlap and compare elapsed time with `--jobs 1`.
 - Excluded: distributed scheduling, action preemption, adaptive CPU/memory or I/O
   weighting, speculative execution, driver-internal parallelism, and runtime
   plan expansion.

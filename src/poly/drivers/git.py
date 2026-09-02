@@ -17,6 +17,8 @@ from poly.driver import (
     DriverManifest,
     DriverRegistration,
     ExecutionContext,
+    FacadeArgument,
+    FacadeRequest,
     InspectionContext,
     InspectionDiagnostic,
     InspectionResult,
@@ -190,6 +192,51 @@ class GitInspectionProvider:
 
 class GitInspectionError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class RepositoryAddFacade:
+    """User-facing syntax for declaring or adopting a Git repository."""
+
+    name: str = "repository"
+    verb: str = "add"
+    description: str = "add a Git repository to the workspace composition"
+    arguments: tuple[FacadeArgument, ...] = (
+        FacadeArgument("node_id", ("node_id",), required=True),
+        FacadeArgument("node_path", ("--path",), required=True, help="workspace-relative path"),
+        FacadeArgument("parent", ("--parent",), help="parent node"),
+        FacadeArgument("nature", ("--nature",), repeatable=True, help="declared nature"),
+        FacadeArgument("repo", ("--repo",), help="Git repository URL"),
+        FacadeArgument("ref", ("--ref",), help="branch, tag, or commit"),
+    )
+
+    def translate(self, request: FacadeRequest) -> dict[str, str]:
+        node_path = _facade_string(request, "node_path")
+        parameters = dict(request.parameters)
+        parameters.update(
+            {
+                "poly.node.id": _facade_string(request, "node_id"),
+                "poly.node.path": node_path,
+                "poly.node.kind": "repository",
+                "poly.node.natures": ",".join(_facade_values(request, "nature")),
+            }
+        )
+        parent = request.values.get("parent")
+        if isinstance(parent, str) and parent:
+            parameters["poly.node.parent"] = parent
+        repository = request.values.get("repo")
+        requested_ref = request.values.get("ref")
+        existing = request.workspace / node_path
+        if not repository and (existing / ".git").exists():
+            repository = _git_value(existing, "remote", "get-url", "origin")
+            requested_ref = requested_ref or _git_value(
+                existing, "symbolic-ref", "--quiet", "--short", "HEAD"
+            )
+        if isinstance(repository, str) and repository:
+            parameters["poly.source.url"] = _repository_url(repository)
+        if isinstance(requested_ref, str) and requested_ref:
+            parameters["poly.source.ref"] = requested_ref
+        return parameters
 
 
 @dataclass(frozen=True, slots=True)
@@ -801,7 +848,12 @@ def git_driver() -> DriverRegistration:
         version="0.1.0",
         api_version=DRIVER_API_VERSION,
         capabilities=frozenset(
-            (DriverCapability.INSPECT, DriverCapability.PLAN, DriverCapability.EXECUTE)
+            (
+                DriverCapability.FACADE,
+                DriverCapability.INSPECT,
+                DriverCapability.PLAN,
+                DriverCapability.EXECUTE,
+            )
         ),
         description="Git repository inspection, materialization, and lock management",
         natures=("git/repository",),
@@ -811,7 +863,46 @@ def git_driver() -> DriverRegistration:
         inspectors=(GitInspectionProvider(),),
         planners=(GitPlanningProvider(),),
         handlers=(GitActionHandler(),),
+        facades=(RepositoryAddFacade(),),
     )
+
+
+def _facade_string(request: FacadeRequest, name: str) -> str:
+    value = request.values.get(name)
+    if not isinstance(value, str) or not value.strip():
+        raise GitInspectionError(f"facade argument {name!r} is required")
+    return value
+
+
+def _facade_values(request: FacadeRequest, name: str) -> tuple[str, ...]:
+    value = request.values.get(name)
+    if value is None:
+        return ()
+    if isinstance(value, tuple):
+        return value
+    return (value,)
+
+
+def _git_value(directory: Path, *arguments: str) -> str | None:
+    process = subprocess.run(
+        ("git", "-C", str(directory), *arguments),
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    value = process.stdout.strip()
+    return value if process.returncode == 0 and value else None
+
+
+def _repository_url(value: str) -> str:
+    if "://" in value or value.startswith("git@"):
+        return value
+    candidate = Path(value)
+    if candidate.is_absolute() or candidate.exists():
+        return candidate.resolve().as_uri()
+    return value
 
 
 def _discover_repository_roots(workspace: Path) -> tuple[Path, ...]:

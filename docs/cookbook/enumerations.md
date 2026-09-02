@@ -52,7 +52,7 @@ Source : manifestes enregistrés dans `src/poly/construction.py` et
 | Valeur | Signification | Par défaut | Contraintes |
 |---|---|---:|---|
 | `workspace` | Racine unique de la composition. | Racine seulement | Chemin `.`, sans source ni parent. |
-| `repository` | Frontière de source indépendante. | Avec `add --repo` | Seul type autorisé à déclarer `source`. |
+| `repository` | Frontière de source indépendante. | Avec `add repository --repo` | Seul type autorisé à déclarer `source`. |
 | `module` | Unité technique à l'intérieur d'un dépôt. | `poly add` sans `--repo` | N'implique pas un dépôt Git. |
 
 Source : `src/poly/workspace.py`, ensemble `_KINDS`.

@@ -4,28 +4,25 @@
 `poly.constructor`, not special filesystem shortcuts. They use the public
 planning, execution, control-plane, logging, and reporting contracts.
 
-Typed CLI options translate to canonical planning parameters. These two forms
-therefore produce the same frozen plan identifier and action list:
+Each loaded driver may contribute an `add` facade that translates typed CLI
+arguments to canonical planning parameters. The engine does not enumerate
+facade names or technologies:
 
 ```shell
-poly add api --path services/api --plan
-poly plan add \
-  --parameter poly.node.id=api \
-  --parameter poly.node.path=services/api \
-  --parameter poly.node.kind=module \
-  --parameter poly.node.natures=
+poly add module api --path services/api --plan
+poly add repository api-source --path sources/api --repo https://git.example/api.git --plan
 ```
 
-Without `--plan`, direct verbs execute the plan and persist the same run report
-as the expert `poly run <verb>` façade.
+Without `--plan` or `--prepare`, direct verbs execute immediately. `--prepare`
+appends to one disposable current plan; `poly plan` displays it, `poly exec`
+executes it without replanning, and `poly plan clean` discards it.
 
 ```shell
 poly init --workspace ./example --name example
-poly add service-api \
+poly add repository service-api \
   --workspace ./example \
-  --kind repository \
   --path services/api
-poly add service-api-reactor \
+poly add module service-api-reactor \
   --workspace ./example \
   --parent service-api \
   --path . \
@@ -39,7 +36,7 @@ root `.gitignore`. Re-running `init` validates and reconciles these generated
 artifacts.
 
 Adding a node records its stable identifier, kind, parent-relative path, and
-optional natures. With `--repo`, the same composite job resolves the requested
+optional natures. With `poly add repository --repo`, the same composite job resolves the requested
 Git ref, writes its immutable lock entry, and updates the ignore block without
 cloning, fetching, adopting, or checking out the child. `poly hydrate` performs
 that materialization explicitly. Without `--repo`, `add` remains a structural declaration.

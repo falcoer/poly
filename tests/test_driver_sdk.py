@@ -14,6 +14,8 @@ from poly.driver import (
     DriverProtocolError,
     DriverRegistration,
     DriverRegistry,
+    FacadeArgument,
+    FacadeRequest,
     InspectionContext,
     InspectionProvider,
     InspectionResult,
@@ -49,6 +51,21 @@ class ExamplePlanner:
         return DriverProposal(self.name)
 
 
+@dataclass(frozen=True)
+class ExampleFacade:
+    name: str = "service"
+    verb: str = "add"
+    description: str = "add a service"
+    arguments: tuple[FacadeArgument, ...] = (
+        FacadeArgument("node_id", ("node_id",), required=True),
+    )
+
+    def translate(self, request: FacadeRequest) -> dict[str, str]:
+        value = request.values["node_id"]
+        assert isinstance(value, str)
+        return {**request.parameters, "poly.node.id": value}
+
+
 def manifest(api_version: str = DRIVER_API_VERSION) -> DriverManifest:
     return DriverManifest(
         name=NAME,
@@ -71,8 +88,8 @@ def test_manifest_round_trip_and_compatibility() -> None:
 
     with pytest.raises(DriverProtocolError, match=r"requires API 2\.0"):
         manifest("2.0").ensure_compatible()
-    with pytest.raises(DriverProtocolError, match=r"requires API 1\.1"):
-        manifest("1.1").ensure_compatible()
+    with pytest.raises(DriverProtocolError, match=r"requires API 1\.2"):
+        manifest("1.2").ensure_compatible()
 
 
 @pytest.mark.parametrize("value", ("1", "one.zero", "1.0.0"))
@@ -114,6 +131,31 @@ def test_registration_rejects_capability_or_name_mismatch() -> None:
             DriverManifest(NAME, "1", "1.0", frozenset((DriverCapability.INSPECT,))),
             inspectors=(wrong,),
         ).validate()
+
+
+def test_registry_exposes_dynamic_facades_and_rejects_collisions(tmp_path: Path) -> None:
+    facade = ExampleFacade()
+    registration = DriverRegistration(
+        DriverManifest(NAME, "1", "1.1", frozenset((DriverCapability.FACADE,))),
+        facades=(facade,),
+    )
+    registry = DriverRegistry()
+    registry.register(registration)
+
+    assert registry.command_facades("add") == (facade,)
+    assert registry.command_facades("remove") == ()
+    assert registry.inventory()[0].facades == ("add:service",)
+    assert facade.translate(FacadeRequest(tmp_path, {"node_id": "api"})) == {"poly.node.id": "api"}
+
+    duplicate = DriverRegistration(
+        DriverManifest("other.driver", "1", "1.1", frozenset((DriverCapability.FACADE,))),
+        facades=(facade,),
+    )
+    with pytest.raises(DriverProtocolError, match="facade collision"):
+        registry.register(duplicate)
+
+    with pytest.raises(DriverProtocolError, match="duplicate facade"):
+        DriverRegistration(registration.manifest, facades=(facade, facade)).validate()
 
 
 def test_conformance_testkit_accepts_pure_deterministic_providers(tmp_path: Path) -> None:

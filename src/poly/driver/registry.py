@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from poly.driver.api import ActionHandler, InspectionProvider, PlanningProvider
+from poly.driver.api import ActionHandler, CommandFacade, InspectionProvider, PlanningProvider
 from poly.driver.manifest import DriverCapability, DriverManifest, DriverProtocolError
 
 
@@ -15,6 +15,7 @@ class DriverRegistration:
     inspectors: tuple[InspectionProvider, ...] = ()
     planners: tuple[PlanningProvider, ...] = ()
     handlers: tuple[ActionHandler, ...] = ()
+    facades: tuple[CommandFacade, ...] = ()
 
     def validate(self) -> None:
         self.manifest.ensure_compatible()
@@ -25,6 +26,8 @@ class DriverRegistration:
             actual.add(DriverCapability.PLAN)
         if self.handlers:
             actual.add(DriverCapability.EXECUTE)
+        if self.facades:
+            actual.add(DriverCapability.FACADE)
         if actual != set(self.manifest.capabilities):
             raise DriverProtocolError(
                 f"driver {self.manifest.name!r} declares "
@@ -41,6 +44,9 @@ class DriverRegistration:
             raise DriverProtocolError(
                 f"providers must use manifest name {self.manifest.name!r}: {mismatched!r}"
             )
+        facade_keys = [(facade.verb, facade.name) for facade in self.facades]
+        if len(facade_keys) != len(set(facade_keys)):
+            raise DriverProtocolError("driver registers duplicate facade identities")
 
 
 class DriverOrigin(StrEnum):
@@ -67,6 +73,7 @@ class DriverInventoryItem:
     diagnostic: str | None = None
     description: str = ""
     natures: tuple[str, ...] = ()
+    facades: tuple[str, ...] = ()
 
 
 class DriverRegistry:
@@ -85,6 +92,18 @@ class DriverRegistry:
         name = registration.manifest.name
         if name in self._registrations:
             raise DriverProtocolError(f"driver {name!r} is already registered")
+        current_facades = {
+            (facade.verb, facade.name)
+            for current in self._registrations.values()
+            for facade in current.facades
+        }
+        collisions = sorted(
+            f"{facade.verb}:{facade.name}"
+            for facade in registration.facades
+            if (facade.verb, facade.name) in current_facades
+        )
+        if collisions:
+            raise DriverProtocolError(f"driver facade collision: {collisions!r}")
         self._registrations[name] = registration
         self._inventory.append(
             DriverInventoryItem(
@@ -100,6 +119,9 @@ class DriverRegistry:
                 entry_point,
                 description=registration.manifest.description,
                 natures=registration.manifest.natures,
+                facades=tuple(
+                    sorted(f"{facade.verb}:{facade.name}" for facade in registration.facades)
+                ),
             )
         )
 
@@ -116,6 +138,7 @@ class DriverRegistry:
         verbs: tuple[str, ...] = (),
         description: str = "",
         natures: tuple[str, ...] = (),
+        facades: tuple[str, ...] = (),
     ) -> None:
         self._inventory.append(
             DriverInventoryItem(
@@ -130,6 +153,7 @@ class DriverRegistry:
                 diagnostic,
                 description,
                 tuple(sorted(natures)),
+                tuple(sorted(facades)),
             )
         )
 
@@ -168,6 +192,18 @@ class DriverRegistry:
         if verb is None:
             return providers
         return tuple(provider for provider in providers if verb in provider.verbs)
+
+    def command_facades(self, verb: str | None = None) -> tuple[CommandFacade, ...]:
+        facades = tuple(
+            facade
+            for _, registration in sorted(self._registrations.items())
+            for facade in registration.facades
+        )
+        if verb is None:
+            return tuple(sorted(facades, key=lambda facade: (facade.verb, facade.name)))
+        return tuple(
+            sorted((facade for facade in facades if facade.verb == verb), key=lambda f: f.name)
+        )
 
     def action_handler(self, driver_name: str) -> ActionHandler:
         try:

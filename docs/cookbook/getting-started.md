@@ -180,7 +180,7 @@ node_id="api-reactor"
 # Chemin relatif au parent
 node_path="modules/api"
 
-poly add "$node_id" \
+poly add module "$node_id" \
   --workspace "$workspace_path" \
   --path "$node_path" \
   --nature maven/reactor
@@ -197,7 +197,7 @@ $nodeId = "api-reactor"
 # Chemin relatif au parent
 $nodePath = "modules/api"
 
-poly add $nodeId `
+poly add module $nodeId `
   --workspace $workspacePath `
   --path $nodePath `
   --nature maven/reactor

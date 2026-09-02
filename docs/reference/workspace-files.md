@@ -137,7 +137,7 @@ sources:
 - Git entries record the normalized source URL, requested reference, immutable
   resolved commit, and resolution kind.
 - `poly init` uses the lock by default and verifies the final checkout HEAD.
-- `poly add --repo` resolves `source.ref` and atomically records its exact commit
+- `poly add repository --repo` resolves `source.ref` and atomically records its exact commit
   without creating or changing the declared child path.
 - `poly hydrate` materializes sources only from their immutable lock entries; it
   does not reinterpret a moving selector. Its interactive text view flushes the
@@ -209,7 +209,7 @@ Given only a clone of the root repository:
 
 No `poly add` is required during restoration.
 
-During authoring, `poly add --repo` performs only declaration and immutable
+During authoring, `poly add repository --repo` performs only declaration and immutable
 resolution. A later explicit `poly hydrate` executes steps 4 through 6 for the
 locked child sources.
 

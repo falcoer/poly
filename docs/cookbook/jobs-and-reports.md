@@ -13,9 +13,9 @@ les sélections et les rapports persistés.
 
 ## Comment prévisualiser puis exécuter un job ?
 
-Tous les verbes directs acceptent `--plan`. La façade experte
-`poly plan <verbe>` produit le même plan canonique ; `poly run <verbe>` l'exécute
-par le même service applicatif.
+Tous les verbes directs acceptent `--plan` pour une prévisualisation isolée.
+`--prepare` ajoute leurs actions au plan courant unique ; `poly plan` le relit
+et `poly exec` exécute exactement sa version persistée.
 
 ### Bash
 
@@ -25,9 +25,9 @@ workspace_path="workspace"
 # Verbe disponible, par exemple status ou verify
 verb="status"
 
-poly "$verb" --workspace "$workspace_path" --plan
-poly plan "$verb" --workspace "$workspace_path"
-poly run "$verb" --workspace "$workspace_path"
+poly "$verb" --workspace "$workspace_path" --prepare
+poly plan --workspace "$workspace_path"
+poly exec --workspace "$workspace_path"
 ```
 
 ### PowerShell
@@ -38,16 +38,15 @@ $workspacePath = "workspace"
 # Verbe disponible, par exemple status ou verify
 $verb = "status"
 
-poly $verb --workspace $workspacePath --plan
-poly plan $verb --workspace $workspacePath
-poly run $verb --workspace $workspacePath
+poly $verb --workspace $workspacePath --prepare
+poly plan --workspace $workspacePath
+poly exec --workspace $workspacePath
 ```
 
 ### Résultat attendu
 
-Les deux premières commandes ont le même identifiant de plan et aucun effet
-d'exécution. La troisième produit un rapport contenant les transitions de
-chaque action.
+Les deux premières commandes n'ont aucun effet sur les sources. La troisième
+exécute le plan affiché sans relancer l'inspection ni la planification.
 
 ## Comment suivre une opération longue ?
 

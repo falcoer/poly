@@ -39,7 +39,7 @@ constrains nested materialization, so a nested checkout is never created before
 its owning repository.
 
 ```shell
-poly add api --path services/api --repo https://git.example/api.git --ref main
+poly add repository api --path services/api --repo https://git.example/api.git --ref main
 poly hydrate
 poly update --select api
 poly lock --from-workspace --select api

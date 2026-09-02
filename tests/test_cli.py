@@ -79,12 +79,12 @@ def test_cli_inspect_actions_and_plan_reports(
     assert (
         main(
             [
-                "plan",
                 "verify",
                 "--workspace",
                 str(tmp_path),
                 "--select",
                 "maven:.",
+                "--plan",
                 "--format",
                 "yaml",
             ]
@@ -182,18 +182,18 @@ def test_cli_rejects_unknown_verbs_and_invalid_parameters(
     _workspace(tmp_path)
 
     with pytest.raises(SystemExit):
-        main(["plan", "unknown", "--workspace", str(tmp_path)])
-    assert "unknown verb" in capsys.readouterr().err
+        main(["unknown", "--workspace", str(tmp_path)])
+    assert "invalid choice" in capsys.readouterr().err
 
     with pytest.raises(SystemExit):
         main(
             [
-                "plan",
                 "verify",
                 "--workspace",
                 str(tmp_path),
                 "--parameter",
                 "invalid",
+                "--plan",
             ]
         )
     assert "invalid --parameter" in capsys.readouterr().err
@@ -201,12 +201,12 @@ def test_cli_rejects_unknown_verbs_and_invalid_parameters(
     with pytest.raises(SystemExit):
         main(
             [
-                "plan",
                 "verify",
                 "--workspace",
                 str(tmp_path),
                 "--select",
                 "maven:missing",
+                "--plan",
             ]
         )
     assert "unknown node" in capsys.readouterr().err
@@ -237,6 +237,7 @@ def test_cli_init_add_persist_and_render_construction_runs(
         main(
             [
                 "add",
+                "module",
                 "service",
                 "--workspace",
                 str(tmp_path),
@@ -323,7 +324,7 @@ def test_contextual_nature_add_remove_supports_dot_and_multiple_values(
 ) -> None:
     assert main(["init", "--workspace", str(tmp_path), "--name", "Natures"]) == 0
     capsys.readouterr()
-    assert main(["add", "module", "--workspace", str(tmp_path), "--path", "module"]) == 0
+    assert main(["add", "module", "module", "--workspace", str(tmp_path), "--path", "module"]) == 0
     capsys.readouterr()
     module = tmp_path / "module"
     module.mkdir()
@@ -342,7 +343,7 @@ def test_contextual_nature_add_remove_supports_dot_and_multiple_values(
     assert "a/nature" not in current["natures"]
 
 
-def test_direct_and_expert_verb_forms_share_the_same_plan(
+def test_direct_plan_form_remains_side_effect_free(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["init", "--workspace", str(tmp_path), "--name", "Example"]) == 0
@@ -352,6 +353,7 @@ def test_direct_and_expert_verb_forms_share_the_same_plan(
         main(
             [
                 "add",
+                "module",
                 "service",
                 "--workspace",
                 str(tmp_path),
@@ -367,35 +369,93 @@ def test_direct_and_expert_verb_forms_share_the_same_plan(
     direct = json.loads(capsys.readouterr().out)
     assert not (tmp_path / "services" / "service").exists()
 
-    assert (
-        main(
-            [
-                "plan",
-                "add",
-                "--workspace",
-                str(tmp_path),
-                "--parameter",
-                "poly.node.id=service",
-                "--parameter",
-                "poly.node.path=services/service",
-                "--parameter",
-                "poly.node.kind=module",
-                "--parameter",
-                "poly.node.natures=",
-                "--format",
-                "json",
-            ]
-        )
-        == 0
-    )
-    expert = json.loads(capsys.readouterr().out)
-    assert direct["plan"] == expert["plan"]
+    assert direct["request"]["verb"] == "add"
 
     _workspace(tmp_path / "plain")
     assert main(["status", "--workspace", str(tmp_path / "plain"), "--format", "json"]) == 0
     status = json.loads(capsys.readouterr().out)
     assert status["request"]["verb"] == "status"
     assert status["run"]["status"] == "succeeded"
+
+
+def test_cli_prepares_accumulates_executes_and_clears_one_current_plan(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["init", "--workspace", str(tmp_path), "--name", "Prepared"]) == 0
+    capsys.readouterr()
+
+    for node_id in ("api", "web"):
+        assert (
+            main(
+                [
+                    "add",
+                    "module",
+                    node_id,
+                    "--path",
+                    f"services/{node_id}",
+                    "--workspace",
+                    str(tmp_path),
+                    "--prepare",
+                    "--format",
+                    "json",
+                ]
+            )
+            == 0
+        )
+        prepared = json.loads(capsys.readouterr().out)
+        assert prepared["kind"] == "prepared-plan"
+
+    assert main(["plan", "--workspace", str(tmp_path), "--format", "json"]) == 0
+    current = json.loads(capsys.readouterr().out)
+    assert current["plan"]["verb"] == "prepared"
+    assert len(current["requests"]) == 2
+    assert len(current["plan"]["planned_actions"]) == 2
+    prepared_id = current["plan"]["id"]
+
+    assert main(["exec", "--workspace", str(tmp_path), "--format", "json"]) == 0
+    executed = json.loads(capsys.readouterr().out)
+    assert executed["run"]["plan_id"] == prepared_id
+    assert executed["run"]["status"] == "succeeded"
+    manifest = (tmp_path / "poly.yaml").read_text(encoding="utf-8")
+    assert "id: api" in manifest
+    assert "id: web" in manifest
+    assert not (tmp_path / ".poly" / "state" / "plan.json").exists()
+
+    assert main(["plan", "clean", "--workspace", str(tmp_path), "--format", "json"]) == 0
+    empty = json.loads(capsys.readouterr().out)
+    assert empty["plan"]["status"] == "empty"
+
+
+def test_cli_rejects_stale_and_bypassed_prepared_plans(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["init", "--workspace", str(tmp_path), "--name", "Stale"]) == 0
+    capsys.readouterr()
+    prepared = [
+        "add",
+        "module",
+        "api",
+        "--path",
+        "api",
+        "--workspace",
+        str(tmp_path),
+        "--prepare",
+    ]
+    assert main(prepared) == 0
+    capsys.readouterr()
+
+    with pytest.raises(SystemExit):
+        main(["status", "--workspace", str(tmp_path)])
+    assert "prepared plan is active" in capsys.readouterr().err
+
+    manifest = tmp_path / "poly.yaml"
+    manifest.write_text(manifest.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        main(["exec", "--workspace", str(tmp_path)])
+    assert "prepared plan is stale" in capsys.readouterr().err
+
+    assert main(["plan", "clean", "--workspace", str(tmp_path)]) == 0
+    assert "NONE" in capsys.readouterr().out
 
 
 def test_cli_generates_external_driver_repository(
