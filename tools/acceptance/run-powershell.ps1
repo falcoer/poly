@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$env:PYTHONUTF8 = "1"
 $scriptPath = Join-Path $PSScriptRoot "run_acceptance.py"
 
 & $PythonExe $scriptPath `
