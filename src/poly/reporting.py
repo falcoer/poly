@@ -301,6 +301,38 @@ def render_cli_event(
     return _render_action_lines(line, tone, color, width)
 
 
+def render_cli_progress(
+    completed: int,
+    total: int,
+    *,
+    failed: bool = False,
+    blocked: bool = False,
+    color: bool = False,
+    width: int = _FALLBACK_WIDTH,
+) -> str:
+    """Render one adaptive global plan progress row."""
+
+    bounded_total = max(1, total)
+    bounded_completed = min(max(0, completed), bounded_total)
+    percentage = bounded_completed * 100 // bounded_total
+    label = "PLAN KO" if failed else "PLAN WARN" if blocked else "PLAN"
+    prefix = f"{_SECTION_INDENT}{label:<10}"
+    suffix = f"{bounded_completed}/{bounded_total} actions · {percentage:3d} %"
+    available = _usable_width(width)
+    bar_width = available - _display_width(prefix) - _display_width(suffix) - 3
+    if bar_width >= 5:
+        filled = percentage * bar_width // 100
+        bar = "█" * filled + "─" * (bar_width - filled)
+        line = f"{prefix}[{bar}] {suffix}"
+    else:
+        compact_label = "KO" if failed else "WARN" if blocked else "PLAN"
+        compact = f"{compact_label} {bounded_completed}/{bounded_total} {percentage}%"
+        indent = " " * min(len(_SECTION_INDENT), max(0, available - _display_width(compact)))
+        line = indent + compact
+    tone = "red" if failed else "yellow" if blocked else "cyan"
+    return _styled(line, tone, color) + "\n"
+
+
 def render_cli_completion(
     document: ReportDocument,
     *,
