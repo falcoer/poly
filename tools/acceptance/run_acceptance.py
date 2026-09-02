@@ -343,7 +343,9 @@ def run(poly: Path, fixture: Path, output: Path, platform_name: str) -> None:
         "python": sys.version,
         "poly": version,
         "git": _run(["git", "--version"]).stdout.strip(),
-        "maven": _run(["mvn.cmd" if os.name == "nt" else "mvn", "--version"]).stdout.splitlines()[0],
+        "maven": _run(["mvn.cmd" if os.name == "nt" else "mvn", "--version"]).stdout.splitlines()[
+            0
+        ],
         "run-id": run_id,
     }
     (output / "environment.json").write_text(
