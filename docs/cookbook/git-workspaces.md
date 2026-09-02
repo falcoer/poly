@@ -14,7 +14,7 @@ et les évolutions réalisées depuis Eclipse ou un autre client Git.
 
 ## Comment déclarer puis matérialiser un dépôt Git enfant ?
 
-`add --repo` déclare le dépôt, résout la référence et écrit son commit exact dans
+`add repository --repo` déclare le dépôt, résout la référence et écrit son commit exact dans
 le lock sans créer le worktree. `hydrate` matérialise ensuite explicitement la
 composition verrouillée. Les fichiers de composition peuvent ainsi être relus
 et commités avant tout clone.
@@ -33,7 +33,7 @@ repository_url="https://git.example.com/team/service-api.git"
 # Branche, tag ou SHA complet ; exemple : main
 requested_ref="main"
 
-poly add "$node_id" \
+poly add repository "$node_id" \
   --workspace "$workspace_path" \
   --path "$node_path" \
   --repo "$repository_url" \
@@ -57,7 +57,7 @@ $repositoryUrl = "https://git.example.com/team/service-api.git"
 # Branche, tag ou SHA complet ; exemple : main
 $requestedRef = "main"
 
-poly add $nodeId `
+poly add repository $nodeId `
   --workspace $workspacePath `
   --path $nodePath `
   --repo $repositoryUrl `

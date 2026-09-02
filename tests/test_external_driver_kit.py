@@ -96,7 +96,7 @@ def test_generated_driver_loads_and_validates_through_public_convention(
 
     assert registration.manifest.name == "poly.driver.sample-tech"
     assert driver_test_main(["validate", str(target / "poly-driver.toml")]) == 0
-    assert '"api_version": "1.0"' in capsys.readouterr().out
+    assert '"api_version": "1.1"' in capsys.readouterr().out
     assert (
         driver_test_main(
             [

@@ -39,6 +39,19 @@ def test_store_persists_and_recovers_inventory_plan_and_run(tmp_path: Path) -> N
     assert envelope["state_schema"] == STATE_SCHEMA
 
 
+def test_store_owns_one_disposable_prepared_plan(tmp_path: Path) -> None:
+    store = StateStore(tmp_path)
+    plan = _document("prepared-plan")
+
+    path = store.save_prepared_plan(plan)
+    assert path == tmp_path / ".poly" / "state" / "plan.json"
+    assert store.load_prepared_plan() == plan
+    assert store.clear_prepared_plan()
+    assert not store.clear_prepared_plan()
+    with pytest.raises(StateError, match="does not exist"):
+        store.load_prepared_plan()
+
+
 def test_store_migrates_legacy_envelopes_and_raw_reports(tmp_path: Path) -> None:
     store = StateStore(tmp_path)
     legacy = store.runs_directory / "legacy" / "report.json"

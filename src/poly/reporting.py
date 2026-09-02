@@ -73,8 +73,14 @@ def planning_document(snapshot: PlanningSnapshot, *, kind: str = "plan") -> Repo
     document["rejected_candidates"] = [
         _rejected_document(candidate) for candidate in snapshot.rejected
     ]
-    document["plan"] = _plan_document(snapshot.plan)
+    document["plan"] = plan_document(snapshot.plan)
     return document
+
+
+def plan_document(plan: Plan) -> ReportDocument:
+    """Serialize the canonical frozen plan for persistence and execution."""
+
+    return _plan_document(plan)
 
 
 def action_catalog_document(snapshots: Sequence[PlanningSnapshot]) -> ReportDocument:
@@ -111,6 +117,21 @@ def run_document(snapshot: PlanningSnapshot, result: RunResult) -> ReportDocumen
         "events": [_event_document(event) for event in result.events],
     }
     return document
+
+
+def prepared_run_document(document: ReportDocument, result: RunResult) -> ReportDocument:
+    """Attach an execution result to an already persisted prepared-plan document."""
+
+    run = dict(document)
+    run["kind"] = "run"
+    run["run"] = {
+        "plan_id": result.plan_id,
+        "status": result.status.value,
+        "available_constraints": list(result.available_constraints),
+        "actions": [_action_result_document(action) for action in result.actions],
+        "events": [_event_document(event) for event in result.events],
+    }
+    return run
 
 
 def construction_document(workspace: Path, plan: Plan, result: RunResult) -> ReportDocument:
@@ -173,6 +194,7 @@ def _driver_document(item: DriverInventoryItem) -> ReportDocument:
         "diagnostic": item.diagnostic,
         "description": item.description,
         "natures": list(item.natures),
+        "facades": list(item.facades),
     }
 
 
@@ -381,7 +403,9 @@ def _command_heading(document: ReportDocument) -> str:
         "nature-remove": "REMOVING NATURES FROM",
         "natures": "LISTING NATURES",
         "package": "PACKAGING",
+        "plan": "PLANNING",
         "remove": "REMOVING",
+        "exec": "EXECUTING PREPARED PLAN",
         "status": "CHECKING STATUS",
         "test": "TESTING",
         "update": "UPDATING",

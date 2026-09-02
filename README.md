@@ -31,10 +31,9 @@ Poly-managed root `.gitignore` block.
 For a command-oriented tour, see the [Poly cookbook](docs/cookbook/README.md).
 
 The current milestone is
-[0.12.1 — Stable interactive CLI presentation](docs/releases/0.12.1.md).
-It consolidates command-block rendering, captures handler and child-process
-output per action, adds timestamped execution evidence, and exposes scalar
-values plus typed file/URL deliverables without changing planning semantics.
+[0.12.2 — Prepared plans and driver-contributed add façades](docs/releases/0.12.2.md).
+It adds one disposable current plan (`--prepare`, `poly plan`, `poly exec`) and
+makes specialized `poly add` syntax a dynamic public driver contribution.
 Until the post-merge tag gate succeeds, the milestone remains
 `implemented-awaiting-ci`, not `validated`.
 
@@ -57,7 +56,7 @@ uvx --from "git+https://github.com/falcoer/poly.git" poly --help
 uv tool install "git+https://github.com/falcoer/poly.git"
 ```
 
-For **0.12.1 functional acceptance**, reviewers install the retained CI wheel
+For **0.12.2 functional acceptance**, reviewers install the retained CI wheel
 instead of cloning Poly. Replace the run id and commit with the values from the
 accepted CI run; artifact names deliberately include the exact build commit.
 
@@ -68,14 +67,14 @@ run_id="<accepted-run-id>"
 commit="<accepted-commit>"
 
 gh run download "$run_id" -R falcoer/poly \
-  -n "poly-0.12.1-distributions-$commit" -D poly-dist
+  -n "poly-0.12.2-distributions-$commit" -D poly-dist
 gh run download "$run_id" -R falcoer/poly \
-  -n "poly-0.12.1-acceptance-fixture-$commit" -D poly-fixture
+  -n "poly-0.12.2-acceptance-fixture-$commit" -D poly-fixture
 
 (cd poly-dist && sha256sum -c SHA256SUMS)
 python3.12 -m venv .venv
 . .venv/bin/activate
-python -m pip install ./poly-dist/poly-0.12.1-py3-none-any.whl \
+python -m pip install ./poly-dist/poly-0.12.2-py3-none-any.whl \
   ./poly-fixture/poly_driver_sample_tech-0.1.0-py3-none-any.whl
 
 ./poly-fixture/scripts/run-posix.sh \
@@ -90,19 +89,19 @@ $runId = "<accepted-run-id>"
 $commit = "<accepted-commit>"
 
 gh run download $runId -R falcoer/poly `
-  -n "poly-0.12.1-distributions-$commit" -D poly-dist
+  -n "poly-0.12.2-distributions-$commit" -D poly-dist
 gh run download $runId -R falcoer/poly `
-  -n "poly-0.12.1-acceptance-fixture-$commit" -D poly-fixture
+  -n "poly-0.12.2-acceptance-fixture-$commit" -D poly-fixture
 
 $sumLine = Get-Content .\poly-dist\SHA256SUMS |
-  Where-Object { $_ -match "poly-0.12.1-py3-none-any.whl$" }
+  Where-Object { $_ -match "poly-0.12.2-py3-none-any.whl$" }
 $expected = ($sumLine -split "\s+")[0].ToLowerInvariant()
-$actual = (Get-FileHash .\poly-dist\poly-0.12.1-py3-none-any.whl -Algorithm SHA256).Hash.ToLowerInvariant()
+$actual = (Get-FileHash .\poly-dist\poly-0.12.2-py3-none-any.whl -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $expected) { throw "Poly wheel SHA-256 mismatch" }
 
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install `
-  .\poly-dist\poly-0.12.1-py3-none-any.whl `
+  .\poly-dist\poly-0.12.2-py3-none-any.whl `
   .\poly-fixture\poly_driver_sample_tech-0.1.0-py3-none-any.whl
 
 & .\poly-fixture\scripts\run-powershell.ps1 `
@@ -147,10 +146,11 @@ from privileged core modules. See [External drivers](docs/drivers/external.md).
 
 ## Local CLI
 
-Driver verbs execute directly; add `--plan` for a side-effect-free frozen plan.
-The `plan` and `run` expert façades use the same application service and produce
-the same plan identifier. `actions` remains a fresh catalog of what the current
-workspace can do.
+Driver verbs execute directly; add `--plan` for an isolated side-effect-free
+preview. Add `--prepare` to append the frozen actions to the workspace's single
+current plan, inspect it with `poly plan`, then execute that exact persisted plan
+with `poly exec`. `actions` remains a fresh catalog of what the current workspace
+can do.
 
 ```shell
 poly inspect
@@ -160,9 +160,13 @@ poly nature list
 poly controllers
 poly init --name example --plan
 poly init --name example
-poly add service-api --path services/api \
+poly add repository service-api --path services/api \
   --repo https://git.example.com/team/service-api.git --ref main
-poly add service-api-reactor --parent service-api --path . --nature maven/reactor
+poly add module service-api-reactor --parent service-api --path . --nature maven/reactor
+poly add module client --path clients/client --prepare
+poly plan
+poly exec
+poly plan clean
 poly nature add . maven/reactor java/project
 poly nature remove . java/project
 poly remove service-api-reactor
@@ -174,7 +178,7 @@ poly status
 poly verify --select service-api-reactor
 poly actions
 poly actions verify --select maven:platform/service-a
-poly plan verify --select maven:platform/service-a --format yaml
+poly verify --select maven:platform/service-a --plan --format yaml
 poly run status --select root --format json
 poly report <run-id> --format xml
 ```
@@ -203,11 +207,14 @@ the complete canonical report. Colors are automatic on terminals and can be
 controlled with `--color auto|always|never`; `NO_COLOR` is honored. Structured
 JSON, YAML, and XML output is never decorated.
 
-`poly init` creates `poly.yaml`, `poly.lock.yaml`, compiled state, and the
+The subcommands below `poly add` are contributed dynamically by loaded drivers;
+the engine contains no facade inventory. `poly init` creates `poly.yaml`,
+`poly.lock.yaml`, compiled state, and the
 delimited root `.gitignore` block. Re-running it reconciles those generated
-artifacts without changing authored composition. `poly add` and `poly remove`
+artifacts without changing authored composition. `poly add module`,
+`poly add repository`, and `poly remove`
 edit the YAML round-trip document while preserving comments and user-owned
-ignore rules. A Git-backed `add --repo` resolves the requested selector, stores
+ignore rules. A Git-backed `add repository --repo` resolves the requested selector, stores
 the exact commit in `poly.lock.yaml`, and atomically updates the composition
 without creating or changing the child worktree. `poly hydrate` is the explicit
 materialization step. All construction commands remain ordinary driver

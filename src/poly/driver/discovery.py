@@ -150,16 +150,21 @@ def discover_external_drivers(
 
     identities: dict[str, list[tuple[EntryPoint, DriverRegistration]]] = {}
     verbs: dict[str, set[str]] = {}
+    facades: dict[tuple[str, str], set[str]] = {}
     existing = {manifest.name for manifest in registry.manifests()}
+    existing_facades = {(facade.verb, facade.name) for facade in registry.command_facades()}
     for candidate in resolved:
         registration = candidate[1]
         identities.setdefault(registration.manifest.name, []).append(candidate)
         for provider in registration.planners:
             for verb in provider.verbs:
                 verbs.setdefault(verb, set()).add(registration.manifest.name)
+        for facade in registration.facades:
+            facades.setdefault((facade.verb, facade.name), set()).add(registration.manifest.name)
 
     ambiguous_identities = {name for name, values in identities.items() if len(values) > 1}
     colliding_verbs = {verb for verb, names in verbs.items() if len(names) > 1}
+    colliding_facades = {key for key, names in facades.items() if len(names) > 1}
     for entry_point, registration in resolved:
         name = registration.manifest.name
         reasons: list[str] = []
@@ -171,6 +176,14 @@ def discover_external_drivers(
         collisions = sorted(contributed & colliding_verbs)
         if collisions:
             reasons.append(f"installed driver verb collision: {collisions!r}")
+        facade_collisions = sorted(
+            f"{facade.verb}:{facade.name}"
+            for facade in registration.facades
+            if (facade.verb, facade.name) in existing_facades
+            or (facade.verb, facade.name) in colliding_facades
+        )
+        if facade_collisions:
+            reasons.append(f"driver facade collision: {facade_collisions!r}")
         if reasons:
             message = "; ".join(reasons)
             rejected.append(DriverLoadDiagnostic(entry_point.name, message))
@@ -203,6 +216,7 @@ def _reject_registration(
         diagnostic=message,
         description=manifest.description,
         natures=manifest.natures,
+        facades=tuple(f"{facade.verb}:{facade.name}" for facade in registration.facades),
     )
 
 

@@ -12,6 +12,8 @@ from urllib.parse import urlsplit
 
 from poly.model import ActionSpec, DriverProposal, JsonValue, Node, PlanningRequest
 
+type FacadeArgumentValue = str | tuple[str, ...] | None
+
 
 def _display_text(value: str, field_name: str) -> str:
     if not value:
@@ -164,6 +166,54 @@ class DriverExecutionResult:
         object.__setattr__(self, "outputs", tuple(self.outputs))
 
 
+@dataclass(frozen=True, slots=True)
+class FacadeArgument:
+    """Transport-neutral description of one dynamically exposed CLI argument."""
+
+    name: str
+    flags: tuple[str, ...]
+    required: bool = False
+    repeatable: bool = False
+    choices: tuple[str, ...] = ()
+    help: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.name or any(character.isspace() for character in self.name):
+            raise ValueError("facade argument name must be non-empty and contain no whitespace")
+        if not self.flags:
+            raise ValueError("facade argument must declare at least one flag")
+        positional = not self.flags[0].startswith("-")
+        if positional and (len(self.flags) != 1 or self.flags[0] != self.name):
+            raise ValueError("positional facade argument flag must equal its name")
+        if not positional and any(not flag.startswith("--") for flag in self.flags):
+            raise ValueError("optional facade argument flags must use long --names")
+        normalized_choices = tuple(sorted(set(self.choices)))
+        if any(not value for value in normalized_choices):
+            raise ValueError("facade argument choices must not be empty")
+        object.__setattr__(self, "flags", tuple(self.flags))
+        object.__setattr__(self, "choices", normalized_choices)
+
+    @property
+    def positional(self) -> bool:
+        return not self.flags[0].startswith("-")
+
+
+@dataclass(frozen=True, slots=True)
+class FacadeRequest:
+    """One parsed facade invocation before canonical planning negotiation."""
+
+    workspace: Path
+    values: dict[str, FacadeArgumentValue]
+    parameters: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "workspace", self.workspace.resolve())
+        object.__setattr__(self, "values", MappingProxyType(dict(sorted(self.values.items()))))
+        object.__setattr__(
+            self, "parameters", MappingProxyType(dict(sorted(self.parameters.items())))
+        )
+
+
 @runtime_checkable
 class InspectionProvider(Protocol):
     @property
@@ -189,3 +239,22 @@ class ActionHandler(Protocol):
     def name(self) -> str: ...
 
     def execute(self, action: ActionSpec, context: ExecutionContext) -> DriverExecutionResult: ...
+
+
+@runtime_checkable
+class CommandFacade(Protocol):
+    """Driver-contributed syntax translating to one canonical planning request."""
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def verb(self) -> str: ...
+
+    @property
+    def description(self) -> str: ...
+
+    @property
+    def arguments(self) -> tuple[FacadeArgument, ...]: ...
+
+    def translate(self, request: FacadeRequest) -> dict[str, str]: ...

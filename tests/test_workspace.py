@@ -402,11 +402,10 @@ def test_cli_rebuild_keeps_root_git_status_limited_to_authored_composition(
         main(
             [
                 "add",
+                "repository",
                 "api",
                 "--workspace",
                 str(tmp_path),
-                "--kind",
-                "repository",
                 "--path",
                 "services/api",
             ]
@@ -418,11 +417,10 @@ def test_cli_rebuild_keeps_root_git_status_limited_to_authored_composition(
         main(
             [
                 "add",
+                "repository",
                 "web",
                 "--workspace",
                 str(tmp_path),
-                "--kind",
-                "repository",
                 "--path",
                 "apps/web",
             ]
@@ -434,6 +432,7 @@ def test_cli_rebuild_keeps_root_git_status_limited_to_authored_composition(
         main(
             [
                 "add",
+                "module",
                 "api-module",
                 "--workspace",
                 str(tmp_path),

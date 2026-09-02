@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-DRIVER_API_VERSION = "1.0"
+DRIVER_API_VERSION = "1.1"
 
 
 class DriverProtocolError(ValueError):
@@ -13,6 +13,7 @@ class DriverProtocolError(ValueError):
 
 
 class DriverCapability(StrEnum):
+    FACADE = "facade"
     INSPECT = "inspect"
     PLAN = "plan"
     EXECUTE = "execute"

@@ -14,6 +14,8 @@ from poly.driver import (
     DriverManifest,
     DriverRegistration,
     ExecutionContext,
+    FacadeArgument,
+    FacadeRequest,
 )
 from poly.model import (
     ActionClaim,
@@ -48,6 +50,36 @@ CONSTRUCTOR_DRIVER_NAME = "poly.constructor"
 
 class ConstructionError(ValueError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class ModuleAddFacade:
+    """User-facing syntax for declaring a filesystem module."""
+
+    name: str = "module"
+    verb: str = "add"
+    description: str = "add a module to the workspace composition"
+    arguments: tuple[FacadeArgument, ...] = (
+        FacadeArgument("node_id", ("node_id",), required=True),
+        FacadeArgument("node_path", ("--path",), required=True, help="workspace-relative path"),
+        FacadeArgument("parent", ("--parent",), help="parent node"),
+        FacadeArgument("nature", ("--nature",), repeatable=True, help="declared nature"),
+    )
+
+    def translate(self, request: FacadeRequest) -> dict[str, str]:
+        parameters = dict(request.parameters)
+        parameters.update(
+            {
+                "poly.node.id": _facade_string(request, "node_id"),
+                "poly.node.path": _facade_string(request, "node_path"),
+                "poly.node.kind": "module",
+                "poly.node.natures": ",".join(_facade_values(request, "nature")),
+            }
+        )
+        parent = request.values.get("parent")
+        if isinstance(parent, str) and parent:
+            parameters["poly.node.parent"] = parent
+        return parameters
 
 
 @dataclass(frozen=True, slots=True)
@@ -423,13 +455,30 @@ def constructor_driver() -> DriverRegistration:
             CONSTRUCTOR_DRIVER_NAME,
             "0.2.0",
             DRIVER_API_VERSION,
-            frozenset((DriverCapability.PLAN, DriverCapability.EXECUTE)),
+            frozenset((DriverCapability.FACADE, DriverCapability.PLAN, DriverCapability.EXECUTE)),
             "Poly root workspace composition action handler",
             ("poly/module", "poly/repository", "poly/workspace"),
         ),
         planners=(ConstructionPlanningProvider(),),
         handlers=(ConstructionActionHandler(),),
+        facades=(ModuleAddFacade(),),
     )
+
+
+def _facade_string(request: FacadeRequest, name: str) -> str:
+    value = request.values.get(name)
+    if not isinstance(value, str) or not value.strip():
+        raise ConstructionError(f"facade argument {name!r} is required")
+    return value
+
+
+def _facade_values(request: FacadeRequest, name: str) -> tuple[str, ...]:
+    value = request.values.get(name)
+    if value is None:
+        return ()
+    if isinstance(value, tuple):
+        return value
+    return (value,)
 
 
 def read_workspace_definition(workspace: Path) -> dict[str, JsonValue]:

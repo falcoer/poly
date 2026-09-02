@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 import os
 import shlex
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from poly._version import __version__
 from poly.application import inspect_workspace, prepare_planning
@@ -23,6 +23,7 @@ from poly.driver import (
     DriverOrigin,
     DriverRegistry,
     ExecutionContext,
+    FacadeRequest,
     OutputReference,
     discover_external_drivers,
 )
@@ -30,6 +31,7 @@ from poly.driver.scaffold import DriverScaffoldError, scaffold_driver
 from poly.drivers import git_driver, maven_driver
 from poly.model import Node
 from poly.persistence import StateError, StateStore
+from poly.prepared import PreparedPlanError, prepare_document, require_current
 from poly.reporting import (
     ReportDocument,
     action_catalog_document,
@@ -39,6 +41,7 @@ from poly.reporting import (
     inspection_document,
     natures_document,
     planning_document,
+    prepared_run_document,
     render,
     render_cli,
     run_document,
@@ -54,6 +57,7 @@ RESERVED_COMMANDS = frozenset(
         "controllers",
         "driver",
         "drivers",
+        "exec",
         "inspect",
         "nature",
         "plan",
@@ -113,6 +117,59 @@ def main(arguments: list[str] | None = None) -> int:
         document = drivers_document(workspace, registry.inventory())
         _write_output(document, options, command, 0)
         return 0
+    if options.command == "plan":
+        store = StateStore(workspace)
+        if options.plan_command == "clean":
+            removed = store.clear_prepared_plan()
+            document = _empty_prepared_document(workspace, "cleared" if removed else "empty")
+        elif not (store.state_directory / "plan.json").is_file():
+            document = _empty_prepared_document(workspace, "empty")
+        else:
+            try:
+                document = store.load_prepared_plan()
+            except StateError as error:
+                parser.error(str(error))
+        _write_output(_document_for_verb(document, "plan"), options, command, 0)
+        return 0
+    if options.command == "exec":
+        store = StateStore(workspace)
+        try:
+            prepared = store.load_prepared_plan()
+            plan = require_current(prepared, workspace)
+        except (StateError, PreparedPlanError) as error:
+            parser.error(str(error))
+        run_directory = workspace / ".poly" / "runs" / plan.id
+        run_directory.mkdir(parents=True, exist_ok=True)
+        streamed = options.format == "text"
+        renderer = (
+            SerializedRunRenderer(
+                sys.stdout, plan.actions, options.verbosity, _color_enabled(options)
+            )
+            if streamed
+            else None
+        )
+        execution_document = _document_for_verb(prepared, "exec")
+        if renderer is not None:
+            renderer.start(execution_document, command)
+        try:
+            result = Executor(
+                _controller_runner(registry, options.controller),
+                renderer.handle if renderer else None,
+            ).execute(plan, ExecutionContext(workspace, run_directory))
+        except BaseException:
+            if renderer is not None:
+                renderer.abort()
+            raise
+        document = prepared_run_document(execution_document, result)
+        store.save_run(plan.id, document)
+        exit_code = 0 if result.status in {RunStatus.SUCCEEDED, RunStatus.EMPTY} else 1
+        if exit_code == 0:
+            store.clear_prepared_plan()
+        if renderer is not None:
+            renderer.finish(document, exit_code)
+        else:
+            _write_output(document, options, command, exit_code)
+        return exit_code
 
     streamed = False
     try:
@@ -148,7 +205,7 @@ def main(arguments: list[str] | None = None) -> int:
         selected = _selection(options.select, inspection.inventory.nodes)
         _validate_selection(parser, selected, tuple(node.id for node in inspection.inventory.nodes))
         try:
-            parameters = _command_parameters(options)
+            parameters = _command_parameters(options, registry)
         except ValueError as error:
             parser.error(str(error))
         if options.command == "actions":
@@ -160,15 +217,33 @@ def main(arguments: list[str] | None = None) -> int:
             document = action_catalog_document(snapshots)
             exit_code = 0
         else:
-            verb = options.verb if options.command in {"plan", "run"} else options.command
+            verb = options.verb if options.command == "run" else options.command
             _validate_verbs(parser, (verb,), inspection.available_verbs)
             snapshot = prepare_planning(registry, inspection, verb, selected, parameters)
-            plan_only = options.command == "plan" or getattr(options, "plan_only", False)
+            plan_only = getattr(options, "plan_only", False)
             if plan_only:
                 document = planning_document(snapshot)
                 _save_plan_if_initialized(workspace, snapshot.plan.id, document)
                 exit_code = 0 if snapshot.plan.status.value in {"executable", "empty"} else 1
+            elif getattr(options, "prepare", False):
+                store = StateStore(workspace)
+                previous = None
+                if (store.state_directory / "plan.json").is_file():
+                    try:
+                        previous = store.load_prepared_plan()
+                    except StateError as error:
+                        parser.error(str(error))
+                try:
+                    document = prepare_document(snapshot, command, previous)
+                except PreparedPlanError as error:
+                    parser.error(str(error))
+                store.save_prepared_plan(document)
+                plan_value = document.get("plan")
+                status = plan_value.get("status") if isinstance(plan_value, dict) else "blocked"
+                exit_code = 0 if status in {"executable", "empty"} else 1
             else:
+                if (workspace / ".poly" / "state" / "plan.json").is_file():
+                    parser.error("a prepared plan is active; use 'poly exec' or 'poly plan clean'")
                 run_directory = workspace / ".poly" / "runs" / snapshot.plan.id
                 run_directory.mkdir(parents=True, exist_ok=True)
                 context = ExecutionContext(workspace, run_directory)
@@ -232,20 +307,21 @@ def _parser(registry: DriverRegistry) -> argparse.ArgumentParser:
     init.add_argument("--name", help="workspace name (default: directory name)")
     _direct_verb_options(init)
 
-    add = commands.add_parser("add", help="add a declared node to an initialized workspace")
-    add.add_argument("node_id")
-    add.add_argument("--path", required=True, dest="node_path")
-    add.add_argument("--parent", help="parent node (default: workspace root)")
-    add.add_argument(
-        "--kind",
-        choices=("repository", "module"),
-        default="module",
-        help="declared node kind (default: module)",
-    )
-    add.add_argument("--nature", action="append", default=[])
-    add.add_argument("--repo", help="Git repository URL")
-    add.add_argument("--ref", help="requested Git branch, tag, or commit")
-    _direct_verb_options(add)
+    add = commands.add_parser("add", help="add through a driver-contributed facade")
+    add_facades = add.add_subparsers(dest="facade", required=True)
+    for facade in registry.command_facades("add"):
+        facade_parser = add_facades.add_parser(facade.name, help=facade.description)
+        for argument in facade.arguments:
+            keywords: dict[str, Any] = {"help": argument.help}
+            if not argument.positional:
+                keywords["dest"] = argument.name
+                keywords["required"] = argument.required
+            if argument.repeatable:
+                keywords.update(action="append", default=[])
+            if argument.choices:
+                keywords["choices"] = argument.choices
+            facade_parser.add_argument(*argument.flags, **keywords)
+        _direct_verb_options(facade_parser)
 
     remove = commands.add_parser("remove", help="remove a leaf node from the composition")
     remove.add_argument("node_id")
@@ -255,9 +331,13 @@ def _parser(registry: DriverRegistry) -> argparse.ArgumentParser:
     actions.add_argument("verb", nargs="?", help="limit the catalog to one verb")
     _planning_options(actions)
 
-    plan = commands.add_parser("plan", help="negotiate a finite plan without executing it")
-    plan.add_argument("verb")
-    _planning_options(plan)
+    plan = commands.add_parser("plan", help="display or clear the current prepared plan")
+    plan.add_argument("plan_command", nargs="?", choices=("clean",))
+    _report_options(plan)
+
+    execute = commands.add_parser("exec", help="execute the exact current prepared plan")
+    execute.add_argument("--controller", default="local")
+    _report_options(execute)
 
     run = commands.add_parser("run", help="negotiate and execute a finite plan")
     run.add_argument("verb")
@@ -633,7 +713,9 @@ def _planning_options(parser: argparse.ArgumentParser) -> None:
 
 
 def _direct_verb_options(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--plan", action="store_true", dest="plan_only")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--plan", action="store_true", dest="plan_only")
+    mode.add_argument("--prepare", action="store_true")
     parser.add_argument("--controller", default="local")
     _planning_options(parser)
 
@@ -657,35 +739,25 @@ def _parameters(values: list[str]) -> dict[str, str]:
     return parameters
 
 
-def _command_parameters(options: argparse.Namespace) -> dict[str, str]:
+def _command_parameters(options: argparse.Namespace, registry: DriverRegistry) -> dict[str, str]:
     parameters = _parameters(options.parameter)
     if options.command == "init":
         parameters["poly.name"] = options.name or options.workspace.resolve().name
     elif options.command == "add":
-        kind = "repository" if options.repo else options.kind
-        parameters.update(
-            {
-                "poly.node.id": options.node_id,
-                "poly.node.path": options.node_path,
-                "poly.node.kind": kind,
-                "poly.node.natures": ",".join(options.nature),
-            }
+        facade = next(
+            item for item in registry.command_facades("add") if item.name == options.facade
         )
-        if options.parent:
-            parameters["poly.node.parent"] = options.parent
-        repository = options.repo
-        requested_ref = options.ref
-        existing = options.workspace.resolve() / options.node_path
-        if repository is None and options.parent is None and (existing / ".git").exists():
-            repository = _git_value(existing, "remote", "get-url", "origin")
-            requested_ref = requested_ref or _git_value(
-                existing, "symbolic-ref", "--quiet", "--short", "HEAD"
+        values = {
+            argument.name: (
+                tuple(getattr(options, argument.name))
+                if argument.repeatable
+                else getattr(options, argument.name, None)
             )
-            parameters["poly.node.kind"] = "repository"
-        if repository:
-            parameters["poly.source.url"] = _repository_url(repository)
-        if requested_ref:
-            parameters["poly.source.ref"] = requested_ref
+            for argument in facade.arguments
+        }
+        parameters = facade.translate(
+            FacadeRequest(options.workspace.resolve(), values, parameters)
+        )
     elif options.command == "remove":
         parameters["poly.node.id"] = options.node_id
     elif options.command == "lock" and options.from_workspace:
@@ -693,26 +765,33 @@ def _command_parameters(options: argparse.Namespace) -> dict[str, str]:
     return parameters
 
 
-def _git_value(directory: Path, *arguments: str) -> str | None:
-    process = subprocess.run(
-        ("git", "-C", str(directory), *arguments),
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    value = process.stdout.strip()
-    return value if process.returncode == 0 and value else None
+def _empty_prepared_document(workspace: Path, state: str) -> ReportDocument:
+    return {
+        "schema": "poly.report/v1",
+        "kind": "prepared-plan",
+        "workspace": str(workspace),
+        "available_verbs": [],
+        "inventory": {"nodes": []},
+        "diagnostics": [],
+        "request": {"verb": "prepared", "selected_node_ids": [], "parameters": {}},
+        "plan": {
+            "id": "none",
+            "verb": "prepared",
+            "status": "empty",
+            "selected_node_ids": [],
+            "initial_constraints": [],
+            "planned_actions": [],
+            "ready_action_ids": [],
+            "diagnostics": [],
+        },
+        "prepared": {"state": state, "commands": []},
+    }
 
 
-def _repository_url(value: str) -> str:
-    if "://" in value or value.startswith("git@"):
-        return value
-    candidate = Path(value)
-    if candidate.is_absolute() or candidate.exists():
-        return candidate.resolve().as_uri()
-    return value
+def _document_for_verb(document: ReportDocument, verb: str) -> ReportDocument:
+    view = dict(document)
+    view["request"] = {"verb": verb, "selected_node_ids": [], "parameters": {}}
+    return view
 
 
 def _driver_verbs(registry: DriverRegistry) -> tuple[str, ...]:
