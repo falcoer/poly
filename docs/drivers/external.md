@@ -15,7 +15,7 @@ uv sync --all-groups
 
 During development against a local core checkout, add
 `--poly-source /path/to/poly`. This writes a development-only `uv` source while
-the built distribution retains the portable requirement `poly>=0.11.0,<0.12`.
+the built distribution retains the portable requirement `poly>=0.12.0,<0.13`.
 
 The generator creates:
 
@@ -94,7 +94,10 @@ plan, and run reports in text, JSON, YAML, and XML.
 
 ## End-to-end installed-wheel example
 
-The following journey uses only public commands and wheel installation:
+The following development journey uses only public commands and wheel
+installation. The release acceptance journey that downloads the retained CI
+wheel without checking out Poly source is documented in
+[0.12.0 release notes](../releases/0.12.0.md).
 
 ```shell
 uv build
@@ -103,7 +106,7 @@ poly driver new sample-tech --path ../poly-driver-sample-tech --poly-source "$PW
 
 uv venv ../poly-clean-room
 uv pip install --python ../poly-clean-room/bin/python \
-  dist/poly-0.11.0-py3-none-any.whl \
+  dist/poly-0.12.0-py3-none-any.whl \
   ../poly-driver-sample-tech/dist/poly_driver_sample_tech-0.1.0-py3-none-any.whl
 
 POLY=../poly-clean-room/bin/poly
@@ -123,9 +126,9 @@ parallel model.
 
 ## Security boundary
 
-Poly 0.11 validates declarations and isolates load failures, but it does not
+Poly 0.12 validates declarations and isolates load failures, but it does not
 sandbox hostile code. Importing an installed driver executes Python in Poly's
 process, and its action handler has the process permissions of the invoking
 user. Install only reviewed and trusted driver wheels. Operating-system
 sandboxing, privilege separation, and hostile-plugin containment are explicitly
-outside the 0.11 scope.
+outside the 0.12 scope.
