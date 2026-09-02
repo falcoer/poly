@@ -50,9 +50,7 @@ def _poly(poly: Path, arguments: list[str], output: Path, name: str) -> str:
     return process.stdout
 
 
-def _json_command(
-    poly: Path, arguments: list[str], output: Path, name: str
-) -> dict[str, Any]:
+def _json_command(poly: Path, arguments: list[str], output: Path, name: str) -> dict[str, Any]:
     value = _poly(poly, [*arguments, "--format", "json"], output, name)
     document = json.loads(value)
     (output / f"{name}.json").write_text(
@@ -231,9 +229,7 @@ def run(poly: Path, fixture: Path, output: Path, platform_name: str) -> None:
         json.dumps(parity, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
 
-    drivers = _json_command(
-        poly, ["drivers", "--workspace", str(workspace)], output, "03-drivers"
-    )
+    drivers = _json_command(poly, ["drivers", "--workspace", str(workspace)], output, "03-drivers")
     installed = next(
         item for item in drivers["drivers"] if item["name"] == "poly.driver.sample-tech"
     )
@@ -310,9 +306,7 @@ def run(poly: Path, fixture: Path, output: Path, platform_name: str) -> None:
     )
 
     beta_file = workspace / "repos" / "beta" / "content.txt"
-    beta_file.write_text(
-        beta_file.read_text(encoding="utf-8") + "local change\n", encoding="utf-8"
-    )
+    beta_file.write_text(beta_file.read_text(encoding="utf-8") + "local change\n", encoding="utf-8")
     root_after_child = _git(workspace, "status", "--porcelain=v1")
     beta_status = _git(workspace / "repos" / "beta", "status", "--porcelain=v1")
     assert root_after_child == ""
