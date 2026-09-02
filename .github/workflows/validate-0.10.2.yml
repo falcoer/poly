@@ -1,9 +1,6 @@
 name: Validate 0.10.2 baseline
 
 on:
-  push:
-    branches:
-      - milestone/0.12-clean-workstation
   workflow_dispatch:
 
 permissions:
