@@ -313,7 +313,7 @@ Cross-milestone invariants:
 
 ## 0.10.2 — Runtime output and release identity corrections
 
-- Status: `implemented-awaiting-ci`
+- Status: `validated`
 - Tag: `roadmap/0.10.2-runtime-corrections`
 - Depends on: validated 0.10.1 daily workflow.
 - Scope: package the runtime corrections made after 0.10.1 and expose an
@@ -333,6 +333,14 @@ Cross-milestone invariants:
     Windows/Linux workspace gates remain green.
 - Excluded: installed external-driver lifecycle, which remains 0.11; any new
   workspace or driver capability.
+- Validation:
+  - the exact 0.10.2 boundary commit is `1c1346cb032b3429095091f173e5c6a5b766383c`;
+  - dedicated GitHub Actions run `33598204087` checked out that exact commit and
+    passed the Linux/Windows, formatting, lint, strict typing, coverage,
+    clean-room external-driver, build, and 0.10.2 identity gates;
+  - the remote immutable annotated tag `roadmap/0.10.2-runtime-corrections`
+    targets exactly that commit. The later 0.11 CI was not used as a substitute
+    for the missing 0.10.2 distribution-identity proof.
 
 ## 0.11 — Runtime driver lifecycle and inventory
 
@@ -382,7 +390,7 @@ Cross-milestone invariants:
 
 ## 0.12 — Clean-workstation functional acceptance
 
-- Status: `pending`
+- Status: `implemented-awaiting-ci`
 - Tag: `roadmap/0.12-functional-baseline`
 - Depends on: validated 0.8, 0.9, 0.10, 0.10.1, 0.10.2, and 0.11. This is a release
   gate, not a documentation-only milestone.
