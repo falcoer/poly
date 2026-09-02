@@ -50,7 +50,9 @@ def _poly(poly: Path, arguments: list[str], output: Path, name: str) -> str:
     return process.stdout
 
 
-def _json_command(poly: Path, arguments: list[str], output: Path, name: str) -> dict[str, Any]:
+def _json_command(
+    poly: Path, arguments: list[str], output: Path, name: str
+) -> dict[str, Any]:
     value = _poly(poly, [*arguments, "--format", "json"], output, name)
     document = json.loads(value)
     (output / f"{name}.json").write_text(
@@ -232,7 +234,9 @@ def run(poly: Path, fixture: Path, output: Path, platform_name: str) -> None:
     drivers = _json_command(
         poly, ["drivers", "--workspace", str(workspace)], output, "03-drivers"
     )
-    installed = next(item for item in drivers["drivers"] if item["name"] == "poly.driver.sample-tech")
+    installed = next(
+        item for item in drivers["drivers"] if item["name"] == "poly.driver.sample-tech"
+    )
     assert installed["status"] == "loaded"
     assert str(installed["origin"]).startswith("installed:")
 
@@ -306,13 +310,17 @@ def run(poly: Path, fixture: Path, output: Path, platform_name: str) -> None:
     )
 
     beta_file = workspace / "repos" / "beta" / "content.txt"
-    beta_file.write_text(beta_file.read_text(encoding="utf-8") + "local change\n", encoding="utf-8")
+    beta_file.write_text(
+        beta_file.read_text(encoding="utf-8") + "local change\n", encoding="utf-8"
+    )
     root_after_child = _git(workspace, "status", "--porcelain=v1")
     beta_status = _git(workspace / "repos" / "beta", "status", "--porcelain=v1")
     assert root_after_child == ""
     assert beta_status
     manifest = workspace / "poly.yaml"
-    manifest.write_text(manifest.read_text(encoding="utf-8") + "# composition change\n", encoding="utf-8")
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + "# composition change\n", encoding="utf-8"
+    )
     root_after_composition = _git(workspace, "status", "--porcelain=v1")
     assert "poly.yaml" in root_after_composition
     git_states = {
@@ -347,14 +355,18 @@ def run(poly: Path, fixture: Path, output: Path, platform_name: str) -> None:
     (output / "environment.json").write_text(
         json.dumps(environment, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+    root_commit = expected["root"]
+    alpha_commit = expected["alpha"]
+    beta_commit = expected["beta"]
+    node_ids = ", ".join(canonical_ids)
     summary = f"""# Poly 0.12 clean-workstation acceptance — {platform_name}
 
 - Poly: `{version}`
 - Bootstrap report id: `{run_id}`
-- Root fixture commit: `{expected['root']}`
-- Alpha locked commit: `{expected['alpha']}`
-- Beta locked commit: `{expected['beta']}`
-- Canonical node identifiers: {', '.join(canonical_ids)}
+- Root fixture commit: `{root_commit}`
+- Alpha locked commit: `{alpha_commit}`
+- Beta locked commit: `{beta_commit}`
+- Canonical node identifiers: {node_ids}
 - External driver: `poly.driver.sample-tech` loaded from an installed wheel
 - Maven: multi-module `alpha-reactor` verified successfully
 - Report recovery: text, JSON, YAML and XML retained; structured documents are equal
