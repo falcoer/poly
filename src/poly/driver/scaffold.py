@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 
-DEFAULT_POLY_DEPENDENCY = "poly>=0.11.0,<0.12"
+DEFAULT_POLY_DEPENDENCY = "poly>=0.12.0,<0.13"
 _TECHNOLOGY = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 
 
