@@ -585,7 +585,9 @@ def _command(
         if wrapper and reactor.path != "."
         else "./mvnw"
         if wrapper
-        else "mvn.cmd" if os.name == "nt" else "mvn"
+        else "mvn.cmd"
+        if os.name == "nt"
+        else "mvn"
     )
     pom = str(reactor.metadata["maven.pom"])
     selectors = ",".join(sorted(_selector(node) for node in seeds))
