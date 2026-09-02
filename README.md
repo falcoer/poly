@@ -192,7 +192,10 @@ and a framed success or failure summary. For executed plans, the heading and
 plan are flushed before work begins; `RUNNING`, `OK`, `KO`, and `WARN` lines
 then appear as each action changes state, so long operations such as
 materialization also update the native iTerm2 or Windows Terminal progress
-indicator. The indicator is cleared when the plan completes or is interrupted.
+indicator. Every interactive terminal also receives one adaptive progress row
+below the action rows; it shows the completed action count and percentage, then
+is removed before the final summary. The native indicator and portable row are
+cleared when the plan completes or is interrupted.
 `poly hydrate` never waits for the final report before showing progress. Use
 `-q` for only the unchanged final result,
 `-v` to also show the exact invoked command and process output, and `-vv` for
