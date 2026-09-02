@@ -1,0 +1,32 @@
+name: Apply Maven launcher formatting
+on:
+  push:
+    branches: [milestone/0.12-clean-workstation]
+    paths: [.github/workflows/patch-maven-format.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: milestone/0.12-clean-workstation
+      - shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("src/poly/drivers/maven.py")
+          value = path.read_text(encoding="utf-8")
+          old = '        else "mvn.cmd" if os.name == "nt" else "mvn"\n'
+          new = '        else "mvn.cmd"\n        if os.name == "nt"\n        else "mvn"\n'
+          if old not in value:
+              raise SystemExit("Maven launcher format anchor not found")
+          path.write_text(value.replace(old, new, 1), encoding="utf-8")
+          PY
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/poly/drivers/maven.py
+          git commit -m "style(maven): format platform launcher selection"
+          git push origin HEAD:milestone/0.12-clean-workstation
