@@ -130,7 +130,7 @@ def _write_action_logs(output: Path, documents: dict[str, dict[str, Any]]) -> No
     for report_name, document in documents.items():
         plan = document.get("plan") or {}
         owners = {
-            str(action.get("id")): action.get("driver")
+            str(action.get("action_id")): action.get("driver")
             for action in plan.get("planned_actions", [])
             if isinstance(action, dict)
         }
@@ -142,10 +142,10 @@ def _write_action_logs(output: Path, documents: dict[str, dict[str, Any]]) -> No
             rows.append(
                 {
                     "report": report_name,
-                    "action-id": action.get("id"),
-                    "owner": owners.get(str(action.get("id"))),
+                    "action-id": action.get("action_id"),
+                    "owner": owners.get(str(action.get("action_id"))),
                     "state": action.get("state"),
-                    "message": attempt.get("message"),
+                    "message": attempt.get("summary"),
                     "stdout": attempt.get("stdout"),
                     "stderr": attempt.get("stderr"),
                     "exit-code": attempt.get("exit_code"),
