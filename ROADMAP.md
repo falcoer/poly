@@ -390,7 +390,7 @@ Cross-milestone invariants:
 
 ## 0.12 — Clean-workstation functional acceptance
 
-- Status: `implemented-awaiting-ci`
+- Status: `validated`
 - Tag: `roadmap/0.12-functional-baseline`
 - Depends on: validated 0.8, 0.9, 0.10, 0.10.1, 0.10.2, and 0.11. This is a release
   gate, not a documentation-only milestone.
@@ -425,3 +425,9 @@ Cross-milestone invariants:
   child Git status snapshots, and the exact fixture commit identifiers.
 - Excluded: Web UI, parallel execution, child commit/push/merge, remote package
   publication, and production sandbox hardening.
+- Validation:
+  - functional merge commit: `a41159b93ccc3580dbfbbca17a85bf5c553726e5`;
+  - GitHub Actions run `33623639390` passed quality, Ubuntu/Windows workspace contracts, deterministic fixture, external-driver clean-room, and POSIX/Windows clean-workstation acceptance;
+  - retained distribution, quality, fixture, Linux acceptance, and Windows acceptance artifacts all report head SHA `a41159b93ccc3580dbfbbca17a85bf5c553726e5`;
+  - immutable annotated tag `roadmap/0.12-functional-baseline` (tag object `2870e961b8e565751ab253934eac2ef49294768c`) targets exactly the functional merge commit.
+
