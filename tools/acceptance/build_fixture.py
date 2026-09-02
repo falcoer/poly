@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -71,9 +72,11 @@ def _pom(artifact_id: str, *, parent: bool = False, modules: tuple[str, ...] = (
         version = ""
     modules_xml = ""
     if modules:
-        modules_xml = "  <modules>\n" + "".join(
-            f"    <module>{module}</module>\n" for module in modules
-        ) + "  </modules>\n"
+        modules_xml = (
+            "  <modules>\n"
+            + "".join(f"    <module>{module}</module>\n" for module in modules)
+            + "  </modules>\n"
+        )
     packaging = "  <packaging>pom</packaging>\n" if modules else ""
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -96,17 +99,14 @@ def _child_repository(output: Path, name: str, *, maven: bool = False) -> tuple[
         for module in ("module-a", "module-b"):
             module_dir = source / module
             module_dir.mkdir()
-            (module_dir / "pom.xml").write_text(
-                _pom(module, parent=True), encoding="utf-8"
-            )
+            (module_dir / "pom.xml").write_text(_pom(module, parent=True), encoding="utf-8")
     commit = _commit(source, f"fixture: {name}")
     remote = output / "remotes" / f"{name}.git"
     _bare_clone(source, remote)
     return commit, source
 
 
-def _manifest(alpha_commit: str, beta_commit: str) -> tuple[str, str, str]:
-    del alpha_commit, beta_commit
+def _manifest() -> tuple[str, str, str]:
     manifest = """schema: poly.workspace/v1
 workspace:
   id: clean-workstation
@@ -162,7 +162,11 @@ nodes:
                     "parent": "root",
                     "kind": "repository",
                     "path": "repos/alpha",
-                    "source": {"driver": "git", "url": "../remotes/alpha.git", "ref": "main"},
+                    "source": {
+                        "driver": "git",
+                        "url": "../remotes/alpha.git",
+                        "ref": "main",
+                    },
                 },
                 {
                     "id": "alpha-reactor",
@@ -188,7 +192,11 @@ nodes:
                     "parent": "root",
                     "kind": "repository",
                     "path": "repos/beta",
-                    "source": {"driver": "git", "url": "../remotes/beta.git", "ref": "main"},
+                    "source": {
+                        "driver": "git",
+                        "url": "../remotes/beta.git",
+                        "ref": "main",
+                    },
                 },
             ],
             key=lambda item: str(item["id"]),
@@ -236,7 +244,7 @@ def build(output: Path) -> None:
 
     root_source = output / "root-source"
     _init_repository(root_source)
-    manifest, digest, ignore = _manifest(alpha_commit, beta_commit)
+    manifest, digest, ignore = _manifest()
     (root_source / "poly.yaml").write_text(manifest, encoding="utf-8")
     (root_source / "poly.lock.yaml").write_text(
         _lock(digest, alpha_commit, beta_commit), encoding="utf-8"
@@ -265,10 +273,7 @@ def build(output: Path) -> None:
         json.dumps(commits, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     for source in (alpha_source, beta_source, root_source):
-        subprocess.run(
-            ["python", "-c", "import shutil,sys; shutil.rmtree(sys.argv[1])", str(source)],
-            check=True,
-        )
+        shutil.rmtree(source)
 
 
 def main() -> None:
