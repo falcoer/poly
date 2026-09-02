@@ -154,6 +154,7 @@ workspace can do.
 
 ```shell
 poly inspect
+poly inspect --format json --output reports/inspection.json
 poly drivers
 poly nature list
 poly controllers
@@ -180,6 +181,8 @@ poly report <run-id> --format xml
 
 Every command accepts `--workspace`. Reports support `text`, `json`, `yaml`,
 and `xml`; all formats are rendered from the same `poly.report/v1` document.
+`poly inspect --output <file>` writes the selected format atomically and keeps a
+compact terminal result whose `OUTPUT` section links to the generated report.
 `run` stores process output and state transitions in its report. It executes
 only the frozen plan printed in the same document.
 

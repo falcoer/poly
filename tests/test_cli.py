@@ -96,6 +96,45 @@ def test_cli_inspect_actions_and_plan_reports(
     assert '"ready_action_ids":' in planned
 
 
+def test_cli_inspect_writes_and_exposes_an_explicit_report_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _workspace(tmp_path)
+    report = tmp_path / "reports" / "inspection.json"
+
+    assert (
+        main(
+            [
+                "inspect",
+                "--workspace",
+                str(tmp_path),
+                "--format",
+                "json",
+                "--output",
+                str(report),
+                "--color",
+                "never",
+            ]
+        )
+        == 0
+    )
+
+    terminal = capsys.readouterr().out
+    generated = json.loads(report.read_text(encoding="utf-8"))
+    assert "✓ SUCCESS  poly inspect" in terminal
+    assert "> OUTPUT" in terminal
+    assert f"Inspection report: {report}" in terminal
+    assert generated["kind"] == "inspection"
+    assert generated["outputs"] == [
+        {
+            "kind": "file",
+            "target": str(report),
+            "label": "Inspection report",
+            "media_type": "application/json",
+        }
+    ]
+
+
 def test_cli_executes_git_status_and_reports_logs(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

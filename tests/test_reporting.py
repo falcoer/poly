@@ -21,6 +21,7 @@ from poly.model import (
 from poly.reporting import (
     action_catalog_document,
     controllers_document,
+    document_with_outputs,
     drivers_document,
     inspection_document,
     planning_document,
@@ -250,6 +251,28 @@ def test_inspection_completion_uses_cli_verb_instead_of_none(tmp_path: Path) -> 
 
     assert "✓ SUCCESS  poly inspect" in output
     assert "poly None" not in output
+
+
+def test_command_outputs_are_rendered_and_preserved(tmp_path: Path) -> None:
+    inspection, _ = _snapshots(tmp_path)
+    target = tmp_path / "inspection.json"
+    document = document_with_outputs(
+        inspection_document(inspection),
+        (OutputReference("file", str(target), "Inspection report", "application/json"),),
+    )
+
+    output = render_cli(document, "poly inspect --output inspection.json", color=False)
+
+    assert "> OUTPUT" in output
+    assert f"Inspection report: {target}" in output
+    assert document["outputs"] == [
+        {
+            "kind": "file",
+            "target": str(target),
+            "label": "Inspection report",
+            "media_type": "application/json",
+        }
+    ]
 
 
 def test_json_yaml_and_xml_render_the_same_canonical_document(tmp_path: Path) -> None:

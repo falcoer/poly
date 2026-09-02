@@ -12,7 +12,12 @@ from urllib.parse import quote, urlsplit, urlunsplit
 
 from poly.application import InspectionSnapshot, PlanningSnapshot
 from poly.control_plane import ControllerDescriptor
-from poly.driver import DriverInventoryItem, DriverManifest, InspectionDiagnostic
+from poly.driver import (
+    DriverInventoryItem,
+    DriverManifest,
+    InspectionDiagnostic,
+    OutputReference,
+)
 from poly.model import (
     ActionSpec,
     JsonValue,
@@ -42,6 +47,16 @@ def inspection_document(snapshot: InspectionSnapshot) -> ReportDocument:
         ],
         "drivers": [_driver_document(item) for item in snapshot.drivers],
     }
+
+
+def document_with_outputs(
+    document: ReportDocument, outputs: Sequence[OutputReference]
+) -> ReportDocument:
+    """Return a report document exposing explicit command deliverables."""
+
+    enriched = dict(document)
+    enriched["outputs"] = [_output_document(output) for output in outputs]
+    return enriched
 
 
 def planning_document(snapshot: PlanningSnapshot, *, kind: str = "plan") -> ReportDocument:
@@ -489,6 +504,25 @@ def _append_outputs(
                 continue
             seen.add(key)
             outputs.append(key)
+    command_outputs = document.get("outputs", [])
+    for reference in command_outputs if isinstance(command_outputs, list) else []:
+        if not isinstance(reference, dict):
+            continue
+        key = (
+            str(reference.get("kind", "")),
+            str(reference.get("target", "")),
+            str(reference["label"]) if reference.get("label") is not None else None,
+            str(reference["media_type"]) if reference.get("media_type") is not None else None,
+        )
+        if (
+            key in seen
+            or key[0] not in {"file", "url"}
+            or not _is_safe_text(key[1])
+            or _output_href(key[0], key[1]) is None
+        ):
+            continue
+        seen.add(key)
+        outputs.append(key)
     if not outputs:
         return
     lines.append(f"{_SECTION_INDENT}> OUTPUT")
@@ -837,16 +871,17 @@ def _action_result_document(result: ActionResult) -> ReportDocument:
             "value": None
             if attempt.value is None
             else {"value": attempt.value.value, "label": attempt.value.label},
-            "outputs": [
-                {
-                    "kind": str(output.kind),
-                    "target": output.target,
-                    "label": output.label,
-                    "media_type": output.media_type,
-                }
-                for output in attempt.outputs
-            ],
+            "outputs": [_output_document(output) for output in attempt.outputs],
         },
+    }
+
+
+def _output_document(output: OutputReference) -> ReportDocument:
+    return {
+        "kind": str(output.kind),
+        "target": output.target,
+        "label": output.label,
+        "media_type": output.media_type,
     }
 
 
@@ -976,6 +1011,10 @@ def _text(document: ReportDocument) -> str:
     _text_planning(lines, document)
     _text_controllers(lines, document)
     _text_run(lines, document)
+    outputs = document.get("outputs", [])
+    for output in outputs if isinstance(outputs, list) else []:
+        if isinstance(output, dict):
+            lines.append(f"Output ({output.get('kind')}): {output.get('target')}")
     return "\n".join(lines) + "\n"
 
 
