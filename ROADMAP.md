@@ -476,6 +476,12 @@ Cross-milestone invariants:
   - in an interactive terminal, each action occupies one stable visual row and
     its transient `RUNNING` state is replaced in place by `OK`, `KO`, or
     `BLOCKED`;
+  - supported terminals receive native whole-plan progress through `OSC 9;4`,
+    including an explicit completion or error reset, without changing visible
+    output or structured reports;
+  - every interactive terminal also receives one portable inline progress row
+    below the action rows, with a width-aware bar, percentage, and completed
+    action count; it is replaced in place and removed before the final result;
   - append-only output such as redirection and CI logs emits only terminal
     action states at normal verbosity and never emits cursor-control sequences;
   - every persisted run event carries an RFC 3339 UTC `occurred_at` timestamp,
@@ -498,16 +504,16 @@ Cross-milestone invariants:
   capture; scalar-value rendering; deterministic output aggregation; safe file
   and URL hyperlink generation with plain-text fallback; control-character,
   credential, and escape-sequence sanitization; redirected-output and
-  no-control-sequence tests; timestamp and duration tests; narrow and resized
-  terminal cases; source-heading sanitization; Windows/Linux snapshots;
-  interruption cleanup; structured-report parity.
+  no-control-sequence tests; native and inline progress lifecycle; timestamp and
+  duration tests; narrow and resized terminal cases; source-heading sanitization;
+  Windows/Linux snapshots; interruption cleanup; structured-report parity.
 - Demonstration: run a source-backed `poly add` plus driver commands returning
   a scalar value, a generated report file, and a report URL; compare interactive
   hyperlinks with redirected plain text, show one final row per action and one
-  aggregated `OUTPUT` section, reload the persisted report, and correlate its
-  timestamped action transitions.
-- Excluded: execution parallelism itself, terminal dashboards, progress
-  percentages, spinners, and historical report animation.
+  aggregated `OUTPUT` section, observe native or portable whole-plan progress,
+  reload the persisted report, and correlate its timestamped action transitions.
+- Excluded: execution parallelism itself, terminal dashboards, spinners, and
+  historical report animation.
 
 ## 0.13 — Bounded parallel plan execution
 
@@ -533,30 +539,46 @@ Cross-milestone invariants:
     cross-platform fallback;
   - the requested and effective worker limits are recorded in the canonical run
     report and do not affect the plan identifier;
+  - controller descriptors declare a positive parallel capacity, defaulting to
+    one for backward compatibility; the global worker limit and a per-controller
+    semaphore are both enforced;
   - runtime resource declarations are distinct from planning
     `ActionClaim` ownership and prevent actions holding the same exclusive
     execution resource from overlapping;
-  - structural actions and actions or driver handlers that do not declare
-    concurrency safety remain conservatively serialized;
-  - commands and handlers execute in action-isolated output contexts so their
-    logs and details cannot overwrite one another;
+  - the public driver API 1.1 adds an opt-in parallel-safety declaration and
+    exclusive execution resources; API 1.0 actions, structural actions, and
+    undeclared handlers remain conservatively serialized;
+  - when capacity becomes available, admission scans the remaining canonical
+    frontier and selects the first resource-compatible action, so one locked
+    resource does not stall unrelated work;
+  - each action receives a stable, traversal-safe subdirectory beneath the run
+    directory; commands and opted-in handlers keep stdout, stderr, details, and
+    outputs in that action-isolated context;
+  - opted-in in-process handlers use the action output sink and must not mutate
+    process-global stdout or stderr; legacy stream capture stays on the serial
+    lane;
   - a failed action produces no constraints and blocks only its dependants;
     already-running siblings and actions independent of the failure complete;
   - runner exceptions are contained per action and never abort result
     collection for the rest of the frontier;
-  - action results retain canonical plan order, while timestamped events record
-    actual causal start and completion order with a synchronized global
-    sequence;
+  - action results retain canonical plan order, while a single scheduler thread
+    publishes timestamped events in actual admission and observed completion
+    order with a synchronized global sequence;
   - the interactive renderer maintains one stable row per running action and
     leaves only terminal rows when the frontier completes;
-  - interruption stops admission of new actions, records the affected states,
-    collects or terminates running work according to explicit policy, and leaves
-    a reloadable run report.
+  - interruption uses a documented drain policy: it stops new admissions, lets
+    admitted work finish, marks never-started actions `cancelled`, records the
+    run as `interrupted`, and leaves a reloadable report; forced preemption is
+    not part of 0.13;
+  - the run report records the worker request and effective limit, controller
+    capacities, interruption policy, and canonical membership of every frozen
+    frontier.
 - Checks: deterministic frontier tests; explicit resource-exclusion tests;
   controlled overlap tests without timing-only assertions; worker-limit and
-  automatic-capacity tests; failure, exception, and interruption isolation;
-  concurrent event sequencing and log separation; sequential compatibility;
-  Windows/Linux execution; canonical renderer parity.
+  automatic-capacity tests; controller-capacity enforcement; failure, exception,
+  and drain-interruption isolation; concurrent event sequencing, path safety,
+  and log separation; API 1.0 and `--jobs 1` compatibility; Windows/Linux
+  execution; canonical renderer parity.
 - Demonstration: hydrate or verify several independent repositories concurrently
   while actions targeting the same repository remain serialized, then use
   timestamped reports to show the overlap and compare elapsed time with
