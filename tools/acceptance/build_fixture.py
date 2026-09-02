@@ -54,6 +54,12 @@ def _commit(directory: Path, message: str) -> str:
 def _bare_clone(source: Path, target: Path) -> None:
     _run(["git", "clone", "--quiet", "--bare", str(source), str(target)])
     _git(target, "symbolic-ref", "HEAD", "refs/heads/main")
+    # Git requires the refs hierarchy even when all refs are packed. GitHub
+    # artifact ZIPs do not retain empty directories, so persist harmless dotfiles.
+    for relative in ("refs/heads/.keep", "refs/tags/.keep"):
+        marker = target / relative
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("artifact-directory-marker\n", encoding="utf-8")
 
 
 def _pom(artifact_id: str, *, parent: bool = False, modules: tuple[str, ...] = ()) -> str:
