@@ -336,7 +336,7 @@ Cross-milestone invariants:
 
 ## 0.11 — Runtime driver lifecycle and inventory
 
-- Status: `implemented-awaiting-ci`
+- Status: `validated`
 - Tag: `roadmap/0.11-driver-runtime`
 - Depends on: 0.9 common runtime and the completed 0.10.2 correction baseline;
   integration is exercised against a hydrated workspace.
@@ -373,6 +373,12 @@ Cross-milestone invariants:
     identity, origin, protocol, capabilities, verbs, status, and diagnostics;
   - clean-room CI builds and installs the core and generated sample-driver wheels,
     exercises the direct verb, and reloads its persisted run report.
+- Validation:
+  - the complete Linux and Windows matrix passed on commit `c0fe778`;
+  - 106 tests passed with 90.55% coverage, including deterministic rejection and
+    canonical renderer parity;
+  - GitHub Actions created the annotated tag
+    `roadmap/0.11-driver-runtime` on the validated commit.
 
 ## 0.12 — Clean-workstation functional acceptance
 
