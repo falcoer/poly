@@ -431,3 +431,108 @@ Cross-milestone invariants:
   - retained distribution, quality, fixture, Linux acceptance, and Windows acceptance artifacts all report head SHA `a41159b93ccc3580dbfbbca17a85bf5c553726e5`;
   - immutable annotated tag `roadmap/0.12-functional-baseline` (tag object `2870e961b8e565751ab253934eac2ef49294768c`) targets exactly the functional merge commit.
 
+## 0.12.1 — Stable interactive CLI presentation
+
+- Status: `pending`
+- Tag: `roadmap/0.12.1-interactive-cli`
+- Depends on: validated 0.12 functional baseline.
+- Scope: consolidate the interactive command block, replace transient action
+  lines in place, expose useful execution timing, and distinguish user intent
+  visually from Poly-generated state without changing plan semantics.
+- Acceptance:
+  - the complete command block is delimited by horizontal separators starting
+    at the terminal's left margin;
+  - the user-request heading also starts at the left margin and uses the
+    terminal's default foreground color rather than a forced ANSI white;
+  - a source-backed add renders
+    `ADDING <node-id> from <source-url> (ref: <requested-ref>) ...`, using the
+    sanitized requested URL and selector rather than the resolved commit;
+  - `PLAN` retains its generated-state color and indentation, while the final
+    `SUCCESS`, `FAILURE`, or `NONE` line uses the same indentation as
+    `PLAN`;
+  - action rows remain one level below `PLAN`, with wrapped details one
+    additional level below their action;
+  - in an interactive terminal, each action occupies one stable visual row and
+    its transient `RUNNING` state is replaced in place by `OK`, `KO`, or
+    `BLOCKED`;
+  - append-only output such as redirection and CI logs emits only terminal
+    action states at normal verbosity and never emits cursor-control sequences;
+  - every persisted run event carries an RFC 3339 UTC `occurred_at` timestamp,
+    and action results expose `started_at`, `completed_at`, and
+    `duration_ms`;
+  - event sequence remains the total-order tie-breaker when timestamps are
+    equal, and structured reports retain every planned, ready, running, and
+    terminal event;
+  - separators adapt to the usable terminal width with a deterministic fallback,
+    and long identifiers or summaries never corrupt subsequent output;
+  - failures, blocked actions, runner exceptions, and interruption leave the
+    terminal in a clean state;
+  - `-q`, `-v`, `-vv`, `--color`, and `NO_COLOR` retain their documented
+    meaning, and JSON, YAML, and XML never contain terminal controls;
+  - the interactive rendering state does not assume that only one action can be
+    running, so it can support the bounded-parallel executor introduced in 0.13.
+- Checks: terminal-capability abstraction tests; interactive replacement tests;
+  redirected-output and no-control-sequence tests; timestamp and duration tests;
+  narrow and resized terminal cases; source-heading sanitization; Windows/Linux
+  snapshots; interruption cleanup; structured-report parity.
+- Demonstration: run a source-backed `poly add` in a terminal and through
+  redirected output, show a single final row per action in both cases, reload
+  the persisted report, and correlate its timestamped action transitions.
+- Excluded: execution parallelism itself, terminal dashboards, progress
+  percentages, spinners, and historical report animation.
+
+## 0.13 — Bounded parallel plan execution
+
+- Status: `pending`
+- Tag: `roadmap/0.13-bounded-parallel-execution`
+- Depends on: validated 0.12.1 interactive CLI baseline.
+- Scope: execute independent actions from the same ready frontier concurrently,
+  with deterministic frontier selection, explicit execution-resource isolation,
+  and a worker limit bounded by the capabilities visible to the Poly process.
+- Acceptance:
+  - parallel execution never mutates, extends, or reinterprets the frozen plan;
+  - at the start of each execution iteration, the executor freezes the
+    canonically ordered frontier of actions whose required constraints are
+    available;
+  - only actions from that frontier may run concurrently; if the frontier is
+    larger than the worker limit, its remaining actions stay queued, and the
+    next frontier is not opened until every action in the current frontier has
+    reached a terminal state;
+  - `--jobs 1`, `--jobs <n>`, and `--jobs auto` are supported, with
+    `--jobs 1` retaining the observable sequential 0.12.1 semantics;
+  - automatic sizing respects the CPU entitlement or affinity visible to the
+    process, never selects fewer than one worker, and has a conservative
+    cross-platform fallback;
+  - the requested and effective worker limits are recorded in the canonical run
+    report and do not affect the plan identifier;
+  - runtime resource declarations are distinct from planning
+    `ActionClaim` ownership and prevent actions holding the same exclusive
+    execution resource from overlapping;
+  - structural actions and actions or driver handlers that do not declare
+    concurrency safety remain conservatively serialized;
+  - commands and handlers execute in action-isolated output contexts so their
+    logs and details cannot overwrite one another;
+  - a failed action produces no constraints and blocks only its dependants;
+    already-running siblings and actions independent of the failure complete;
+  - runner exceptions are contained per action and never abort result
+    collection for the rest of the frontier;
+  - action results retain canonical plan order, while timestamped events record
+    actual causal start and completion order with a synchronized global
+    sequence;
+  - the interactive renderer maintains one stable row per running action and
+    leaves only terminal rows when the frontier completes;
+  - interruption stops admission of new actions, records the affected states,
+    collects or terminates running work according to explicit policy, and leaves
+    a reloadable run report.
+- Checks: deterministic frontier tests; explicit resource-exclusion tests;
+  controlled overlap tests without timing-only assertions; worker-limit and
+  automatic-capacity tests; failure, exception, and interruption isolation;
+  concurrent event sequencing and log separation; sequential compatibility;
+  Windows/Linux execution; canonical renderer parity.
+- Demonstration: hydrate or verify several independent repositories concurrently
+  while actions targeting the same repository remain serialized, then use
+  timestamped reports to show the overlap and compare elapsed time with
+  `--jobs 1`.
+- Excluded: distributed scheduling, action preemption, adaptive CPU/memory or I/O
+  weighting, speculative execution, driver-internal parallelism, and runtime
+  plan expansion.
