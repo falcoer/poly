@@ -19,7 +19,13 @@ from poly.control_plane import (
     ControlPlaneActionRunner,
     LocalController,
 )
-from poly.driver import DriverOrigin, DriverRegistry, ExecutionContext, discover_external_drivers
+from poly.driver import (
+    DriverOrigin,
+    DriverRegistry,
+    ExecutionContext,
+    OutputReference,
+    discover_external_drivers,
+)
 from poly.driver.scaffold import DriverScaffoldError, scaffold_driver
 from poly.drivers import git_driver, maven_driver
 from poly.model import Node
@@ -28,6 +34,7 @@ from poly.reporting import (
     ReportDocument,
     action_catalog_document,
     controllers_document,
+    document_with_outputs,
     drivers_document,
     inspection_document,
     natures_document,
@@ -118,6 +125,24 @@ def main(arguments: list[str] | None = None) -> int:
     if options.command == "inspect":
         document = inspection_document(inspection)
         _save_inventory_if_initialized(workspace, document)
+        if options.output is not None:
+            output = options.output.resolve()
+            document = document_with_outputs(
+                document,
+                (
+                    OutputReference(
+                        "file",
+                        str(output),
+                        "Inspection report",
+                        _report_media_type(options.format),
+                    ),
+                ),
+            )
+            try:
+                _write_report_file(output, render(document, options.format))
+            except OSError as error:
+                parser.error(f"cannot write inspection report {output}: {error}")
+            options.format = "text"
         exit_code = 0
     else:
         selected = _selection(options.select, inspection.inventory.nodes)
@@ -192,6 +217,11 @@ def _parser(registry: DriverRegistry) -> argparse.ArgumentParser:
         "--remote",
         action="store_true",
         help="compare locked Git sources with their requested remote references",
+    )
+    inspect.add_argument(
+        "--output",
+        type=Path,
+        help="write the inspection report to this file and expose it as an output",
     )
     _report_options(inspect)
 
@@ -556,6 +586,26 @@ def _write_output(
             hyperlinks=capabilities.hyperlinks,
         )
     )
+
+
+def _write_report_file(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_text(content, encoding="utf-8")
+        temporary.replace(path)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _report_media_type(format_name: str) -> str:
+    return {
+        "json": "application/json",
+        "yaml": "application/yaml",
+        "xml": "application/xml",
+        "text": "text/plain",
+    }[format_name]
 
 
 def _color_enabled(options: argparse.Namespace) -> bool:
