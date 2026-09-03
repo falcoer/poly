@@ -1,0 +1,51 @@
+name: Apply 0.12.3 transformation
+
+on:
+  push:
+    branches: ["feat/0.12.3-deferred-command-preparation"]
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/0.12.3-deferred-command-preparation
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Apply source transformation
+        run: python tools/apply_0123_transform.py
+      - name: Update release identity
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/poly/_version.py')
+          path.write_text(path.read_text().replace('0.12.2', '0.12.3'), encoding='utf-8')
+          path = Path('.github/workflows/ci.yml')
+          path.write_text(path.read_text().replace('0.12.2', '0.12.3'), encoding='utf-8')
+          PY
+      - name: Remove staging transformer
+        run: rm tools/apply_0123_transform.py .github/workflows/apply-0123.yml
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          prune-cache: true
+      - run: uv sync --locked --all-groups
+      - run: uv run ruff format src/poly/cli.py src/poly/prepared.py src/poly/reporting.py
+      - run: uv run ruff check src/poly/cli.py src/poly/prepared.py src/poly/reporting.py
+      - run: uv run mypy src
+      - name: Run prepared-plan regressions
+        run: uv run pytest tests/test_prepared.py tests/test_cli.py tests/test_git_materialization.py --no-cov
+      - name: Commit transformed implementation
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "feat: defer prepared command resolution to exec"
+          git push origin HEAD:feat/0.12.3-deferred-command-preparation
