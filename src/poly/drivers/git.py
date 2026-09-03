@@ -669,6 +669,8 @@ class GitActionHandler:
         marker = context.run_directory / "cloned" / action.environment["poly.node.id"]
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text("fresh\n", encoding="utf-8")
+        persistent_marker = target / ".git" / "poly-fresh-clone"
+        persistent_marker.write_text("fresh\n", encoding="utf-8")
         return DriverExecutionResult(True, f"cloned {target}")
 
     def _adopt(self, action: ActionSpec, context: ExecutionContext) -> DriverExecutionResult:
@@ -702,39 +704,53 @@ class GitActionHandler:
     def _checkout(self, action: ActionSpec, context: ExecutionContext) -> DriverExecutionResult:
         target = self._target(action, context)
         commit, ref_kind = self._resolution(action, context)
+        run_marker = context.run_directory / "cloned" / action.environment["poly.node.id"]
+        persistent_marker = target / ".git" / "poly-fresh-clone"
+        fresh_checkout = run_marker.is_file() or persistent_marker.is_file()
         head = self._git(target, "rev-parse", "--verify", "HEAD")
         if head.returncode == 0 and head.stdout.strip() == commit:
-            marker = context.run_directory / "cloned" / action.environment["poly.node.id"]
-            if marker.is_file():
+            if fresh_checkout:
                 self._ensure_success(
                     self._git(target, "reset", "--hard", commit),
                     f"cannot populate fresh checkout {target}",
                 )
+                persistent_marker.unlink(missing_ok=True)
             return DriverExecutionResult(True, f"HEAD already matches {commit}")
-        status = self._git(target, "status", "--porcelain=v1", "--untracked-files=normal")
-        self._ensure_success(status, f"cannot inspect worktree {target}")
-        if status.stdout.strip():
-            raise GitInspectionError(f"refusing to move dirty worktree: {target}")
+        if not fresh_checkout:
+            status = self._git(target, "status", "--porcelain=v1", "--untracked-files=normal")
+            self._ensure_success(status, f"cannot inspect worktree {target}")
+            if status.stdout.strip():
+                raise GitInspectionError(f"refusing to move dirty worktree: {target}")
         requested = action.environment.get("poly.source.ref", "")
         if ref_kind == "branch" and requested and not requested.startswith("refs/"):
-            exists = self._git(target, "show-ref", "--verify", f"refs/heads/{requested}")
-            if exists.returncode == 0:
+            if fresh_checkout:
                 self._ensure_success(
-                    self._git(target, "checkout", requested), f"cannot checkout branch {requested}"
-                )
-                self._ensure_success(
-                    self._git(target, "merge", "--ff-only", commit),
-                    f"branch {requested} cannot move safely to locked commit {commit}",
-                )
-            else:
-                self._ensure_success(
-                    self._git(target, "checkout", "--force", "-b", requested, commit),
-                    f"cannot create branch {requested}",
+                    self._git(target, "checkout", "--force", "-B", requested, commit),
+                    f"cannot populate fresh branch {requested}",
                 )
                 self._ensure_success(
                     self._git(target, "reset", "--hard", commit),
                     f"cannot populate fresh branch {requested}",
                 )
+            else:
+                exists = self._git(target, "show-ref", "--verify", f"refs/heads/{requested}")
+                if exists.returncode == 0:
+                    self._ensure_success(
+                        self._git(target, "checkout", requested), f"cannot checkout branch {requested}"
+                    )
+                    self._ensure_success(
+                        self._git(target, "merge", "--ff-only", commit),
+                        f"branch {requested} cannot move safely to locked commit {commit}",
+                    )
+                else:
+                    self._ensure_success(
+                        self._git(target, "checkout", "--force", "-b", requested, commit),
+                        f"cannot create branch {requested}",
+                    )
+                    self._ensure_success(
+                        self._git(target, "reset", "--hard", commit),
+                        f"cannot populate fresh branch {requested}",
+                    )
         else:
             self._ensure_success(
                 self._git(target, "checkout", "--force", "--detach", commit),
@@ -744,6 +760,8 @@ class GitActionHandler:
                 self._git(target, "reset", "--hard", commit),
                 f"cannot populate locked commit {commit}",
             )
+        if fresh_checkout:
+            persistent_marker.unlink(missing_ok=True)
         return DriverExecutionResult(True, f"checked out {commit}")
 
     def _verify(self, action: ActionSpec, context: ExecutionContext) -> DriverExecutionResult:
