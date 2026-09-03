@@ -62,6 +62,29 @@ jobs:
           text = text.replace(old, new, 1)
           path.write_text(text, encoding='utf-8')
 
+          reporting_tests = Path('tests/test_reporting.py')
+          tests = reporting_tests.read_text(encoding='utf-8')
+          tests = tests.replace(
+              '''    assert concise.splitlines()[0] == "─" * 72\n    assert concise.splitlines()[1] == "VERIFYING node ..."\n    assert concise.splitlines()[2].startswith("        PLAN")\n''',
+              '''    assert concise.splitlines()[0] == "VERIFYING node ..."\n    assert concise.splitlines()[1].startswith("        PLAN")\n''',
+              1,
+          )
+          tests = tests.replace(
+              '''    assert start.startswith("─" * 72 + "\\nVERIFYING node ...\\n")\n''',
+              '''    assert start.startswith("VERIFYING node ...\\n")\n''',
+              1,
+          )
+          reporting_tests.write_text(tests, encoding='utf-8')
+
+          terminal_tests = Path('tests/test_terminal.py')
+          tests = terminal_tests.read_text(encoding='utf-8')
+          tests = tests.replace('assert "PLAN      [" in output.getvalue()', 'assert "IN PROGRESS [" in output.getvalue()', 1)
+          tests = tests.replace('assert final_paint.count("PLAN WARN [") == 1', 'assert final_paint.count("IN PROGRESS WARN [") == 1', 1)
+          tests = tests.replace('assert "PLAN WARN [" not in completion', 'assert "IN PROGRESS WARN [" not in completion', 1)
+          tests = tests.replace('assert "        PLAN 0/1 0%" in output.getvalue()', 'assert "IN PROGRESS 0/1 0%" in output.getvalue()', 1)
+          tests = tests.replace('assert "PLAN      [" not in output.getvalue()', 'assert "IN PROGRESS [" not in output.getvalue()', 1)
+          terminal_tests.write_text(tests, encoding='utf-8')
+
           roadmap = Path('ROADMAP.md')
           roadmap_text = roadmap.read_text(encoding='utf-8')
           marker = '## 0.13 — Bounded parallel plan execution\n'
@@ -77,14 +100,14 @@ jobs:
         run: |
           python -m pip install uv
           uv sync --locked --all-groups
-          uv run ruff format src/poly/reporting.py tests/test_release_0124_cli_rendering.py
-          uv run ruff check src/poly/reporting.py tests/test_release_0124_cli_rendering.py
-          uv run pytest tests/test_reporting.py tests/test_terminal.py tests/test_deferred_preparation.py tests/test_release_0124_cli_rendering.py
+          uv run ruff format src/poly/reporting.py tests/test_reporting.py tests/test_terminal.py tests/test_release_0124_cli_rendering.py
+          uv run ruff check src/poly/reporting.py tests/test_reporting.py tests/test_terminal.py tests/test_release_0124_cli_rendering.py
+          uv run pytest --no-cov tests/test_reporting.py tests/test_terminal.py tests/test_deferred_preparation.py tests/test_release_0124_cli_rendering.py
       - name: Commit corrections
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/poly/reporting.py tests/test_release_0124_cli_rendering.py ROADMAP.md
+          git add src/poly/reporting.py tests/test_reporting.py tests/test_terminal.py tests/test_release_0124_cli_rendering.py ROADMAP.md
           git commit -m "fix: refine 0.12.4 interactive CLI rendering"
           git push origin HEAD:release/0.12.4-cli-rendering-corrections
