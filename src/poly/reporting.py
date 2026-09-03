@@ -250,7 +250,6 @@ def render_cli(
     lines: list[str] = []
     separator = _styled("─" * _usable_width(width), "muted", color)
     if verbosity >= 0:
-        lines.append(separator)
         lines.append(_command_heading(document))
         if verbosity >= 1:
             lines.append(f"{_SECTION_INDENT}COMMAND  {command}")
@@ -282,10 +281,7 @@ def render_cli_start(
 
     if verbosity < 0:
         return ""
-    lines = [
-        _styled("─" * _usable_width(width), "muted", color),
-        _command_heading(document),
-    ]
+    lines = [_command_heading(document)]
     if verbosity >= 1:
         lines.append(f"{_SECTION_INDENT}COMMAND  {command}")
     _concise_plan(lines, document, color)
@@ -340,8 +336,8 @@ def render_cli_progress(
     bounded_total = max(1, total)
     bounded_completed = min(max(0, completed), bounded_total)
     percentage = bounded_completed * 100 // bounded_total
-    label = "PLAN KO" if failed else "PLAN WARN" if blocked else "PLAN"
-    prefix = f"{_SECTION_INDENT}{label:<10}"
+    label = "IN PROGRESS KO" if failed else "IN PROGRESS WARN" if blocked else "IN PROGRESS"
+    prefix = f"{_SECTION_INDENT}{label} "
     suffix = f"{bounded_completed}/{bounded_total} actions · {percentage:3d} %"
     available = _usable_width(width)
     bar_width = available - _display_width(prefix) - _display_width(suffix) - 3
@@ -350,7 +346,9 @@ def render_cli_progress(
         bar = "█" * filled + "─" * (bar_width - filled)
         line = f"{prefix}[{bar}] {suffix}"
     else:
-        compact_label = "KO" if failed else "WARN" if blocked else "PLAN"
+        compact_label = (
+            "IN PROGRESS KO" if failed else "IN PROGRESS WARN" if blocked else "IN PROGRESS"
+        )
         compact = f"{compact_label} {bounded_completed}/{bounded_total} {percentage}%"
         indent = " " * min(len(_SECTION_INDENT), max(0, available - _display_width(compact)))
         line = indent + compact
@@ -405,23 +403,25 @@ def _render_planned_cli(
     count = int(count_value) if isinstance(count_value, int | str) else 0
     verb = str(request.get("verb", "command")) if isinstance(request, dict) else "command"
     noun = "command" if count == 1 else "commands"
-    separator = "─" * _usable_width(width)
-    lines: list[str] = []
-    if verbosity >= 0:
-        lines.extend((separator, _command_heading(document)))
-        if verbosity >= 1:
-            lines.append(f"{_SECTION_INDENT}COMMAND  {command}")
-        lines.extend(
-            (
-                f"{_SECTION_INDENT}○ PLANNED  poly {verb}",
-                f"{_DETAIL_INDENT}{count} {noun} in current plan",
-                f"{_DETAIL_INDENT}Run `poly exec` when the plan is ready.",
-                separator,
-            )
-        )
-    else:
-        lines.append(f"{_SECTION_INDENT}○ PLANNED  poly {verb}")
-    return "\n".join(_styled(line, "magenta", color) for line in lines) + "\n"
+    separator = _styled("─" * _usable_width(width), "white", color)
+    if verbosity < 0:
+        return _styled(f"○ PLANNED  poly {verb}", "magenta", color) + "\n"
+
+    lines = [_command_heading(document)]
+    if verbosity >= 1:
+        lines.append(f"{_SECTION_INDENT}COMMAND  {command}")
+
+    body = (
+        f"○ PLANNED  poly {verb}",
+        f"{count} {noun} in current plan",
+        "Run `poly exec` when the plan is ready.",
+    )
+    for index, line in enumerate(body):
+        gutter = _styled("│", "white", color)
+        indent = "  " if index == 0 else "    "
+        lines.append(f"{gutter}{indent}{_styled(line, 'magenta', color)}")
+    lines.append(separator)
+    return "\n".join(lines) + "\n"
 
 
 def _command_heading(document: ReportDocument) -> str:
@@ -897,6 +897,7 @@ def _styled(value: str, tone: str, enabled: bool) -> str:
         "yellow": "33",
         "cyan": "36",
         "magenta": "35",
+        "white": "37",
         "muted": "90",
     }
     return f"\x1b[{codes[tone]}m{value}\x1b[0m"

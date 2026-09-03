@@ -151,19 +151,18 @@ def test_inline_progress_is_stable_adaptive_and_removed_before_completion() -> N
     )
 
     renderer.start(document, "poly verify")
-    assert "PLAN      [" in output.getvalue()
+    assert "IN PROGRESS [" in output.getvalue()
     assert "0/2 actions ·   0 %" in output.getvalue()
     renderer.handle(RunEvent(1, ActionState.SUCCEEDED, "a"))
     renderer.handle(RunEvent(2, ActionState.BLOCKED, "b"))
 
     final_paint = output.getvalue().rsplit("\x1b[J", 1)[-1]
-    assert final_paint.count("PLAN WARN [") == 1
-    assert "2/2 actions · 100 %" in final_paint
+    assert final_paint.count("IN PROGRESS WARN 2/2 100%") == 1
     before_finish = len(output.getvalue())
     renderer.finish(document, 1)
     completion = output.getvalue()[before_finish:]
     assert completion.startswith("\x1b[1A\x1b[J")
-    assert "PLAN WARN [" not in completion
+    assert "IN PROGRESS WARN" not in completion
     assert "FAILURE  poly verify" in completion
 
 
@@ -182,8 +181,8 @@ def test_inline_progress_uses_compact_fallback_at_narrow_width() -> None:
 
     renderer.start(document, "poly verify")
 
-    assert "        PLAN 0/1 0%" in output.getvalue()
-    assert "PLAN      [" not in output.getvalue()
+    assert "IN PROGRESS 0/1 0%" in output.getvalue()
+    assert "IN PROGRESS [" not in output.getvalue()
 
 
 def test_native_progress_is_cleared_on_abort() -> None:
