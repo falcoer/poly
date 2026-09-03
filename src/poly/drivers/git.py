@@ -748,7 +748,8 @@ class GitActionHandler:
                 exists = self._git(target, "show-ref", "--verify", f"refs/heads/{requested}")
                 if exists.returncode == 0:
                     self._ensure_success(
-                        self._git(target, "checkout", requested), f"cannot checkout branch {requested}"
+                        self._git(target, "checkout", requested),
+                        f"cannot checkout branch {requested}",
                     )
                     self._ensure_success(
                         self._git(target, "merge", "--ff-only", commit),
@@ -854,9 +855,7 @@ class GitActionHandler:
                 encoding="utf-8",
                 errors="replace",
                 timeout=(
-                    self.command_timeout_seconds
-                    if timeout_seconds is None
-                    else timeout_seconds
+                    self.command_timeout_seconds if timeout_seconds is None else timeout_seconds
                 ),
             )
         except (OSError, subprocess.TimeoutExpired) as error:
