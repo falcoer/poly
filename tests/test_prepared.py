@@ -4,11 +4,22 @@ from pathlib import Path
 
 import pytest
 
-from poly.model import ActionClaim, ActionSpec, Constraint, Plan, PlanDiagnostic, PlanStatus
+from poly.application import InspectionSnapshot, PlanningSnapshot
+from poly.model import (
+    ActionClaim,
+    ActionSpec,
+    Constraint,
+    Inventory,
+    Plan,
+    PlanDiagnostic,
+    PlanningRequest,
+    PlanStatus,
+)
 from poly.prepared import (
     PreparedPlanError,
     compose_plans,
     plan_from_document,
+    prepare_document,
     workspace_fingerprint,
 )
 
@@ -151,3 +162,32 @@ def test_workspace_fingerprint_tracks_only_authored_composition(tmp_path: Path) 
 
     (tmp_path / "poly.yaml").write_text("schema: poly.workspace/v1\n", encoding="utf-8")
     assert workspace_fingerprint(tmp_path) != initial
+
+
+def test_legacy_prepare_document_accumulates_and_detects_staleness(tmp_path: Path) -> None:
+    inventory = Inventory()
+    inspection = InspectionSnapshot(tmp_path.resolve(), inventory, (), ())
+    request = PlanningRequest("add", inventory, (), {}, workspace=tmp_path.resolve())
+    source_plan = Plan("source", "add", (), (), (), (), PlanStatus.EMPTY)
+    snapshot = PlanningSnapshot(inspection, request, (), (), source_plan)
+
+    first = prepare_document(snapshot, "poly add --prepare")
+    assert first["kind"] == "prepared-plan"
+    prepared = first.get("prepared")
+    requests = first.get("requests")
+    assert isinstance(prepared, dict)
+    assert isinstance(requests, list)
+    assert prepared["commands"] == ["poly add --prepare"]
+    assert len(requests) == 1
+
+    second = prepare_document(snapshot, "poly add --prepare", first)
+    prepared = second.get("prepared")
+    requests = second.get("requests")
+    assert isinstance(prepared, dict)
+    assert isinstance(requests, list)
+    assert prepared["commands"] == ["poly add --prepare", "poly add --prepare"]
+    assert len(requests) == 2
+
+    (tmp_path / "poly.yaml").write_text("schema: poly.workspace/v1\n", encoding="utf-8")
+    with pytest.raises(PreparedPlanError, match="prepared plan is stale"):
+        prepare_document(snapshot, "poly add --prepare", second)
