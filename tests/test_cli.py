@@ -426,6 +426,217 @@ def test_cli_prepares_accumulates_executes_and_clears_one_current_plan(
     assert empty["plan"]["status"] == "empty"
 
 
+def test_prepared_additions_execute_in_command_order(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["init", "--workspace", str(tmp_path), "--name", "Ordered"]) == 0
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "add",
+                "module",
+                "z-parent",
+                "--path",
+                "parent",
+                "--workspace",
+                str(tmp_path),
+                "--prepare",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "add",
+                "module",
+                "a-child",
+                "--path",
+                "parent/child",
+                "--parent",
+                "z-parent",
+                "--workspace",
+                str(tmp_path),
+                "--prepare",
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    prepared = json.loads(capsys.readouterr().out)
+    actions = {action["id"]: action for action in prepared["plan"]["planned_actions"]}
+    assert "poly/manifest-added:z-parent" in actions["construct.add:a-child"]["requires"]
+
+    assert main(["exec", "--workspace", str(tmp_path), "--format", "json"]) == 0
+    executed = json.loads(capsys.readouterr().out)
+    assert executed["run"]["status"] == "succeeded"
+    manifest = (tmp_path / "poly.yaml").read_text(encoding="utf-8")
+    assert "id: z-parent" in manifest
+    assert "id: a-child" in manifest
+
+
+def test_nature_prepare_is_side_effect_free_and_blocks_immediate_edits(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["init", "--workspace", str(tmp_path), "--name", "Natures"]) == 0
+    capsys.readouterr()
+    before = (tmp_path / "poly.yaml").read_text(encoding="utf-8")
+
+    assert (
+        main(
+            [
+                "nature",
+                "add",
+                ".",
+                "service/example",
+                "--workspace",
+                str(tmp_path),
+                "--prepare",
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert (tmp_path / "poly.yaml").read_text(encoding="utf-8") == before
+
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "nature",
+                "add",
+                ".",
+                "service/immediate",
+                "--workspace",
+                str(tmp_path),
+            ]
+        )
+    assert "prepared plan is active" in capsys.readouterr().err
+    assert (tmp_path / "poly.yaml").read_text(encoding="utf-8") == before
+
+    assert main(["exec", "--workspace", str(tmp_path), "--format", "json"]) == 0
+    capsys.readouterr()
+    assert "service/example" in (tmp_path / "poly.yaml").read_text(encoding="utf-8")
+
+
+def test_root_bootstrap_prepare_fails_without_cloning(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "target"
+
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "init",
+                "https://example.test/root.git",
+                str(target),
+                "--prepare",
+            ]
+        )
+
+    assert "recursive hydration cannot be frozen" in capsys.readouterr().err
+    assert not target.exists()
+    assert not (tmp_path / ".poly").exists()
+
+
+def test_root_bootstrap_honors_plan_in_containing_workspace(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["init", "--workspace", str(tmp_path), "--name", "Containing"]) == 0
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "add",
+                "module",
+                "reserved",
+                "--path",
+                "nested/target",
+                "--workspace",
+                str(tmp_path),
+                "--prepare",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    target = nested / "target"
+
+    with pytest.raises(SystemExit):
+        main(["init", "https://example.test/root.git", str(target)])
+
+    assert "prepared plan is active" in capsys.readouterr().err
+    assert not target.exists()
+
+
+def test_root_bootstrap_honors_prepared_init_in_ancestor_directory(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert (
+        main(
+            [
+                "init",
+                "--workspace",
+                str(tmp_path),
+                "--name",
+                "Pending",
+                "--prepare",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert not (tmp_path / "poly.yaml").exists()
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    target = nested / "target"
+
+    with pytest.raises(SystemExit):
+        main(["init", "https://example.test/root.git", str(target)])
+
+    assert "prepared plan is active" in capsys.readouterr().err
+    assert not target.exists()
+
+
+def test_root_bootstrap_honors_plan_in_existing_target(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    _workspace(target)
+    assert main(["init", "--workspace", str(target), "--name", "Target"]) == 0
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "add",
+                "module",
+                "reserved",
+                "--path",
+                "reserved",
+                "--workspace",
+                str(target),
+                "--prepare",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    with pytest.raises(SystemExit):
+        main(["init", "https://example.test/root.git", str(target)])
+
+    assert "prepared plan is active" in capsys.readouterr().err
+    assert (target / ".poly" / "state" / "plan.json").is_file()
+
+
 def test_cli_rejects_stale_and_bypassed_prepared_plans(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

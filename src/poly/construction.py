@@ -167,13 +167,16 @@ class ConstructionPlanningProvider:
             spec["source"] = source
         resolution_key = f"poly/source-resolved:{node_id}"
         manifest_key = f"poly/manifest-added:{node_id}"
+        requirements = {Constraint(resolution_key)} if repository else set()
+        if parent not in {node.id for node in request.inventory.nodes}:
+            requirements.add(Constraint(f"poly/manifest-added:{parent}"))
         return ActionSpec(
             f"construct.add:{node_id}",
             self.name,
             "add",
             "poly/construction/add",
             (),
-            requires=(frozenset((Constraint(resolution_key),)) if repository else frozenset()),
+            requires=frozenset(requirements),
             produces=frozenset((Constraint(manifest_key),)),
             claims=frozenset(
                 (

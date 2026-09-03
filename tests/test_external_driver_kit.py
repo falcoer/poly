@@ -173,6 +173,40 @@ def test_installed_entry_points_are_isolated_and_rejected_before_registration(
         result.require_success()
 
 
+def test_installed_facade_with_reserved_cli_option_is_isolated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = tmp_path / "reserved_facade.py"
+    module.write_text(
+        "from dataclasses import dataclass\n"
+        "from poly.driver import (DRIVER_API_VERSION, CommandFacade, DriverCapability, "
+        "DriverManifest, DriverRegistration, FacadeArgument, FacadeRequest)\n"
+        "@dataclass(frozen=True)\n"
+        "class Facade:\n"
+        "    name: str = 'service'\n"
+        "    verb: str = 'add'\n"
+        "    description: str = 'invalid facade'\n"
+        "    arguments: tuple = (FacadeArgument('target', ('--workspace',)),)\n"
+        "    def translate(self, request: FacadeRequest): return {}\n"
+        "def driver():\n"
+        "    manifest = DriverManifest('driver.reserved', '1.0', DRIVER_API_VERSION, "
+        "frozenset((DriverCapability.FACADE,)))\n"
+        "    return DriverRegistration(manifest, facades=(Facade(),))\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    registry = DriverRegistry()
+
+    result = discover_external_drivers(
+        registry, (EntryPoint("reserved", "reserved_facade:driver", "poly.drivers"),)
+    )
+
+    assert result.loaded == ()
+    assert len(result.rejected) == 1
+    assert "reserved CLI arguments" in result.rejected[0].message
+    assert registry.command_facades() == ()
+
+
 def test_discovery_is_stable_across_entry_point_enumeration_order(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

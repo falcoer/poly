@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from poly._version import __version__
-from poly.application import inspect_workspace, prepare_planning
+from poly.application import PlanningSnapshot, inspect_workspace, prepare_planning
 from poly.construction import WORKSPACE_MANIFEST, constructor_driver
 from poly.control_plane import (
     ControllerDescriptor,
@@ -226,21 +226,7 @@ def main(arguments: list[str] | None = None) -> int:
                 _save_plan_if_initialized(workspace, snapshot.plan.id, document)
                 exit_code = 0 if snapshot.plan.status.value in {"executable", "empty"} else 1
             elif getattr(options, "prepare", False):
-                store = StateStore(workspace)
-                previous = None
-                if (store.state_directory / "plan.json").is_file():
-                    try:
-                        previous = store.load_prepared_plan()
-                    except StateError as error:
-                        parser.error(str(error))
-                try:
-                    document = prepare_document(snapshot, command, previous)
-                except PreparedPlanError as error:
-                    parser.error(str(error))
-                store.save_prepared_plan(document)
-                plan_value = document.get("plan")
-                status = plan_value.get("status") if isinstance(plan_value, dict) else "blocked"
-                exit_code = 0 if status in {"executable", "empty"} else 1
+                document, exit_code = _append_prepared_plan(parser, workspace, snapshot, command)
             else:
                 if (workspace / ".poly" / "state" / "plan.json").is_file():
                     parser.error("a prepared plan is active; use 'poly exec' or 'poly plan clean'")
@@ -427,6 +413,11 @@ def _nature_command(
         exit_code = 0 if snapshot.plan.status.value in {"executable", "empty"} else 1
         _write_output(document, options, command, exit_code)
         return exit_code
+    if options.prepare:
+        document, exit_code = _append_prepared_plan(parser, workspace, snapshot, command)
+        _write_output(document, options, command, exit_code)
+        return exit_code
+    _reject_active_prepared_plan(parser, workspace)
     run_directory = workspace / ".poly" / "runs" / snapshot.plan.id
     run_directory.mkdir(parents=True, exist_ok=True)
     streamed = options.format == "text"
@@ -537,6 +528,13 @@ def _bootstrap_root(
         exit_code = 0 if snapshot.plan.status.value == "executable" else 1
         _write_output(planning_document(snapshot), options, command, exit_code)
         return exit_code
+    if options.prepare:
+        parser.error(
+            "root repository bootstrap cannot be prepared because its recursive hydration "
+            "cannot be frozen before the root repository is cloned"
+        )
+    containing_plan = _nearest_prepared_plan_root(target)
+    _reject_active_prepared_plan(parser, containing_plan or _nearest_workspace(target) or parent)
     with tempfile.TemporaryDirectory(prefix="poly-bootstrap-", dir=parent) as run_path:
         result = Executor(_controller_runner(registry, options.controller)).execute(
             snapshot.plan, ExecutionContext(parent, Path(run_path))
@@ -610,6 +608,41 @@ def _save_plan_if_initialized(workspace: Path, plan_id: str, document: ReportDoc
 def _save_run_if_initialized(workspace: Path, run_id: str, document: ReportDocument) -> None:
     if (workspace / WORKSPACE_MANIFEST).is_file():
         StateStore(workspace).save_run(run_id, document)
+
+
+def _append_prepared_plan(
+    parser: argparse.ArgumentParser,
+    workspace: Path,
+    snapshot: PlanningSnapshot,
+    command: str,
+) -> tuple[ReportDocument, int]:
+    store = StateStore(workspace)
+    previous = None
+    if (store.state_directory / "plan.json").is_file():
+        try:
+            previous = store.load_prepared_plan()
+        except StateError as error:
+            parser.error(str(error))
+    try:
+        document = prepare_document(snapshot, command, previous)
+    except PreparedPlanError as error:
+        parser.error(str(error))
+    store.save_prepared_plan(document)
+    plan_value = document.get("plan")
+    status = plan_value.get("status") if isinstance(plan_value, dict) else "blocked"
+    return document, 0 if status in {"executable", "empty"} else 1
+
+
+def _reject_active_prepared_plan(parser: argparse.ArgumentParser, workspace: Path) -> None:
+    if (workspace / ".poly" / "state" / "plan.json").is_file():
+        parser.error("a prepared plan is active; use 'poly exec' or 'poly plan clean'")
+
+
+def _nearest_prepared_plan_root(start: Path) -> Path | None:
+    for candidate in (start, *start.parents):
+        if (candidate / ".poly" / "state" / "plan.json").is_file():
+            return candidate
+    return None
 
 
 def _report_options(parser: argparse.ArgumentParser) -> None:

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from poly.model import ActionClaim, ActionSpec, Plan, PlanStatus
+from poly.model import ActionClaim, ActionSpec, Constraint, Plan, PlanDiagnostic, PlanStatus
 from poly.prepared import (
     PreparedPlanError,
     compose_plans,
@@ -42,6 +42,90 @@ def test_composition_detects_duplicate_actions_and_claims() -> None:
         "action.duplicate-id",
         "claim.conflict",
     }
+
+
+def test_composition_preserves_provider_diagnostics_and_completion_markers() -> None:
+    first = ActionSpec("z-parent", "driver.one", "add", "create", ())
+    second = ActionSpec("a-child", "driver.two", "add", "create", ())
+    rejected = Plan(
+        "one",
+        "add",
+        (),
+        (first,),
+        (),
+        (
+            PlanDiagnostic("action.wrong-verb", "invalid provider action", first.id),
+            PlanDiagnostic("action.unknown-node", "unknown node", first.id),
+            PlanDiagnostic("action.outside-selection", "outside selection", first.id),
+        ),
+        PlanStatus.CONFLICT,
+    )
+
+    composed = compose_plans((rejected, _plan("two", second)))
+
+    assert composed.status is PlanStatus.CONFLICT
+    assert {diagnostic.code for diagnostic in composed.diagnostics} == {
+        "action.outside-selection",
+        "action.unknown-node",
+        "action.wrong-verb",
+    }
+    parent = next(action for action in composed.actions if action.id == first.id)
+    child = next(action for action in composed.actions if action.id == second.id)
+    completion = Constraint(f"poly/prepared-complete:{first.id}")
+    assert completion in parent.produces
+    assert completion not in child.requires
+
+
+def test_composition_orders_overlapping_actions_but_keeps_independent_work_ready() -> None:
+    first = ActionSpec("first", "driver.one", "update", "update", ("shared",))
+    second = ActionSpec("second", "driver.two", "verify", "verify", ("shared",))
+    independent = ActionSpec("independent", "driver.two", "verify", "verify", ("other",))
+
+    composed = compose_plans(
+        (
+            _plan("one", first),
+            Plan("two", "verify", (), (second, independent), (), (), PlanStatus.EXECUTABLE),
+        )
+    )
+
+    actions = {action.id: action for action in composed.actions}
+    completion = Constraint("poly/prepared-complete:first")
+    assert completion in actions["second"].requires
+    assert completion not in actions["independent"].requires
+
+
+def test_composition_recomputes_graph_diagnostics() -> None:
+    required = Constraint("artifact:ready")
+    consumer = ActionSpec(
+        "consumer",
+        "driver.one",
+        "publish",
+        "publish",
+        (),
+        requires=frozenset((required,)),
+    )
+    producer = ActionSpec(
+        "producer",
+        "driver.two",
+        "build",
+        "build",
+        (),
+        produces=frozenset((required,)),
+    )
+    blocked = Plan(
+        "one",
+        "publish",
+        (),
+        (consumer,),
+        (),
+        (PlanDiagnostic("constraint.missing", "missing artifact", consumer.id),),
+        PlanStatus.BLOCKED,
+    )
+
+    composed = compose_plans((_plan("two", producer), blocked))
+
+    assert composed.status is PlanStatus.EXECUTABLE
+    assert composed.diagnostics == ()
 
 
 def test_plan_decoder_rejects_non_plan_documents() -> None:

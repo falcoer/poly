@@ -158,6 +158,29 @@ def test_registry_exposes_dynamic_facades_and_rejects_collisions(tmp_path: Path)
         DriverRegistration(registration.manifest, facades=(facade, facade)).validate()
 
 
+@pytest.mark.parametrize(
+    "argument",
+    (
+        FacadeArgument("workspace", ("workspace",)),
+        FacadeArgument("target", ("--workspace",)),
+        FacadeArgument("prepare", ("--defer",)),
+        FacadeArgument("help", ("--help",)),
+        FacadeArgument("version", ("--release",)),
+    ),
+)
+def test_registration_rejects_facade_arguments_reserved_by_the_cli(
+    argument: FacadeArgument,
+) -> None:
+    facade = ExampleFacade(arguments=(argument,))
+    registration = DriverRegistration(
+        DriverManifest(NAME, "1", "1.1", frozenset((DriverCapability.FACADE,))),
+        facades=(facade,),
+    )
+
+    with pytest.raises(DriverProtocolError, match="reserved CLI arguments"):
+        registration.validate()
+
+
 def test_conformance_testkit_accepts_pure_deterministic_providers(tmp_path: Path) -> None:
     context = InspectionContext(tmp_path)
     assert_inspection_side_effect_free(ExampleInspector(), context)
