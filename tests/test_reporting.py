@@ -133,9 +133,8 @@ def test_interactive_renderer_has_command_statuses_and_distinct_completion(
         exit_code=0,
     )
 
-    assert concise.splitlines()[0] == "─" * 72
-    assert concise.splitlines()[1] == "VERIFYING node ..."
-    assert concise.splitlines()[2].startswith("        PLAN")
+    assert concise.splitlines()[0] == "VERIFYING node ..."
+    assert concise.splitlines()[1].startswith("        PLAN")
     assert "                ✓ OK       verify:node" in concise
     assert concise.splitlines()[-2].startswith("        ✓ SUCCESS  poly verify")
     assert "Schema: poly.report/v1" in verbose
@@ -235,7 +234,7 @@ def test_streaming_renderer_separates_start_events_logs_and_completion(tmp_path:
     )
     completion = render_cli_completion(document, verbosity=1, color=False, exit_code=0)
 
-    assert start.startswith("─" * 72 + "\nVERIFYING node ...\n")
+    assert start.startswith("VERIFYING node ...\n")
     assert "COMMAND  poly verify -v" in start
     assert "PLAN     plan · 1 action(s) · executable" in start
     assert "> RUNNING  verify:node (fixture/verify)" in running

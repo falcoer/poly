@@ -646,6 +646,30 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
   runtime action expansion after the frozen graph is persisted, blueprint
   aggregation, and parallel action execution.
 
+## 0.12.4 — Interactive rendering corrections
+
+- Status: `in-progress`
+- Tag: `roadmap/0.12.4-interactive-rendering-corrections`
+- Depends on: 0.12.3 deferred command preparation implementation.
+- Scope: correct the interactive presentation discovered during large-batch field
+  use without changing command-journal, planning, execution, or structured-report
+  semantics. The scope intentionally remains open for one additional correction
+  currently being prepared.
+- Current acceptance:
+  - command announcements start directly with the user-facing heading in the
+    terminal default foreground color and never have a horizontal separator above;
+  - prepared-command status uses a white vertical gutter, three magenta `PLANNED`
+    lines, and exactly one white horizontal separator below the block;
+  - the global execution progress row uses `IN PROGRESS`, `IN PROGRESS WARN`, or
+    `IN PROGRESS KO` instead of labelling runtime progress as `PLAN`;
+  - redirected text preserves the same layout without ANSI controls, and JSON,
+    YAML, and XML canonical semantics remain unchanged.
+- Checks: focused renderer snapshots with and without color, generic command-start
+  regression, progress-state variants, existing terminal tests, and the complete
+  Windows/Linux quality and acceptance matrix.
+- Excluded for now: semantic changes to prepared plans, execution scheduling, or
+  persistence; final scope freeze until the additional correction is added.
+
 ## 0.13 — Bounded parallel plan execution
 
 - Status: `pending`
