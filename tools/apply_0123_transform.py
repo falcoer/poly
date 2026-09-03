@@ -5,11 +5,11 @@ def replace(path: str, old: str, new: str) -> None:
     target = Path(path)
     text = target.read_text(encoding="utf-8")
     if old not in text:
-        raise SystemExit(f"expected source block not found in {path}: {old[:80]!r}")
+        raise SystemExit(f"expected source block not found in {path}: {old[:120]!r}")
     target.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
-# CLI: preparation must branch before any workspace inspection/planning.
+# CLI: branch into preparation before any inspector or planner is invoked.
 replace(
     "src/poly/cli.py",
     "from poly.prepared import PreparedPlanError, prepare_document, require_current",
@@ -36,8 +36,13 @@ replace(
     "        except ValueError as error:\n"
     "            parser.error(str(error))\n"
     "        document = _append_prepared_command(\n"
-    "            parser, workspace, verb, _selection_values(options.select), not options.select,\n"
-    "            parameters, command\n"
+    "            parser,\n"
+    "            workspace,\n"
+    "            verb,\n"
+    "            _selection_values(options.select),\n"
+    "            not options.select,\n"
+    "            parameters,\n"
+    "            command,\n"
     "        )\n"
     "        _write_output(document, options, command, 0)\n"
     "        return 0\n"
@@ -93,14 +98,18 @@ replace(
     "    except WorkspaceError as error:\n"
     "        parser.error(str(error))",
     "    if options.prepare:\n"
-    "        if not options.values:\n"
-    "            parser.error(\"at least one nature is required\")\n"
     "        parameters = {\n"
     "            \"poly.prepare.nature.values\": \"\\x1f\".join(options.values),\n"
     "            \"poly.prepare.nature.cwd\": str(start),\n"
     "        }\n"
     "        document = _append_prepared_command(\n"
-    "            parser, workspace, f\"nature-{options.nature_command}\", (), False, parameters, command\n"
+    "            parser,\n"
+    "            workspace,\n"
+    "            f\"nature-{options.nature_command}\",\n"
+    "            (),\n"
+    "            False,\n"
+    "            parameters,\n"
+    "            command,\n"
     "        )\n"
     "        _write_output(document, options, command, 0)\n"
     "        return 0\n"
@@ -188,7 +197,12 @@ replace(
     "    return _selection_values(values)\n",
 )
 
-# Deferred resolver: planned journals only; resolved graphs are immutable retries.
+# Deferred resolver: a planned journal is resolved once. A resolved graph is immutable.
+replace(
+    "src/poly/prepared.py",
+    "    JsonValue,\n    Plan,",
+    "    JsonValue,\n    Node,\n    Plan,",
+)
 replace(
     "src/poly/prepared.py",
     "    return isinstance(prepared, dict) and prepared.get(\"journal_version\") == COMMAND_JOURNAL_VERSION",
@@ -197,6 +211,13 @@ replace(
     "        and prepared.get(\"journal_version\") == COMMAND_JOURNAL_VERSION\n"
     "        and prepared.get(\"state\") == \"planned\"\n"
     "    )",
+)
+replace(
+    "src/poly/prepared.py",
+    "        unknown = sorted(set(selected) - available)\n"
+    "        if unknown:\n"
+    "            raise PreparedPlanError(f\"unknown node(s): {', '.join(unknown)}\")\n",
+    "",
 )
 replace(
     "src/poly/prepared.py",
@@ -214,14 +235,16 @@ replace(
     "        ):\n"
     "            raise PreparedPlanError(\"prepared command parameters must contain strings\")\n"
     "        parameters = dict(parameters_value)\n"
-    "        if verb in {\"nature-add\", \"nature-remove\"} and \"poly.prepare.nature.values\" in parameters:\n"
-    "            values = parameters.pop(\"poly.prepare.nature.values\").split(\"\\x1f\")\n"
-    "            current = Path(parameters.pop(\"poly.prepare.nature.cwd\"))\n"
-    "            selected, natures = _resolve_nature_target(values, inspection, current)\n"
-    "            parameters[\"poly.node.natures\"] = \",\".join(natures)\n"
+    "        if verb in {\"nature-add\", \"nature-remove\"}:\n"
+    "            raw_values = parameters.pop(\"poly.prepare.nature.values\", None)\n"
+    "            raw_current = parameters.pop(\"poly.prepare.nature.cwd\", None)\n"
+    "            if raw_values is not None and raw_current is not None:\n"
+    "                selected, natures = _resolve_nature_target(\n"
+    "                    raw_values.split(\"\\x1f\"), inspection, Path(raw_current)\n"
+    "                )\n"
+    "                parameters[\"poly.node.natures\"] = \",\".join(natures)\n"
     "        snapshot = prepare_planning(registry, inspection, verb, selected, parameters)",
 )
-# Insert nature resolver before legacy prepare_document.
 replace(
     "src/poly/prepared.py",
     "\ndef prepare_document(\n",
@@ -245,15 +268,14 @@ replace(
     "    if not normalized:\n"
     "        raise PreparedPlanError(\"at least one nature is required\")\n"
     "    return (node_id,), normalized\n\n\n"
-    "def _current_node(nodes: tuple[object, ...], workspace: Path, current: Path) -> str:\n"
+    "def _current_node(nodes: tuple[Node, ...], workspace: Path, current: Path) -> str:\n"
     "    candidates: list[tuple[int, int, str]] = []\n"
-    "    typed = [node for node in nodes if hasattr(node, \"id\") and hasattr(node, \"path\")]\n"
     "    parents = {\n"
     "        node.id: node.metadata.get(\"poly.parent\")\n"
-    "        for node in typed\n"
+    "        for node in nodes\n"
     "        if isinstance(node.metadata.get(\"poly.parent\"), str)\n"
     "    }\n"
-    "    for node in typed:\n"
+    "    for node in nodes:\n"
     "        path = (workspace / node.path).resolve()\n"
     "        if path != current and path not in current.parents:\n"
     "            continue\n"
@@ -264,18 +286,22 @@ replace(
     "            parent = parents.get(parent)\n"
     "        candidates.append((len(path.parts), depth, node.id))\n"
     "    if not candidates:\n"
-    "        raise PreparedPlanError(f\"current directory does not belong to a declared node: {current}\")\n"
+    "        raise PreparedPlanError(\n"
+    "            f\"current directory does not belong to a declared node: {current}\"\n"
+    "        )\n"
     "    return max(candidates)[2]\n\n\n"
     "def prepare_document(\n",
 )
 
-# Reporting: explicit planned result, no action count/fingerprint/success wording.
+# Reporting: planned work gets a dedicated magenta result, never SUCCESS/action counts.
 replace(
     "src/poly/reporting.py",
-    "    if verbosity < -1:\n        raise ValueError(\"verbosity must be -1 or greater\")",
-    "    if verbosity < -1:\n        raise ValueError(\"verbosity must be -1 or greater\")\n"
+    "    \"\"\"Render a compact interactive view without changing the canonical report.\"\"\"\n\n"
+    "    lines: list[str] = []",
+    "    \"\"\"Render a compact interactive view without changing the canonical report.\"\"\"\n\n"
     "    if _is_planned_command(document):\n"
-    "        return _render_planned_cli(document, command, verbosity, color, width)",
+    "        return _render_planned_cli(document, command, verbosity, color, width)\n\n"
+    "    lines: list[str] = []",
 )
 replace(
     "src/poly/reporting.py",
@@ -294,29 +320,29 @@ replace(
     ") -> str:\n"
     "    prepared = document.get(\"prepared\", {})\n"
     "    request = document.get(\"request\", {})\n"
-    "    count = int(prepared.get(\"command_count\", 0)) if isinstance(prepared, dict) else 0\n"
+    "    count_value = prepared.get(\"command_count\", 0) if isinstance(prepared, dict) else 0\n"
+    "    count = int(count_value) if isinstance(count_value, int | str) else 0\n"
     "    verb = str(request.get(\"verb\", \"command\")) if isinstance(request, dict) else \"command\"\n"
     "    noun = \"command\" if count == 1 else \"commands\"\n"
     "    separator = \"─\" * _usable_width(width)\n"
-    "    lines = [separator, _command_heading(document)]\n"
-    "    if verbosity >= 1:\n"
-    "        lines.append(f\"{_SECTION_INDENT}COMMAND  {command}\")\n"
+    "    lines: list[str] = []\n"
     "    if verbosity >= 0:\n"
-    "        lines.extend([\n"
-    "            f\"{_SECTION_INDENT}○ PLANNED  poly {verb}\",\n"
-    "            f\"{_DETAIL_INDENT}{count} {noun} in current plan\",\n"
-    "            f\"{_DETAIL_INDENT}Run `poly exec` when the plan is ready.\",\n"
-    "        ])\n"
-    "    lines.append(separator)\n"
+    "        lines.extend((separator, _command_heading(document)))\n"
+    "        if verbosity >= 1:\n"
+    "            lines.append(f\"{_SECTION_INDENT}COMMAND  {command}\")\n"
+    "        lines.extend(\n"
+    "            (\n"
+    "                f\"{_SECTION_INDENT}○ PLANNED  poly {verb}\",\n"
+    "                f\"{_DETAIL_INDENT}{count} {noun} in current plan\",\n"
+    "                f\"{_DETAIL_INDENT}Run `poly exec` when the plan is ready.\",\n"
+    "                separator,\n"
+    "            )\n"
+    "        )\n"
+    "    else:\n"
+    "        lines.append(f\"{_SECTION_INDENT}○ PLANNED  poly {verb}\")\n"
     "    return \"\\n\".join(_styled(line, \"magenta\", color) for line in lines) + \"\\n\"\n\n\n"
     "def _command_heading(document: ReportDocument) -> str:\n",
 )
-replace(
-    "src/poly/reporting.py",
-    "    codes = {\"green\": \"32\", \"red\": \"31\", \"yellow\": \"33\", \"cyan\": \"36\", \"muted\": \"90\"}",
-    "    codes = {\"green\": \"32\", \"red\": \"31\", \"yellow\": \"33\", \"cyan\": \"36\", \"magenta\": \"35\", \"muted\": \"90\"}",
-)
-# Poly plan lists normalized commands in authoring order.
 replace(
     "src/poly/reporting.py",
     "    plan = document.get(\"plan\")\n    if isinstance(plan, dict):",
@@ -325,21 +351,34 @@ replace(
     "        commands = prepared.get(\"commands\", [])\n"
     "        if isinstance(commands, list):\n"
     "            noun = \"command\" if len(commands) == 1 else \"commands\"\n"
-    "            lines.append(\n"
-    "                f\"{_SECTION_INDENT}{_styled(f'{len(commands)} {noun} in current plan', 'magenta', color)}\"\n"
-    "            )\n"
+    "            summary = f\"{len(commands)} {noun} in current plan\"\n"
+    "            lines.append(f\"{_SECTION_INDENT}{_styled(summary, 'magenta', color)}\")\n"
     "            for index, item in enumerate(commands, 1):\n"
     "                if isinstance(item, dict):\n"
     "                    authored = item.get(\"command\") or f\"poly {item.get('verb', 'command')}\"\n"
-    "                    lines.append(f\"{_DETAIL_INDENT}{index:>3}. {_safe_visible(str(authored))}\")\n"
+    "                    lines.append(\n"
+    "                        f\"{_DETAIL_INDENT}{index:>3}. {_safe_visible(str(authored))}\"\n"
+    "                    )\n"
     "        resolution = document.get(\"resolution\")\n"
     "        if isinstance(resolution, dict):\n"
-    "            for diagnostic in resolution.get(\"diagnostics\", []):\n"
+    "            diagnostics = resolution.get(\"diagnostics\", [])\n"
+    "            for diagnostic in diagnostics if isinstance(diagnostics, list) else []:\n"
     "                if isinstance(diagnostic, dict):\n"
-    "                    lines.append(\n"
-    "                        f\"{_DETAIL_INDENT}{_styled(f'⚠ WARN     {diagnostic.get(\"message\")}', 'yellow', color)}\"\n"
-    "                    )\n\n"
+    "                    warning = f\"⚠ WARN     {diagnostic.get('message')}\"\n"
+    "                    lines.append(f\"{_DETAIL_INDENT}{_styled(warning, 'yellow', color)}\")\n\n"
     "    plan = document.get(\"plan\")\n    if isinstance(plan, dict):",
+)
+replace(
+    "src/poly/reporting.py",
+    "    codes = {\"green\": \"32\", \"red\": \"31\", \"yellow\": \"33\", \"cyan\": \"36\", \"muted\": \"90\"}",
+    "    codes = {\n"
+    "        \"green\": \"32\",\n"
+    "        \"red\": \"31\",\n"
+    "        \"yellow\": \"33\",\n"
+    "        \"cyan\": \"36\",\n"
+    "        \"magenta\": \"35\",\n"
+    "        \"muted\": \"90\",\n"
+    "    }",
 )
 
 print("0.12.3 transformation applied")
