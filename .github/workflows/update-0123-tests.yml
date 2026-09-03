@@ -1,0 +1,122 @@
+name: Update 0.12.3 acceptance tests
+
+on:
+  push:
+    branches: ["feat/0.12.3-deferred-command-preparation"]
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-tests:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/0.12.3-deferred-command-preparation
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Update 0.12.2 expectations to deferred semantics
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('tests/test_cli.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              '    for node_id in ("api", "web"):\n',
+              '    for index, node_id in enumerate(("api", "web"), 1):\n',
+              1,
+          )
+          text = text.replace(
+              '        assert prepared["kind"] == "prepared-plan"\n\n'
+              '    assert main(["plan", "--workspace", str(tmp_path), "--format", "json"]) == 0\n'
+              '    current = json.loads(capsys.readouterr().out)\n'
+              '    assert current["plan"]["verb"] == "prepared"\n'
+              '    assert len(current["requests"]) == 2\n'
+              '    assert len(current["plan"]["planned_actions"]) == 2\n'
+              '    prepared_id = current["plan"]["id"]\n\n'
+              '    assert main(["exec", "--workspace", str(tmp_path), "--format", "json"]) == 0\n'
+              '    executed = json.loads(capsys.readouterr().out)\n'
+              '    assert executed["run"]["plan_id"] == prepared_id\n',
+              '        assert prepared["kind"] == "prepared-commands"\n'
+              '        assert prepared["prepared"]["state"] == "planned"\n'
+              '        assert prepared["prepared"]["command_count"] == index\n'
+              '        assert "plan" not in prepared\n'
+              '        assert "workspace_fingerprint" not in prepared["prepared"]\n\n'
+              '    assert main(["plan", "--workspace", str(tmp_path), "--format", "json"]) == 0\n'
+              '    current = json.loads(capsys.readouterr().out)\n'
+              '    assert current["kind"] == "prepared-commands"\n'
+              '    assert current["prepared"]["command_count"] == 2\n'
+              '    assert [item["verb"] for item in current["prepared"]["commands"]] == ["add", "add"]\n'
+              '    assert "plan" not in current\n\n'
+              '    assert main(["exec", "--workspace", str(tmp_path), "--format", "json"]) == 0\n'
+              '    executed = json.loads(capsys.readouterr().out)\n'
+              '    assert isinstance(executed["run"]["plan_id"], str)\n',
+              1,
+          )
+          text = text.replace(
+              '    prepared = json.loads(capsys.readouterr().out)\n'
+              '    actions = {action["id"]: action for action in prepared["plan"]["planned_actions"]}\n'
+              '    assert "poly/manifest-added:z-parent" in actions["construct.add:a-child"]["requires"]\n\n'
+              '    assert main(["exec", "--workspace", str(tmp_path), "--format", "json"]) == 0\n',
+              '    prepared = json.loads(capsys.readouterr().out)\n'
+              '    assert prepared["prepared"]["command_count"] == 2\n'
+              '    assert "plan" not in prepared\n\n'
+              '    assert main(["exec", "--workspace", str(tmp_path), "--format", "json"]) == 0\n',
+              1,
+          )
+          text = text.replace(
+              'def test_cli_rejects_stale_and_bypassed_prepared_plans(\n',
+              'def test_cli_resolves_prepared_commands_against_exec_snapshot(\n',
+              1,
+          )
+          text = text.replace(
+              '    with pytest.raises(SystemExit):\n'
+              '        main(["exec", "--workspace", str(tmp_path)])\n'
+              '    assert "prepared plan is stale" in capsys.readouterr().err\n\n'
+              '    assert main(["plan", "clean", "--workspace", str(tmp_path)]) == 0\n'
+              '    assert "NONE" in capsys.readouterr().out\n',
+              '    assert main(["exec", "--workspace", str(tmp_path), "--format", "json"]) == 0\n'
+              '    executed = json.loads(capsys.readouterr().out)\n'
+              '    assert executed["run"]["status"] == "succeeded"\n'
+              '    assert "id: api" in manifest.read_text(encoding="utf-8")\n'
+              '    assert not (tmp_path / ".poly" / "state" / "plan.json").exists()\n',
+              1,
+          )
+          path.write_text(text, encoding='utf-8')
+
+          path = Path('tests/test_git_materialization.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              '    assert len(prepared["requests"]) == 3\n'
+              '    assert len(prepared["plan"]["planned_actions"]) == 6\n\n'
+              '    assert main(["exec", "--workspace", str(workspace), "--format", "json"]) == 0\n'
+              '    executed = json.loads(capsys.readouterr().out)\n'
+              '    assert executed["run"]["plan_id"] == prepared["plan"]["id"]\n',
+              '    assert prepared["kind"] == "prepared-commands"\n'
+              '    assert prepared["prepared"]["command_count"] == 3\n'
+              '    assert len(prepared["prepared"]["commands"]) == 3\n'
+              '    assert "plan" not in prepared\n\n'
+              '    assert main(["exec", "--workspace", str(workspace), "--format", "json"]) == 0\n'
+              '    executed = json.loads(capsys.readouterr().out)\n'
+              '    assert isinstance(executed["run"]["plan_id"], str)\n',
+              1,
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
+      - uses: astral-sh/setup-uv@v9.0.0
+      - run: uv sync --locked --all-groups
+      - run: uv run ruff format tests/test_cli.py tests/test_git_materialization.py
+      - run: uv run ruff check tests/test_cli.py tests/test_git_materialization.py
+      - run: uv run mypy tests/test_cli.py tests/test_git_materialization.py
+      - run: uv run pytest tests/test_cli.py tests/test_git_materialization.py --no-cov
+      - name: Commit migrated tests
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add tests/test_cli.py tests/test_git_materialization.py
+          git commit -m "test: align prepared-plan regressions with 0.12.3"
+          git push origin HEAD:feat/0.12.3-deferred-command-preparation
