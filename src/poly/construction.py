@@ -52,6 +52,16 @@ class ConstructionError(ValueError):
     pass
 
 
+def _positive_depth(value: str) -> int:
+    try:
+        depth = int(value)
+    except ValueError as error:
+        raise ConstructionError("Git clone depth must be a positive integer") from error
+    if depth < 1:
+        raise ConstructionError("Git clone depth must be a positive integer")
+    return depth
+
+
 @dataclass(frozen=True, slots=True)
 class ModuleAddFacade:
     """User-facing syntax for declaring a filesystem module."""
@@ -164,6 +174,9 @@ class ConstructionPlanningProvider:
             requested_ref = request.parameters.get("poly.source.ref")
             if requested_ref:
                 source["ref"] = requested_ref
+            depth = request.parameters.get("poly.source.depth")
+            if depth:
+                source["depth"] = _positive_depth(depth)
             spec["source"] = source
         resolution_key = f"poly/source-resolved:{node_id}"
         manifest_key = f"poly/manifest-added:{node_id}"
@@ -402,6 +415,7 @@ class ConstructionActionHandler:
                 str(source_value["driver"]),
                 str(source_value["url"]),
                 str(source_value["ref"]) if "ref" in source_value else None,
+                int(source_value["depth"]) if "depth" in source_value else None,
             )
             resolution_path = context.run_directory / "resolutions" / f"{node_id}.json"
             resolution = json.loads(resolution_path.read_text(encoding="utf-8"))
@@ -414,6 +428,7 @@ class ConstructionActionHandler:
                 source.ref,
                 str(resolution["commit"]),
                 str(resolution["ref-kind"]),
+                source.depth,
             )
         compiled = add_manifest_node(
             context.workspace,

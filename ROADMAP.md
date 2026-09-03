@@ -658,12 +658,17 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
 - Current acceptance:
   - command announcements start directly with the user-facing heading in the
     terminal default foreground color and never have a horizontal separator above;
-  - prepared-command status uses a white vertical gutter, three magenta `PLANNED`
-    lines, and exactly one white horizontal separator below the block;
+  - prepared-command status uses a muted-grey frame (`┌`, `├`, `│`, `└`), three
+    magenta `PLANNED` lines, and no separator outside the block;
   - the global execution progress row uses `IN PROGRESS`, `IN PROGRESS WARN`, or
     `IN PROGRESS KO` instead of labelling runtime progress as `PLAN`;
   - redirected text preserves the same layout without ANSI controls, and JSON,
     YAML, and XML canonical semantics remain unchanged.
+  - fresh Git materialization gives clone operations a dedicated 600-second
+    default timeout while retaining the 60-second timeout for ordinary Git
+    commands;
+  - repository nodes use a complete Git clone by default and accept an
+    optional positive `depth` setting through `poly add repository --depth`;
 - Checks: focused renderer snapshots with and without color, generic command-start
   regression, progress-state variants, existing terminal tests, and the complete
   Windows/Linux quality and acceptance matrix.

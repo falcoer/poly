@@ -10,6 +10,7 @@ from poly.construction import (
     ConstructionError,
     ConstructionPlanner,
     ConstructionPlanningProvider,
+    _positive_depth,
     constructor_driver,
     read_workspace_definition,
 )
@@ -20,7 +21,7 @@ from poly.control_plane import (
     LocalController,
 )
 from poly.driver import DriverRegistry, ExecutionContext
-from poly.model import Inventory, Plan, PlanningRequest
+from poly.model import ActionSpec, Inventory, Node, Plan, PlanningRequest
 from poly.runtime import Executor, LocalActionRunner, RunResult, RunStatus
 from poly.workspace import validate_manifest_value
 
@@ -131,6 +132,60 @@ def test_constructor_driver_uses_public_execution_contract() -> None:
     registration.validate()
     assert registration.planners[0].name == registration.manifest.name
     assert registration.handlers[0].name == registration.manifest.name
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "many"])
+def test_positive_depth_rejects_invalid_values(value: str) -> None:
+    with pytest.raises(ConstructionError, match="positive integer"):
+        _positive_depth(value)
+
+
+def test_positive_depth_accepts_positive_integer() -> None:
+    assert _positive_depth("3") == 3
+
+
+def test_constructor_add_carries_repository_depth() -> None:
+    proposal = ConstructionPlanningProvider().propose(
+        PlanningRequest(
+            "add",
+            Inventory((Node("root", ".", ("poly/workspace",)),)),
+            (),
+            {
+                "poly.node.id": "service",
+                "poly.node.path": "services/service",
+                "poly.node.kind": "repository",
+                "poly.source.url": "https://example.invalid/repo.git",
+                "poly.source.depth": "3",
+            },
+        )
+    )
+    assert proposal.actions[0].environment["poly.node.spec"] == (
+        '{"id": "service", "kind": "repository", "parent": "root", '
+        '"path": "services/service", "source": {"depth": 3, '
+        '"driver": "git", "url": "https://example.invalid/repo.git"}}'
+    )
+
+
+def test_constructor_rejects_git_source_on_module() -> None:
+    proposal = ConstructionPlanningProvider().propose(
+        PlanningRequest(
+            "add",
+            Inventory((Node("root", ".", ("poly/workspace",)),)),
+            (),
+            {
+                "poly.node.id": "service",
+                "poly.node.path": "services/service",
+                "poly.node.kind": "module",
+                "poly.source.url": "https://example.invalid/repo.git",
+            },
+        )
+    )
+    assert proposal.rejected
+
+
+def test_action_spec_rejects_empty_command() -> None:
+    with pytest.raises(ValueError, match="executable"):
+        ActionSpec("bad", "driver", "run", "operation", (), command=())
 
 
 def test_constructor_plans_initialization_from_an_empty_context_without_side_effects(

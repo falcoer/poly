@@ -208,6 +208,7 @@ class RepositoryAddFacade:
         FacadeArgument("nature", ("--nature",), repeatable=True, help="declared nature"),
         FacadeArgument("repo", ("--repo",), help="Git repository URL"),
         FacadeArgument("ref", ("--ref",), help="branch, tag, or commit"),
+        FacadeArgument("depth", ("--depth",), help="shallow clone depth (default: complete)"),
     )
 
     def translate(self, request: FacadeRequest) -> dict[str, str]:
@@ -236,6 +237,9 @@ class RepositoryAddFacade:
             parameters["poly.source.url"] = _repository_url(repository)
         if isinstance(requested_ref, str) and requested_ref:
             parameters["poly.source.ref"] = requested_ref
+        depth = request.values.get("depth")
+        if isinstance(depth, str) and depth:
+            parameters["poly.source.depth"] = _positive_depth(depth)
         return parameters
 
 
@@ -367,6 +371,7 @@ class GitPlanningProvider:
             "poly.node.path": path,
             "poly.source.url": url,
             "poly.source.ref": ref,
+            "poly.source.depth": request.parameters.get("poly.source.depth", ""),
             "poly.workspace.path": str(request.workspace or ""),
         }
         actions = (
@@ -402,6 +407,7 @@ class GitPlanningProvider:
                 "poly.node.path": node.path,
                 "poly.source.url": url,
                 "poly.source.ref": str(node.metadata.get("poly.source.ref") or ""),
+                "poly.source.depth": str(node.metadata.get("poly.source.depth") or ""),
                 "poly.lock.commit": commit,
                 "poly.lock.ref-kind": str(node.metadata.get("poly.lock.ref-kind") or "commit"),
                 "poly.workspace.path": str(request.workspace or ""),
@@ -563,6 +569,7 @@ class GitPlanningProvider:
 class GitActionHandler:
     name: str = GIT_DRIVER_NAME
     command_timeout_seconds: float = 60.0
+    clone_timeout_seconds: float = 600.0
 
     def execute(self, action: ActionSpec, context: ExecutionContext) -> DriverExecutionResult:
         try:
@@ -662,6 +669,11 @@ class GitActionHandler:
             context.workspace,
             "clone",
             "--no-checkout",
+            *(
+                ("--depth", action.environment["poly.source.depth"])
+                if action.environment.get("poly.source.depth")
+                else ()
+            ),
             action.environment["poly.source.url"],
             str(target),
         )
@@ -736,7 +748,8 @@ class GitActionHandler:
                 exists = self._git(target, "show-ref", "--verify", f"refs/heads/{requested}")
                 if exists.returncode == 0:
                     self._ensure_success(
-                        self._git(target, "checkout", requested), f"cannot checkout branch {requested}"
+                        self._git(target, "checkout", requested),
+                        f"cannot checkout branch {requested}",
                     )
                     self._ensure_success(
                         self._git(target, "merge", "--ff-only", commit),
@@ -825,9 +838,14 @@ class GitActionHandler:
         return self._run_process(("git", "-C", str(directory), *arguments))
 
     def _git_process(self, directory: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
-        return self._run_process(("git", "-C", str(directory), *arguments))
+        return self._run_process(
+            ("git", "-C", str(directory), *arguments),
+            timeout_seconds=self.clone_timeout_seconds,
+        )
 
-    def _run_process(self, command: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
+    def _run_process(
+        self, command: tuple[str, ...], *, timeout_seconds: float | None = None
+    ) -> subprocess.CompletedProcess[str]:
         try:
             return subprocess.run(
                 command,
@@ -836,7 +854,9 @@ class GitActionHandler:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=self.command_timeout_seconds,
+                timeout=(
+                    self.command_timeout_seconds if timeout_seconds is None else timeout_seconds
+                ),
             )
         except (OSError, subprocess.TimeoutExpired) as error:
             raise GitInspectionError(f"cannot execute {' '.join(command)}: {error}") from error
@@ -921,6 +941,16 @@ def _repository_url(value: str) -> str:
     if candidate.is_absolute() or candidate.exists():
         return candidate.resolve().as_uri()
     return value
+
+
+def _positive_depth(value: str) -> str:
+    try:
+        depth = int(value)
+    except ValueError as error:
+        raise ValueError("Git clone depth must be a positive integer") from error
+    if depth < 1:
+        raise ValueError("Git clone depth must be a positive integer")
+    return str(depth)
 
 
 def _discover_repository_roots(workspace: Path) -> tuple[Path, ...]:

@@ -39,7 +39,7 @@ def _executable_plan_document() -> dict[str, object]:
     }
 
 
-def test_planned_block_uses_default_heading_white_gutter_magenta_body_and_bottom_rule() -> None:
+def test_planned_block_uses_grey_frame_and_magenta_body() -> None:
     output = render_cli(
         _planned_add_document(),  # type: ignore[arg-type]
         "poly add repository 361-admin-check-src --prepare",
@@ -52,14 +52,15 @@ def test_planned_block_uses_default_heading_white_gutter_magenta_body_and_bottom
     assert "\x1b[" not in lines[0]
     assert not lines[0].startswith("─")
 
-    assert lines[1].startswith("\x1b[37m│\x1b[0m  \x1b[35m○ PLANNED  poly add\x1b[0m")
-    assert lines[2].startswith("\x1b[37m│\x1b[0m    \x1b[35m75 commands in current plan\x1b[0m")
-    assert lines[3].startswith(
-        "\x1b[37m│\x1b[0m    \x1b[35mRun `poly exec` when the plan is ready.\x1b[0m"
+    assert lines[1].startswith("\x1b[90m┌")
+    assert lines[2].startswith("\x1b[90m├\x1b[0m  \x1b[35m○ PLANNED  poly add\x1b[0m")
+    assert lines[3].startswith("\x1b[90m│\x1b[0m    \x1b[35m75 commands in current plan\x1b[0m")
+    assert lines[4].startswith(
+        "\x1b[90m│\x1b[0m    \x1b[35mRun `poly exec` when the plan is ready.\x1b[0m"
     )
-    assert lines[4].startswith("\x1b[37m")
-    assert "─" in lines[4]
-    assert len(lines) == 5
+    assert lines[5].startswith("\x1b[90m└")
+    assert "─" in lines[5]
+    assert len(lines) == 6
 
 
 def test_command_start_has_no_horizontal_rule_before_heading() -> None:

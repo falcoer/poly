@@ -325,6 +325,48 @@ def test_lock_rejects_stale_missing_inconsistent_and_nonimmutable_entries(tmp_pa
         validate_workspace(tmp_path)
 
 
+def test_source_depth_is_persisted_and_must_match_lock(tmp_path: Path) -> None:
+    manifest = _manifest(
+        {
+            "id": "repo",
+            "parent": "root",
+            "kind": "repository",
+            "path": "repo",
+            "source": {"driver": "git", "url": "https://example.invalid/repo.git", "depth": 3},
+        }
+    )
+    _write_workspace(tmp_path, manifest)
+    lock_path = tmp_path / WORKSPACE_LOCK
+    lock = YAML().load(lock_path.read_text())
+    lock["sources"]["repo"]["depth"] = 3
+    _yaml_write(lock_path, lock)
+    compiled = validate_workspace(tmp_path)
+    assert compiled.manifest.nodes[1].source is not None
+    assert compiled.manifest.nodes[1].source.depth == 3
+    assert compiled.lock.sources[0].semantic()["depth"] == 3
+
+    lock = YAML().load(lock_path.read_text())
+    lock["sources"]["repo"]["depth"] = 2
+    _yaml_write(lock_path, lock)
+    with pytest.raises(WorkspaceError, match="inconsistent"):
+        validate_workspace(tmp_path)
+
+
+@pytest.mark.parametrize("depth", [True, 0, -1, "3"])
+def test_manifest_rejects_invalid_source_depth(tmp_path: Path, depth: object) -> None:
+    value = _manifest(
+        {
+            "id": "repo",
+            "parent": "root",
+            "kind": "repository",
+            "path": "repo",
+            "source": {"driver": "git", "url": "https://example.invalid/repo.git", "depth": depth},
+        }
+    )
+    with pytest.raises(WorkspaceError, match="positive integer"):
+        validate_manifest_value(tmp_path, value)
+
+
 def test_gitignore_rejects_malformed_markers_before_changes(tmp_path: Path) -> None:
     (tmp_path / ".gitignore").write_text(f"{MANAGED_IGNORE_BEGIN}\n/.poly/\n")
     before = (tmp_path / ".gitignore").read_bytes()
