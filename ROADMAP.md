@@ -433,7 +433,7 @@ Cross-milestone invariants:
 
 ## 0.12.1 — Stable interactive CLI presentation
 
-- Status: `implemented-awaiting-ci`
+- Status: `validated`
 - Tag: `roadmap/0.12.1-interactive-cli`
 - Depends on: validated 0.12 functional baseline.
 - Scope: consolidate the interactive command block, replace transient action
@@ -509,11 +509,20 @@ Cross-milestone invariants:
 - Excluded: execution parallelism itself, terminal dashboards, progress
   percentages, spinners, and historical report animation.
 
+Validation evidence:
+
+- GitHub Actions run `33722969218` passed quality, external-driver clean-room,
+  Ubuntu/Windows workspace contracts, fixture construction, and POSIX/Windows
+  clean-workstation acceptance on merge commit `3af030cb90c74318093f271df03a37fc2f80a0c5`;
+- annotated tag `roadmap/0.12.1-interactive-cli` (tag object
+  `a1335a77990abb0203f43d422b23e61f7dfc2b98`) targets that exact validated
+  commit.
+
 ## 0.12.2 — Prepared plans and driver-contributed add façades
 
-- Status: `implemented-awaiting-ci`
+- Status: `validated`
 - Tag: `roadmap/0.12.2-prepared-plans-v2`
-- Depends on: implemented 0.12.1 interactive CLI contract.
+- Depends on: validated 0.12.1 interactive CLI contract.
 - Scope: let users compose several ordinary Poly commands into one frozen,
   persistent plan before execution, and make the specialized vocabulary of
   `poly add` an explicitly registered driver contribution rather than a closed
