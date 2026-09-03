@@ -522,6 +522,10 @@ Validation evidence:
 
 - Status: `validated`
 - Tag: `roadmap/0.12.2-prepared-plans-v2`
+- Field acceptance: completed 2026-09-03 on the `qc2-p17-poly` workspace;
+  cumulative repository preparation and execution, add/remove behavior, boundary
+  conditions, and driver discovery were accepted with 3 loaded drivers and
+  0 rejected drivers.
 - Depends on: validated 0.12.1 interactive CLI contract.
 - Scope: let users compose several ordinary Poly commands into one frozen,
   persistent plan before execution, and make the specialized vocabulary of
@@ -585,9 +589,62 @@ Validation evidence:
 
 The annotated tag `roadmap/0.12.2-prepared-plans` was created prematurely on
 `630d349` before the asynchronous review completed. It is retained as immutable
-historical evidence but is not authoritative for this milestone. Validation
-must use the corrected `roadmap/0.12.2-prepared-plans-v2` tag after the review
-findings and regression tests are integrated.
+historical evidence but is not authoritative for this milestone. The corrected
+annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
+
+## 0.12.3 — Deferred command preparation and planned UX
+
+- Status: `pending`
+- Tag: `roadmap/0.12.3-deferred-command-preparation`
+- Depends on: validated and field-accepted 0.12.2 prepared-plan composition.
+- Scope: make preparation an immediate recording of normalized command intent,
+  present that state unambiguously as planned rather than successful, and defer
+  workspace inspection and whole-graph action resolution to one `poly exec`
+  phase.
+- Acceptance:
+  - `poly <verb> ... --prepare` validates CLI and façade arguments, then
+    atomically appends one normalized command to the single current command
+    journal without invoking inspectors, planners, handlers, or external
+    systems;
+  - preparation does not construct, persist, count, or render executable actions
+    and its cost is independent of the number of actions that earlier commands
+    would eventually produce;
+  - the interactive result uses a magenta `○ PLANNED` status for the complete
+    result block, names the command, reports singular/plural command count in the
+    current plan, and reminds the user to run `poly exec`;
+  - preparation never emits `SUCCESS`, `OK`, `executable`, or a changing
+    plan fingerprint that could suggest creation of multiple user-selectable
+    plans;
+  - `poly plan` lists the normalized commands in authoring order and
+    `poly plan clean` retains its idempotent disposable-state semantics;
+  - `poly exec` snapshots and inspects the authored workspace once, resolves
+    every recorded command into one globally validated action graph, persists
+    that frozen graph before the first side effect, then executes exactly that
+    graph;
+  - overlapping structural changes preserve command order, dependencies created
+    within the batch are resolvable, and independent actions remain eligible for
+    the later bounded-parallel executor;
+  - a resolution failure performs no authored or external mutation and retains
+    the command journal plus diagnostics; successful execution consumes the
+    journal and retains the historical frozen plan and run report;
+  - structured JSON, YAML, and XML expose a canonical planned-command state
+    equivalent to the interactive rendering;
+  - a persisted 0.12.2 frozen prepared plan remains executable or cleanable after
+    upgrade; appending a new command to that legacy plan is rejected with an
+    actionable instruction rather than silently changing its semantics.
+- Checks: provider call-count proof that preparation does not inspect or plan;
+  cumulative command-journal persistence and round-trip; singular/plural and
+  color-aware golden output; structured-renderer parity; one-shot global
+  resolution; dependency and collision validation; failure atomicity; legacy
+  0.12.2 plan compatibility; Windows/Linux paths; and a declared performance
+  regression budget for large command batches.
+- Demonstration: prepare a large repository batch while showing immediate
+  `PLANNED` results and increasing command counts, inspect the command list,
+  execute once, and prove that inspection and action-graph construction occur
+  only during `poly exec`.
+- Excluded: multiple named plans, concurrent preparation, automatic execution,
+  runtime action expansion after the frozen graph is persisted, blueprint
+  aggregation, and parallel action execution.
 
 ## 0.13 — Bounded parallel plan execution
 
