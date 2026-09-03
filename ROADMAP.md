@@ -512,20 +512,23 @@ Cross-milestone invariants:
 ## 0.12.2 — Prepared plans and driver-contributed add façades
 
 - Status: `implemented-awaiting-ci`
-- Tag: `roadmap/0.12.2-prepared-plans`
+- Tag: `roadmap/0.12.2-prepared-plans-v2`
 - Depends on: implemented 0.12.1 interactive CLI contract.
 - Scope: let users compose several ordinary Poly commands into one frozen,
   persistent plan before execution, and make the specialized vocabulary of
   `poly add` an explicitly registered driver contribution rather than a closed
   engine-owned inventory.
 - Acceptance:
-  - every direct plannable command accepts `--prepare` in addition to the
-    existing isolated `--plan` preview;
+  - every single-phase direct plannable command accepts `--prepare` in addition
+    to the existing isolated `--plan` preview;
   - `--prepare` appends the normalized request and its frozen actions to the one
     current prepared plan without executing an action or modifying authored
     workspace files;
   - repeated preparation validates the complete action graph, including
-    duplicate action identifiers, claims, missing constraints, and cycles;
+    preserved provider diagnostics, duplicate action identifiers, claims,
+    missing constraints, and cycles;
+  - prepared commands execute in authoring order through canonical constraints,
+    while actions within one command retain their negotiated dependency graph;
   - `poly plan` renders the current prepared plan and `poly plan clean`
     idempotently removes only its disposable `.poly/` state;
   - the former expert syntax `poly plan <verb>` is removed, while
@@ -551,7 +554,9 @@ Cross-milestone invariants:
   - duplicate façade identities are rejected deterministically and façade
     inventory is visible through canonical driver reports;
   - built-in `module` and Git `repository` façades cover local modules, remote
-    repositories, and safe adoption of existing Git worktrees.
+    repositories, and safe adoption of existing Git worktrees;
+  - the two-phase root-repository bootstrap rejects `--prepare` without side
+    effects because its recursive hydration cannot be frozen before cloning;
 - Checks: single and cumulative preparation; exact frozen-plan execution;
   current-plan display/clean/consumption; empty and stale states; blocked and
   failed plans; command/action collision and graph validation; no authored-file
@@ -567,6 +572,12 @@ Cross-milestone invariants:
 - Excluded: concurrent action execution, multiple named prepared plans,
   runtime plan expansion, automatic stale-plan replanning, blueprint/template
   aggregation, pathless logical service nodes, and distributed execution.
+
+The annotated tag `roadmap/0.12.2-prepared-plans` was created prematurely on
+`630d349` before the asynchronous review completed. It is retained as immutable
+historical evidence but is not authoritative for this milestone. Validation
+must use the corrected `roadmap/0.12.2-prepared-plans-v2` tag after the review
+findings and regression tests are integrated.
 
 ## 0.13 — Bounded parallel plan execution
 

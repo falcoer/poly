@@ -8,6 +8,40 @@ from enum import StrEnum
 from poly.driver.api import ActionHandler, CommandFacade, InspectionProvider, PlanningProvider
 from poly.driver.manifest import DriverCapability, DriverManifest, DriverProtocolError
 
+_RESERVED_FACADE_ARGUMENT_NAMES = frozenset(
+    {
+        "color",
+        "command",
+        "controller",
+        "facade",
+        "format",
+        "help",
+        "parameter",
+        "plan_only",
+        "prepare",
+        "select",
+        "verbosity",
+        "version",
+        "workspace",
+    }
+)
+_RESERVED_FACADE_FLAGS = frozenset(
+    {
+        "--color",
+        "--controller",
+        "--format",
+        "--help",
+        "--parameter",
+        "--plan",
+        "--prepare",
+        "--quiet",
+        "--select",
+        "--verbose",
+        "--version",
+        "--workspace",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class DriverRegistration:
@@ -47,6 +81,25 @@ class DriverRegistration:
         facade_keys = [(facade.verb, facade.name) for facade in self.facades]
         if len(facade_keys) != len(set(facade_keys)):
             raise DriverProtocolError("driver registers duplicate facade identities")
+        for facade in self.facades:
+            names = [argument.name for argument in facade.arguments]
+            flags = [flag for argument in facade.arguments for flag in argument.flags]
+            if len(names) != len(set(names)):
+                raise DriverProtocolError(
+                    f"facade {facade.verb}:{facade.name} registers duplicate argument names"
+                )
+            if len(flags) != len(set(flags)):
+                raise DriverProtocolError(
+                    f"facade {facade.verb}:{facade.name} registers duplicate argument flags"
+                )
+            reserved_names = sorted(set(names) & _RESERVED_FACADE_ARGUMENT_NAMES)
+            reserved_flags = sorted(set(flags) & _RESERVED_FACADE_FLAGS)
+            if reserved_names or reserved_flags:
+                collisions = sorted({*reserved_names, *reserved_flags})
+                raise DriverProtocolError(
+                    f"facade {facade.verb}:{facade.name} collides with reserved CLI arguments: "
+                    f"{collisions!r}"
+                )
 
 
 class DriverOrigin(StrEnum):

@@ -6,6 +6,7 @@ import hashlib
 import json
 from collections import defaultdict
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -22,6 +23,9 @@ from poly.model import (
 from poly.reporting import ReportDocument, inspection_document, plan_document
 
 AUTHORED_FILES = ("poly.yaml", "poly.lock.yaml", ".gitignore")
+_RECOMPUTED_DIAGNOSTICS = frozenset(
+    {"action.duplicate-id", "claim.conflict", "constraint.cycle", "constraint.missing"}
+)
 
 
 class PreparedPlanError(ValueError):
@@ -105,12 +109,22 @@ def require_current(document: ReportDocument, workspace: Path) -> Plan:
 
 
 def compose_plans(plans: tuple[Plan, ...]) -> Plan:
-    actions = tuple(
-        sorted((action for plan in plans for action in plan.actions), key=lambda a: a.id)
-    )
+    actions = _sequenced_actions(plans)
     rejected = tuple(sorted(candidate for plan in plans for candidate in plan.rejected))
     initial = frozenset(constraint for plan in plans for constraint in plan.initial_constraints)
-    diagnostics = _diagnostics(actions, initial)
+    diagnostics = tuple(
+        sorted(
+            {
+                *(
+                    diagnostic
+                    for plan in plans
+                    for diagnostic in plan.diagnostics
+                    if diagnostic.code not in _RECOMPUTED_DIAGNOSTICS
+                ),
+                *_diagnostics(actions, initial),
+            }
+        )
+    )
     status = _status(actions, diagnostics)
     payload = {
         "actions": [action_document(action) for action in actions],
@@ -125,6 +139,29 @@ def compose_plans(plans: tuple[Plan, ...]) -> Plan:
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()[:20]
     return Plan(identifier, "prepared", (), actions, rejected, diagnostics, status, initial)
+
+
+def _sequenced_actions(plans: tuple[Plan, ...]) -> tuple[ActionSpec, ...]:
+    """Preserve command order while retaining each command's internal action graph."""
+
+    actions: list[ActionSpec] = []
+    previous_completions: frozenset[Constraint] = frozenset()
+    for plan in plans:
+        current: list[ActionSpec] = []
+        for action in plan.actions:
+            completion = Constraint(f"poly/prepared-complete:{action.id}")
+            current.append(
+                replace(
+                    action,
+                    requires=action.requires | (previous_completions - {completion}),
+                    produces=action.produces | {completion},
+                )
+            )
+        actions.extend(current)
+        previous_completions |= frozenset(
+            Constraint(f"poly/prepared-complete:{action.id}") for action in current
+        )
+    return tuple(sorted(actions, key=lambda action: action.id))
 
 
 def plan_from_document(document: ReportDocument) -> Plan:
@@ -318,7 +355,10 @@ def _contains_cycle(graph: dict[str, set[str]]) -> bool:
 
 
 def _status(actions: tuple[ActionSpec, ...], diagnostics: tuple[PlanDiagnostic, ...]) -> PlanStatus:
-    if any(item.code in {"action.duplicate-id", "claim.conflict"} for item in diagnostics):
+    if any(
+        item.code in {"action.duplicate-id", "action.wrong-verb", "claim.conflict"}
+        for item in diagnostics
+    ):
         return PlanStatus.CONFLICT
     if diagnostics:
         return PlanStatus.BLOCKED
