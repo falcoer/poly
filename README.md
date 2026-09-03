@@ -30,12 +30,12 @@ Poly-managed root `.gitignore` block.
 
 For a command-oriented tour, see the [Poly cookbook](docs/cookbook/README.md).
 
-The current milestone is
-[0.12.2 — Prepared plans and driver-contributed add façades](docs/releases/0.12.2.md).
-It adds one disposable current plan (`--prepare`, `poly plan`, `poly exec`) and
-makes specialized `poly add` syntax a dynamic public driver contribution.
-Until the post-merge tag gate succeeds, the milestone remains
-`implemented-awaiting-ci`, not `validated`.
+Milestone
+[0.12.2 — Prepared plans and driver-contributed add façades](docs/releases/0.12.2.md)
+is validated and field-accepted. The current development target is
+[0.12.3 — Deferred command preparation and planned UX](docs/releases/0.12.3.md),
+which makes `--prepare` immediate, introduces the magenta `PLANNED` result,
+and defers the single global workspace resolution to `poly exec`.
 
 The version 1 contract is implemented: manifests and locks are validated and
 compiled into rebuildable state, declared identities are enriched by Git and
