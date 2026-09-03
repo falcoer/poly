@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from poly._version import __version__
-from poly.application import PlanningSnapshot, inspect_workspace, prepare_planning
+from poly.application import inspect_workspace, prepare_planning
 from poly.construction import WORKSPACE_MANIFEST, constructor_driver
 from poly.control_plane import (
     ControllerDescriptor,
@@ -31,7 +31,13 @@ from poly.driver.scaffold import DriverScaffoldError, scaffold_driver
 from poly.drivers import git_driver, maven_driver
 from poly.model import Node
 from poly.persistence import StateError, StateStore
-from poly.prepared import PreparedPlanError, prepare_document, require_current
+from poly.prepared import (
+    PreparedPlanError,
+    deferred_document,
+    is_deferred_document,
+    require_current,
+    resolve_deferred_document,
+)
 from poly.reporting import (
     ReportDocument,
     action_catalog_document,
@@ -101,6 +107,24 @@ def main(arguments: list[str] | None = None) -> int:
     workspace = options.workspace.resolve()
     if not workspace.is_dir():
         parser.error(f"workspace does not exist or is not a directory: {workspace}")
+    if getattr(options, "prepare", False):
+        verb = options.verb if options.command == "run" else options.command
+        _validate_verbs(parser, (verb,), _driver_verbs(registry))
+        try:
+            parameters = _command_parameters(options, registry)
+        except ValueError as error:
+            parser.error(str(error))
+        document = _append_prepared_command(
+            parser,
+            workspace,
+            verb,
+            _selection_values(options.select),
+            not options.select,
+            parameters,
+            command,
+        )
+        _write_output(document, options, command, 0)
+        return 0
     if options.command == "report":
         try:
             document = StateStore(workspace).load_report(options.run_id)
@@ -135,8 +159,22 @@ def main(arguments: list[str] | None = None) -> int:
         store = StateStore(workspace)
         try:
             prepared = store.load_prepared_plan()
-            plan = require_current(prepared, workspace)
-        except (StateError, PreparedPlanError) as error:
+            if is_deferred_document(prepared):
+                inspection = inspect_workspace(registry, workspace)
+                resolved, plan = resolve_deferred_document(registry, inspection, prepared)
+                if plan.status.value not in {"executable", "empty"}:
+                    failed = dict(prepared)
+                    failed["resolution"] = resolved.get("plan", {})
+                    store.save_prepared_plan(failed)
+                    raise PreparedPlanError(
+                        f"prepared commands resolve to a {plan.status.value} plan; "
+                        "inspect 'poly plan' diagnostics before retrying"
+                    )
+                store.save_prepared_plan(resolved)
+                prepared = resolved
+            else:
+                plan = require_current(prepared, workspace)
+        except (StateError, PreparedPlanError, WorkspaceError) as error:
             parser.error(str(error))
         run_directory = workspace / ".poly" / "runs" / plan.id
         run_directory.mkdir(parents=True, exist_ok=True)
@@ -226,7 +264,7 @@ def main(arguments: list[str] | None = None) -> int:
                 _save_plan_if_initialized(workspace, snapshot.plan.id, document)
                 exit_code = 0 if snapshot.plan.status.value in {"executable", "empty"} else 1
             elif getattr(options, "prepare", False):
-                document, exit_code = _append_prepared_plan(parser, workspace, snapshot, command)
+                raise AssertionError("preparation must be handled before inspection")
             else:
                 if (workspace / ".poly" / "state" / "plan.json").is_file():
                     parser.error("a prepared plan is active; use 'poly exec' or 'poly plan clean'")
@@ -394,6 +432,16 @@ def _nature_command(
         return 0
     if workspace is None:
         parser.error(f"no Poly workspace found from {start}")
+    if options.prepare:
+        parameters = {
+            "poly.prepare.nature.values": "\x1f".join(options.values),
+            "poly.prepare.nature.cwd": str(start),
+        }
+        document = _append_prepared_command(
+            parser, workspace, f"nature-{options.nature_command}", (), False, parameters, command
+        )
+        _write_output(document, options, command, 0)
+        return 0
     try:
         inspection = inspect_workspace(registry, workspace)
         node_id, natures = _nature_target(
@@ -411,10 +459,6 @@ def _nature_command(
     if options.plan_only:
         document = planning_document(snapshot)
         exit_code = 0 if snapshot.plan.status.value in {"executable", "empty"} else 1
-        _write_output(document, options, command, exit_code)
-        return exit_code
-    if options.prepare:
-        document, exit_code = _append_prepared_plan(parser, workspace, snapshot, command)
         _write_output(document, options, command, exit_code)
         return exit_code
     _reject_active_prepared_plan(parser, workspace)
@@ -610,12 +654,15 @@ def _save_run_if_initialized(workspace: Path, run_id: str, document: ReportDocum
         StateStore(workspace).save_run(run_id, document)
 
 
-def _append_prepared_plan(
+def _append_prepared_command(
     parser: argparse.ArgumentParser,
     workspace: Path,
-    snapshot: PlanningSnapshot,
+    verb: str,
+    selected_node_ids: tuple[str, ...],
+    select_all: bool,
+    parameters: dict[str, str],
     command: str,
-) -> tuple[ReportDocument, int]:
+) -> ReportDocument:
     store = StateStore(workspace)
     previous = None
     if (store.state_directory / "plan.json").is_file():
@@ -624,13 +671,13 @@ def _append_prepared_plan(
         except StateError as error:
             parser.error(str(error))
     try:
-        document = prepare_document(snapshot, command, previous)
+        document = deferred_document(
+            workspace, verb, selected_node_ids, select_all, parameters, command, previous
+        )
     except PreparedPlanError as error:
         parser.error(str(error))
     store.save_prepared_plan(document)
-    plan_value = document.get("plan")
-    status = plan_value.get("status") if isinstance(plan_value, dict) else "blocked"
-    return document, 0 if status in {"executable", "empty"} else 1
+    return document
 
 
 def _reject_active_prepared_plan(parser: argparse.ArgumentParser, workspace: Path) -> None:
@@ -753,13 +800,17 @@ def _direct_verb_options(parser: argparse.ArgumentParser) -> None:
     _planning_options(parser)
 
 
-def _selection(values: list[str], nodes: tuple[Node, ...]) -> tuple[str, ...]:
-    if not values:
-        return tuple(node.id for node in nodes)
+def _selection_values(values: list[str]) -> tuple[str, ...]:
     selected = {
         node_id.strip() for value in values for node_id in value.split(",") if node_id.strip()
     }
     return tuple(sorted(selected))
+
+
+def _selection(values: list[str], nodes: tuple[Node, ...]) -> tuple[str, ...]:
+    if not values:
+        return tuple(node.id for node in nodes)
+    return _selection_values(values)
 
 
 def _parameters(values: list[str]) -> dict[str, str]:

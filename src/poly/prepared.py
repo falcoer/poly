@@ -16,6 +16,7 @@ from poly.model import (
     ActionSpec,
     Constraint,
     JsonValue,
+    Node,
     Plan,
     PlanDiagnostic,
     PlanStatus,
@@ -101,7 +102,11 @@ def deferred_document(
 
 def is_deferred_document(document: ReportDocument) -> bool:
     prepared = document.get("prepared")
-    return isinstance(prepared, dict) and prepared.get("journal_version") == COMMAND_JOURNAL_VERSION
+    return (
+        isinstance(prepared, dict)
+        and prepared.get("journal_version") == COMMAND_JOURNAL_VERSION
+        and prepared.get("state") == "planned"
+    )
 
 
 def deferred_commands(document: ReportDocument) -> tuple[dict[str, JsonValue], ...]:
@@ -121,22 +126,27 @@ def resolve_deferred_document(
     snapshots: list[PlanningSnapshot] = []
     requests: list[JsonValue] = []
     available_ids = tuple(node.id for node in inspection.inventory.nodes)
-    available = set(available_ids)
     for command in deferred_commands(document):
         verb = _string(command, "verb")
         selected = tuple(_strings(command.get("selected_node_ids", [])))
         if bool(command.get("select_all", False)):
             selected = available_ids
-        unknown = sorted(set(selected) - available)
-        if unknown:
-            raise PreparedPlanError(f"unknown node(s): {', '.join(unknown)}")
         parameters_value = command.get("parameters", {})
         if not isinstance(parameters_value, dict) or not all(
             isinstance(key, str) and isinstance(value, str)
             for key, value in parameters_value.items()
         ):
             raise PreparedPlanError("prepared command parameters must contain strings")
-        snapshot = prepare_planning(registry, inspection, verb, selected, dict(parameters_value))
+        parameters = cast(dict[str, str], dict(parameters_value))
+        if verb in {"nature-add", "nature-remove"}:
+            raw_values = parameters.pop("poly.prepare.nature.values", None)
+            raw_current = parameters.pop("poly.prepare.nature.cwd", None)
+            if raw_values is not None and raw_current is not None:
+                selected, natures = _resolve_nature_target(
+                    raw_values.split("\x1f"), inspection, Path(raw_current)
+                )
+                parameters["poly.node.natures"] = ",".join(natures)
+        snapshot = prepare_planning(registry, inspection, verb, selected, parameters)
         snapshots.append(snapshot)
         requests.append(
             cast(
@@ -174,6 +184,50 @@ def resolve_deferred_document(
         }
     )
     return resolved, plan
+
+
+def _resolve_nature_target(
+    values: list[str], inspection: InspectionSnapshot, current: Path
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    if not values:
+        raise PreparedPlanError("at least one nature is required")
+    nodes = inspection.inventory.nodes
+    node_ids = {node.id for node in nodes}
+    if values[0] == ".":
+        node_id = _current_node(nodes, inspection.workspace, current)
+        natures = values[1:]
+    elif values[0] in node_ids and len(values) > 1:
+        node_id = values[0]
+        natures = values[1:]
+    else:
+        node_id = _current_node(nodes, inspection.workspace, current)
+        natures = values
+    normalized = tuple(sorted({nature.strip() for nature in natures if nature.strip()}))
+    if not normalized:
+        raise PreparedPlanError("at least one nature is required")
+    return (node_id,), normalized
+
+
+def _current_node(nodes: tuple[Node, ...], workspace: Path, current: Path) -> str:
+    candidates: list[tuple[int, int, str]] = []
+    parents = {
+        node.id: node.metadata.get("poly.parent")
+        for node in nodes
+        if isinstance(node.metadata.get("poly.parent"), str)
+    }
+    for node in nodes:
+        path = (workspace / node.path).resolve()
+        if path != current and path not in current.parents:
+            continue
+        depth = 0
+        parent = parents.get(node.id)
+        while isinstance(parent, str):
+            depth += 1
+            parent = parents.get(parent)
+        candidates.append((len(path.parts), depth, node.id))
+    if not candidates:
+        raise PreparedPlanError(f"current directory does not belong to a declared node: {current}")
+    return max(candidates)[2]
 
 
 def prepare_document(
