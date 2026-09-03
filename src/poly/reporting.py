@@ -244,6 +244,9 @@ def render_cli(
 ) -> str:
     """Render a compact interactive view without changing the canonical report."""
 
+    if _is_planned_command(document):
+        return _render_planned_cli(document, command, verbosity, color, width)
+
     lines: list[str] = []
     separator = _styled("─" * _usable_width(width), "muted", color)
     if verbosity >= 0:
@@ -382,6 +385,45 @@ def render_cli_completion(
     return "\n".join(lines) + "\n"
 
 
+def _is_planned_command(document: ReportDocument) -> bool:
+    prepared = document.get("prepared")
+    request = document.get("request")
+    return (
+        isinstance(prepared, dict)
+        and prepared.get("state") == "planned"
+        and isinstance(request, dict)
+        and request.get("verb") != "plan"
+    )
+
+
+def _render_planned_cli(
+    document: ReportDocument, command: str, verbosity: int, color: bool, width: int
+) -> str:
+    prepared = document.get("prepared", {})
+    request = document.get("request", {})
+    count_value = prepared.get("command_count", 0) if isinstance(prepared, dict) else 0
+    count = int(count_value) if isinstance(count_value, int | str) else 0
+    verb = str(request.get("verb", "command")) if isinstance(request, dict) else "command"
+    noun = "command" if count == 1 else "commands"
+    separator = "─" * _usable_width(width)
+    lines: list[str] = []
+    if verbosity >= 0:
+        lines.extend((separator, _command_heading(document)))
+        if verbosity >= 1:
+            lines.append(f"{_SECTION_INDENT}COMMAND  {command}")
+        lines.extend(
+            (
+                f"{_SECTION_INDENT}○ PLANNED  poly {verb}",
+                f"{_DETAIL_INDENT}{count} {noun} in current plan",
+                f"{_DETAIL_INDENT}Run `poly exec` when the plan is ready.",
+                separator,
+            )
+        )
+    else:
+        lines.append(f"{_SECTION_INDENT}○ PLANNED  poly {verb}")
+    return "\n".join(_styled(line, "magenta", color) for line in lines) + "\n"
+
+
 def _command_heading(document: ReportDocument) -> str:
     request = document.get("request", {})
     kind = str(document.get("kind", "command"))
@@ -447,6 +489,25 @@ def _concise_document(
         if isinstance(diagnostic, dict):
             message = diagnostic.get("message")
             lines.append(f"{_DETAIL_INDENT}{_styled(f'⚠ WARN     {message}', 'yellow', color)}")
+
+    prepared = document.get("prepared")
+    if isinstance(prepared, dict) and prepared.get("journal_version") == 2:
+        commands = prepared.get("commands", [])
+        if isinstance(commands, list):
+            noun = "command" if len(commands) == 1 else "commands"
+            summary = f"{len(commands)} {noun} in current plan"
+            lines.append(f"{_SECTION_INDENT}{_styled(summary, 'magenta', color)}")
+            for index, item in enumerate(commands, 1):
+                if isinstance(item, dict):
+                    authored = item.get("command") or f"poly {item.get('verb', 'command')}"
+                    lines.append(f"{_DETAIL_INDENT}{index:>3}. {_safe_visible(str(authored))}")
+        resolution = document.get("resolution")
+        if isinstance(resolution, dict):
+            diagnostics = resolution.get("diagnostics", [])
+            for diagnostic in diagnostics if isinstance(diagnostics, list) else []:
+                if isinstance(diagnostic, dict):
+                    warning = f"⚠ WARN     {diagnostic.get('message')}"
+                    lines.append(f"{_DETAIL_INDENT}{_styled(warning, 'yellow', color)}")
 
     plan = document.get("plan")
     if isinstance(plan, dict):
@@ -830,7 +891,14 @@ def _state_style(state: str) -> tuple[str, str, str]:
 def _styled(value: str, tone: str, enabled: bool) -> str:
     if not enabled:
         return value
-    codes = {"green": "32", "red": "31", "yellow": "33", "cyan": "36", "muted": "90"}
+    codes = {
+        "green": "32",
+        "red": "31",
+        "yellow": "33",
+        "cyan": "36",
+        "magenta": "35",
+        "muted": "90",
+    }
     return f"\x1b[{codes[tone]}m{value}\x1b[0m"
 
 

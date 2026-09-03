@@ -384,7 +384,7 @@ def test_cli_prepares_accumulates_executes_and_clears_one_current_plan(
     assert main(["init", "--workspace", str(tmp_path), "--name", "Prepared"]) == 0
     capsys.readouterr()
 
-    for node_id in ("api", "web"):
+    for index, node_id in enumerate(("api", "web"), 1):
         assert (
             main(
                 [
@@ -403,18 +403,22 @@ def test_cli_prepares_accumulates_executes_and_clears_one_current_plan(
             == 0
         )
         prepared = json.loads(capsys.readouterr().out)
-        assert prepared["kind"] == "prepared-plan"
+        assert prepared["kind"] == "prepared-commands"
+        assert prepared["prepared"]["state"] == "planned"
+        assert prepared["prepared"]["command_count"] == index
+        assert "plan" not in prepared
+        assert "workspace_fingerprint" not in prepared["prepared"]
 
     assert main(["plan", "--workspace", str(tmp_path), "--format", "json"]) == 0
     current = json.loads(capsys.readouterr().out)
-    assert current["plan"]["verb"] == "prepared"
-    assert len(current["requests"]) == 2
-    assert len(current["plan"]["planned_actions"]) == 2
-    prepared_id = current["plan"]["id"]
+    assert current["kind"] == "prepared-commands"
+    assert current["prepared"]["command_count"] == 2
+    assert [item["verb"] for item in current["prepared"]["commands"]] == ["add", "add"]
+    assert "plan" not in current
 
     assert main(["exec", "--workspace", str(tmp_path), "--format", "json"]) == 0
     executed = json.loads(capsys.readouterr().out)
-    assert executed["run"]["plan_id"] == prepared_id
+    assert isinstance(executed["run"]["plan_id"], str)
     assert executed["run"]["status"] == "succeeded"
     manifest = (tmp_path / "poly.yaml").read_text(encoding="utf-8")
     assert "id: api" in manifest
@@ -468,8 +472,8 @@ def test_prepared_additions_execute_in_command_order(
         == 0
     )
     prepared = json.loads(capsys.readouterr().out)
-    actions = {action["id"]: action for action in prepared["plan"]["planned_actions"]}
-    assert "poly/manifest-added:z-parent" in actions["construct.add:a-child"]["requires"]
+    assert prepared["prepared"]["command_count"] == 2
+    assert "plan" not in prepared
 
     assert main(["exec", "--workspace", str(tmp_path), "--format", "json"]) == 0
     executed = json.loads(capsys.readouterr().out)
@@ -637,7 +641,7 @@ def test_root_bootstrap_honors_plan_in_existing_target(
     assert (target / ".poly" / "state" / "plan.json").is_file()
 
 
-def test_cli_rejects_stale_and_bypassed_prepared_plans(
+def test_cli_resolves_prepared_commands_against_exec_snapshot(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["init", "--workspace", str(tmp_path), "--name", "Stale"]) == 0
@@ -661,12 +665,11 @@ def test_cli_rejects_stale_and_bypassed_prepared_plans(
 
     manifest = tmp_path / "poly.yaml"
     manifest.write_text(manifest.read_text(encoding="utf-8") + "\n", encoding="utf-8")
-    with pytest.raises(SystemExit):
-        main(["exec", "--workspace", str(tmp_path)])
-    assert "prepared plan is stale" in capsys.readouterr().err
-
-    assert main(["plan", "clean", "--workspace", str(tmp_path)]) == 0
-    assert "NONE" in capsys.readouterr().out
+    assert main(["exec", "--workspace", str(tmp_path), "--format", "json"]) == 0
+    executed = json.loads(capsys.readouterr().out)
+    assert executed["run"]["status"] == "succeeded"
+    assert "id: api" in manifest.read_text(encoding="utf-8")
+    assert not (tmp_path / ".poly" / "state" / "plan.json").exists()
 
 
 def test_cli_generates_external_driver_repository(

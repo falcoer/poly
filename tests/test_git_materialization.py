@@ -200,12 +200,14 @@ def test_three_repository_additions_share_one_prepared_plan(
 
     assert main(["plan", "--workspace", str(workspace), "--format", "json"]) == 0
     prepared = json.loads(capsys.readouterr().out)
-    assert len(prepared["requests"]) == 3
-    assert len(prepared["plan"]["planned_actions"]) == 6
+    assert prepared["kind"] == "prepared-commands"
+    assert prepared["prepared"]["command_count"] == 3
+    assert len(prepared["prepared"]["commands"]) == 3
+    assert "plan" not in prepared
 
     assert main(["exec", "--workspace", str(workspace), "--format", "json"]) == 0
     executed = json.loads(capsys.readouterr().out)
-    assert executed["run"]["plan_id"] == prepared["plan"]["id"]
+    assert isinstance(executed["run"]["plan_id"], str)
     assert {source.node_id for source in validate_workspace(workspace).lock.sources} == set(remotes)
 
 

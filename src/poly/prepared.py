@@ -1,4 +1,4 @@
-"""Composition and staleness checks for the single prepared workspace plan."""
+"""Prepared-command journaling, global resolution, and legacy plan compatibility."""
 
 from __future__ import annotations
 
@@ -10,11 +10,13 @@ from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
-from poly.application import PlanningSnapshot
+from poly.application import InspectionSnapshot, PlanningSnapshot, prepare_planning
+from poly.driver import DriverRegistry
 from poly.model import (
     ActionSpec,
     Constraint,
     JsonValue,
+    Node,
     Plan,
     PlanDiagnostic,
     PlanStatus,
@@ -23,6 +25,7 @@ from poly.model import (
 from poly.reporting import ReportDocument, inspection_document, plan_document
 
 AUTHORED_FILES = ("poly.yaml", "poly.lock.yaml", ".gitignore")
+COMMAND_JOURNAL_VERSION = 2
 _RECOMPUTED_DIAGNOSTICS = frozenset(
     {"action.duplicate-id", "claim.conflict", "constraint.cycle", "constraint.missing"}
 )
@@ -44,11 +47,196 @@ def workspace_fingerprint(workspace: Path) -> str:
     return digest.hexdigest()
 
 
+def deferred_document(
+    workspace: Path,
+    verb: str,
+    selected_node_ids: tuple[str, ...],
+    select_all: bool,
+    parameters: Mapping[str, str],
+    command: str,
+    previous: ReportDocument | None = None,
+) -> ReportDocument:
+    """Append normalized command intent without inspecting or planning the workspace."""
+
+    commands: list[JsonValue] = []
+    if previous is not None:
+        prepared = previous.get("prepared")
+        if not isinstance(prepared, dict):
+            raise PreparedPlanError("persisted document is not a prepared plan")
+        if prepared.get("journal_version") != COMMAND_JOURNAL_VERSION:
+            raise PreparedPlanError(
+                "the current plan was prepared by Poly 0.12.2; run 'poly exec' or "
+                "'poly plan clean' before preparing another command"
+            )
+        commands.extend(_command_values(prepared.get("commands")))
+
+    normalized = {
+        "verb": verb,
+        "selected_node_ids": list(selected_node_ids),
+        "select_all": select_all,
+        "parameters": dict(sorted(parameters.items())),
+        "command": command,
+    }
+    commands.append(cast(JsonValue, normalized))
+    count = len(commands)
+    return {
+        "schema": "poly.report/v1",
+        "kind": "prepared-commands",
+        "workspace": str(workspace.resolve()),
+        "available_verbs": [],
+        "inventory": {"nodes": []},
+        "diagnostics": [],
+        "request": {
+            "verb": verb,
+            "selected_node_ids": list(selected_node_ids),
+            "parameters": dict(sorted(parameters.items())),
+        },
+        "prepared": {
+            "state": "planned",
+            "journal_version": COMMAND_JOURNAL_VERSION,
+            "command_count": count,
+            "commands": commands,
+        },
+    }
+
+
+def is_deferred_document(document: ReportDocument) -> bool:
+    prepared = document.get("prepared")
+    return (
+        isinstance(prepared, dict)
+        and prepared.get("journal_version") == COMMAND_JOURNAL_VERSION
+        and prepared.get("state") == "planned"
+    )
+
+
+def deferred_commands(document: ReportDocument) -> tuple[dict[str, JsonValue], ...]:
+    prepared = document.get("prepared")
+    if not isinstance(prepared, dict) or prepared.get("journal_version") != COMMAND_JOURNAL_VERSION:
+        raise PreparedPlanError("persisted document is not a deferred prepared-command journal")
+    return tuple(_command_values(prepared.get("commands")))
+
+
+def resolve_deferred_document(
+    registry: DriverRegistry,
+    inspection: InspectionSnapshot,
+    document: ReportDocument,
+) -> tuple[ReportDocument, Plan]:
+    """Resolve a complete command journal against one inspection snapshot."""
+
+    snapshots: list[PlanningSnapshot] = []
+    requests: list[JsonValue] = []
+    available_ids = tuple(node.id for node in inspection.inventory.nodes)
+    for command in deferred_commands(document):
+        verb = _string(command, "verb")
+        selected = tuple(_strings(command.get("selected_node_ids", [])))
+        if bool(command.get("select_all", False)):
+            selected = available_ids
+        parameters_value = command.get("parameters", {})
+        if not isinstance(parameters_value, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in parameters_value.items()
+        ):
+            raise PreparedPlanError("prepared command parameters must contain strings")
+        parameters = cast(dict[str, str], dict(parameters_value))
+        if verb in {"nature-add", "nature-remove"}:
+            raw_values = parameters.pop("poly.prepare.nature.values", None)
+            raw_current = parameters.pop("poly.prepare.nature.cwd", None)
+            if raw_values is not None and raw_current is not None:
+                selected, natures = _resolve_nature_target(
+                    raw_values.split("\x1f"), inspection, Path(raw_current)
+                )
+                parameters["poly.node.natures"] = ",".join(natures)
+        snapshot = prepare_planning(registry, inspection, verb, selected, parameters)
+        snapshots.append(snapshot)
+        requests.append(
+            cast(
+                JsonValue,
+                {
+                    "verb": verb,
+                    "selected_node_ids": list(selected),
+                    "parameters": dict(parameters_value),
+                },
+            )
+        )
+
+    plan = compose_plans(tuple(snapshot.plan for snapshot in snapshots))
+    resolved = inspection_document(inspection)
+    resolved.update(
+        {
+            "kind": "prepared-plan",
+            "request": {"verb": "exec", "selected_node_ids": [], "parameters": {}},
+            "requests": requests,
+            "applicable_actions": [
+                cast(dict[str, JsonValue], action_document(action)) for action in plan.actions
+            ],
+            "rejected_candidates": [
+                cast(dict[str, JsonValue], rejected_document(candidate))
+                for candidate in plan.rejected
+            ],
+            "plan": plan_document(plan),
+            "prepared": {
+                "state": "resolved",
+                "journal_version": COMMAND_JOURNAL_VERSION,
+                "workspace_fingerprint": workspace_fingerprint(inspection.workspace),
+                "command_count": len(snapshots),
+                "commands": list(deferred_commands(document)),
+            },
+        }
+    )
+    return resolved, plan
+
+
+def _resolve_nature_target(
+    values: list[str], inspection: InspectionSnapshot, current: Path
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    if not values:
+        raise PreparedPlanError("at least one nature is required")
+    nodes = inspection.inventory.nodes
+    node_ids = {node.id for node in nodes}
+    if values[0] == ".":
+        node_id = _current_node(nodes, inspection.workspace, current)
+        natures = values[1:]
+    elif values[0] in node_ids and len(values) > 1:
+        node_id = values[0]
+        natures = values[1:]
+    else:
+        node_id = _current_node(nodes, inspection.workspace, current)
+        natures = values
+    normalized = tuple(sorted({nature.strip() for nature in natures if nature.strip()}))
+    if not normalized:
+        raise PreparedPlanError("at least one nature is required")
+    return (node_id,), normalized
+
+
+def _current_node(nodes: tuple[Node, ...], workspace: Path, current: Path) -> str:
+    candidates: list[tuple[int, int, str]] = []
+    parents = {
+        node.id: node.metadata.get("poly.parent")
+        for node in nodes
+        if isinstance(node.metadata.get("poly.parent"), str)
+    }
+    for node in nodes:
+        path = (workspace / node.path).resolve()
+        if path != current and path not in current.parents:
+            continue
+        depth = 0
+        parent = parents.get(node.id)
+        while isinstance(parent, str):
+            depth += 1
+            parent = parents.get(parent)
+        candidates.append((len(path.parts), depth, node.id))
+    if not candidates:
+        raise PreparedPlanError(f"current directory does not belong to a declared node: {current}")
+    return max(candidates)[2]
+
+
 def prepare_document(
     snapshot: PlanningSnapshot,
     command: str,
     previous: ReportDocument | None = None,
 ) -> ReportDocument:
+    """Build the legacy 0.12.2 eager frozen prepared-plan document."""
+
     fingerprint = workspace_fingerprint(snapshot.inspection.workspace)
     plans: tuple[Plan, ...] = (snapshot.plan,)
     requests: list[JsonValue] = []
@@ -403,4 +591,10 @@ def _list(value: Mapping[str, object], key: str) -> list[object]:
 def _request_values(value: object) -> list[JsonValue]:
     if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
         raise PreparedPlanError("prepared plan requests must be an object list")
+    return [cast(dict[str, JsonValue], dict(item)) for item in value]
+
+
+def _command_values(value: object) -> list[dict[str, JsonValue]]:
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise PreparedPlanError("prepared plan commands must be an object list")
     return [cast(dict[str, JsonValue], dict(item)) for item in value]
