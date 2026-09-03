@@ -16,6 +16,7 @@ from poly.prepared import (
     plan_from_document,
     rejected_document,
 )
+from poly.reporting import ReportDocument
 
 
 def _init(workspace: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -127,9 +128,13 @@ def test_resolution_conflict_is_atomic_and_retains_journal(
     assert manifest.read_bytes() == before
 
     retained = StateStore(tmp_path).load_prepared_plan()
-    assert retained["prepared"]["state"] == "planned"
-    assert retained["prepared"]["command_count"] == 2
-    assert retained["resolution"]["status"] == "conflict"
+    prepared = retained.get("prepared")
+    resolution = retained.get("resolution")
+    assert isinstance(prepared, dict)
+    assert isinstance(resolution, dict)
+    assert prepared["state"] == "planned"
+    assert prepared["command_count"] == 2
+    assert resolution["status"] == "conflict"
 
 
 def test_deferred_journal_validates_previous_state_and_payload(tmp_path: Path) -> None:
@@ -191,7 +196,7 @@ def test_legacy_frozen_plan_decoder_round_trips_full_action_shape() -> None:
     rejected = RejectedCandidate(
         "other.driver", "create", "not selected", ("other",), ("capability",)
     )
-    document = {
+    document: ReportDocument = {
         "schema": "poly.report/v1",
         "kind": "prepared-plan",
         "rejected_candidates": [rejected_document(rejected)],
