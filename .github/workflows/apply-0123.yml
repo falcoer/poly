@@ -21,6 +21,19 @@ jobs:
           python-version: "3.12"
       - name: Apply source transformation
         run: python tools/apply_0123_transform.py
+      - name: Narrow validated parameter types
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/poly/prepared.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              '        parameters = dict(parameters_value)\n',
+              '        parameters = cast(dict[str, str], dict(parameters_value))\n',
+              1,
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
       - name: Update release identity
         run: |
           python - <<'PY'
