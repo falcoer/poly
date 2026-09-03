@@ -533,8 +533,8 @@ def _bootstrap_root(
             "root repository bootstrap cannot be prepared because its recursive hydration "
             "cannot be frozen before the root repository is cloned"
         )
-    containing_plan = _nearest_prepared_plan_root(parent)
-    _reject_active_prepared_plan(parser, containing_plan or _nearest_workspace(parent) or parent)
+    containing_plan = _nearest_prepared_plan_root(target)
+    _reject_active_prepared_plan(parser, containing_plan or _nearest_workspace(target) or parent)
     with tempfile.TemporaryDirectory(prefix="poly-bootstrap-", dir=parent) as run_path:
         result = Executor(_controller_runner(registry, options.controller)).execute(
             snapshot.plan, ExecutionContext(parent, Path(run_path))
