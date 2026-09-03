@@ -544,6 +544,38 @@ def test_root_bootstrap_prepare_fails_without_cloning(
     assert not (tmp_path / ".poly").exists()
 
 
+def test_root_bootstrap_honors_plan_in_containing_workspace(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["init", "--workspace", str(tmp_path), "--name", "Containing"]) == 0
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "add",
+                "module",
+                "reserved",
+                "--path",
+                "nested/target",
+                "--workspace",
+                str(tmp_path),
+                "--prepare",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    target = nested / "target"
+
+    with pytest.raises(SystemExit):
+        main(["init", "https://example.test/root.git", str(target)])
+
+    assert "prepared plan is active" in capsys.readouterr().err
+    assert not target.exists()
+
+
 def test_cli_rejects_stale_and_bypassed_prepared_plans(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
