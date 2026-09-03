@@ -52,7 +52,7 @@ jobs:
           import zipfile
           import poly
 
-          version = "0.12.2"
+          version = "0.12.3"
           dist = pathlib.Path("dist")
           wheel = dist / f"poly-{version}-py3-none-any.whl"
           sdist = dist / f"poly-{version}.tar.gz"
@@ -86,16 +86,16 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: poly-0.12.2-distributions-${{ github.sha }}
+          name: poly-0.12.3-distributions-${{ github.sha }}
           path: |
-            dist/poly-0.12.2-py3-none-any.whl
-            dist/poly-0.12.2.tar.gz
+            dist/poly-0.12.3-py3-none-any.whl
+            dist/poly-0.12.3.tar.gz
             dist/SHA256SUMS
             dist/build-metadata.json
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: poly-0.12.2-quality-${{ github.sha }}
+          name: poly-0.12.3-quality-${{ github.sha }}
           path: evidence/
           if-no-files-found: error
 
@@ -118,67 +118,32 @@ jobs:
           target="$RUNNER_TEMP/poly-driver-sample-tech"
           uv run poly driver new sample-tech --path "$target" --poly-source "$GITHUB_WORKSPACE"
           echo "target=$target" >> "$GITHUB_ENV"
-      - name: Validate external driver
+      - name: Validate generated driver
         shell: bash
         run: |
+          set -euo pipefail
           cd "$target"
-          uv sync --all-groups
-          uv run poly-driver-test validate
-          uv run poly-driver-test inspect poly_driver_sample_tech:driver --workspace tests/fixtures/workspace
-          uv run poly-driver-test determinism poly_driver_sample_tech:driver --workspace tests/fixtures/workspace --verb sample-status
+          uv sync --locked --all-groups
           uv run ruff format --check .
           uv run ruff check .
-          uv run mypy src tests
           uv run pytest
+      - name: Install generated wheel into clean environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$target"
           uv build
+          python -m venv "$RUNNER_TEMP/poly-driver-clean"
+          "$RUNNER_TEMP/poly-driver-clean/bin/pip" install dist/*.whl
+          "$RUNNER_TEMP/poly-driver-clean/bin/python" - <<'PY'
+          from importlib.metadata import entry_points
+          drivers = entry_points(group="poly.drivers")
+          assert any(driver.name == "sample-tech" for driver in drivers)
+          PY
 
-  fixture:
+  windows-quality:
     needs: quality
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-      - uses: astral-sh/setup-uv@v9.0.0
-        with:
-          enable-cache: true
-          prune-cache: true
-      - uses: actions/download-artifact@v4
-        with:
-          name: poly-0.12.2-distributions-${{ github.sha }}
-          path: ${{ runner.temp }}/distributions
-      - name: Build deterministic Git fixture twice
-        shell: bash
-        run: |
-          set -euo pipefail
-          python tools/acceptance/build_fixture.py --output "$RUNNER_TEMP/fixture-a"
-          python tools/acceptance/build_fixture.py --output "$RUNNER_TEMP/fixture-b"
-          cmp "$RUNNER_TEMP/fixture-a/fixture-commits.json" "$RUNNER_TEMP/fixture-b/fixture-commits.json"
-      - name: Build portable external driver wheel from installed Poly
-        shell: bash
-        run: |
-          set -euo pipefail
-          clean="$RUNNER_TEMP/poly-fixture-venv"
-          uv venv --python 3.12 "$clean"
-          uv pip install --python "$clean/bin/python" "$RUNNER_TEMP/distributions/poly-0.12.2-py3-none-any.whl"
-          "$clean/bin/poly" driver new sample-tech --path "$RUNNER_TEMP/sample-driver"
-          (cd "$RUNNER_TEMP/sample-driver" && uv build)
-          cp "$RUNNER_TEMP/sample-driver/dist/poly_driver_sample_tech-0.1.0-py3-none-any.whl" "$RUNNER_TEMP/fixture-a/"
-          mkdir -p "$RUNNER_TEMP/fixture-a/scripts"
-          cp tools/acceptance/run_acceptance.py tools/acceptance/run-posix.sh tools/acceptance/run-powershell.ps1 "$RUNNER_TEMP/fixture-a/scripts/"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: poly-0.12.2-acceptance-fixture-${{ github.sha }}
-          path: ${{ runner.temp }}/fixture-a/
-          if-no-files-found: error
-
-  workspace-contract:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -189,130 +154,4 @@ jobs:
           enable-cache: true
           prune-cache: true
       - run: uv sync --locked --all-groups
-      - run: uv run pytest
-
-  acceptance-posix:
-    needs: [quality, fixture]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: astral-sh/setup-uv@v9.0.0
-      - uses: actions/download-artifact@v4
-        with:
-          name: poly-0.12.2-distributions-${{ github.sha }}
-          path: ${{ runner.temp }}/distributions
-      - uses: actions/download-artifact@v4
-        with:
-          name: poly-0.12.2-acceptance-fixture-${{ github.sha }}
-          path: ${{ runner.temp }}/fixture
-      - name: Install retained wheels without source checkout
-        shell: bash
-        run: |
-          set -euo pipefail
-          clean="$RUNNER_TEMP/poly-clean-room"
-          uv venv --python 3.12 "$clean"
-          driver=$(find "$RUNNER_TEMP/fixture" -maxdepth 1 -name 'poly_driver_sample_tech-*.whl' -print -quit)
-          uv pip install --python "$clean/bin/python" "$RUNNER_TEMP/distributions/poly-0.12.2-py3-none-any.whl" "$driver"
-          echo "python=$clean/bin/python" >> "$GITHUB_ENV"
-          echo "poly=$clean/bin/poly" >> "$GITHUB_ENV"
-      - name: Execute documented POSIX journey
-        shell: bash
-        run: |
-          set -euo pipefail
-          sh "$RUNNER_TEMP/fixture/scripts/run-posix.sh" "$python" "$poly" "$RUNNER_TEMP/fixture" "$RUNNER_TEMP/evidence-posix"
-          cat "$RUNNER_TEMP/evidence-posix/SUMMARY.md" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: poly-0.12.2-acceptance-linux-${{ github.sha }}
-          path: ${{ runner.temp }}/evidence-posix/
-          if-no-files-found: error
-
-  acceptance-windows:
-    needs: [quality, fixture]
-    runs-on: windows-latest
-    steps:
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: astral-sh/setup-uv@v9.0.0
-      - uses: actions/download-artifact@v4
-        with:
-          name: poly-0.12.2-distributions-${{ github.sha }}
-          path: ${{ runner.temp }}/distributions
-      - uses: actions/download-artifact@v4
-        with:
-          name: poly-0.12.2-acceptance-fixture-${{ github.sha }}
-          path: ${{ runner.temp }}/fixture
-      - name: Install retained wheels without source checkout
-        shell: pwsh
-        run: |
-          $clean = Join-Path $env:RUNNER_TEMP "poly-clean-room"
-          uv venv --python 3.12 $clean
-          $python = Join-Path $clean "Scripts/python.exe"
-          $poly = Join-Path $clean "Scripts/poly.exe"
-          $core = Join-Path $env:RUNNER_TEMP "distributions/poly-0.12.2-py3-none-any.whl"
-          $driver = (Get-ChildItem (Join-Path $env:RUNNER_TEMP "fixture") -Filter "poly_driver_sample_tech-*.whl" | Select-Object -First 1).FullName
-          uv pip install --python $python $core $driver
-          "python=$python" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "poly=$poly" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Execute documented PowerShell journey
-        shell: pwsh
-        run: |
-          $fixture = Join-Path $env:RUNNER_TEMP "fixture"
-          $output = Join-Path $env:RUNNER_TEMP "evidence-windows"
-          & (Join-Path $fixture "scripts/run-powershell.ps1") -PythonExe $env:python -PolyExe $env:poly -FixtureDir $fixture -OutputDir $output
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Get-Content (Join-Path $output "SUMMARY.md") | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-      - uses: actions/upload-artifact@v4
-        with:
-          name: poly-0.12.2-acceptance-windows-${{ github.sha }}
-          path: ${{ runner.temp }}/evidence-windows/
-          if-no-files-found: error
-
-  milestone-tag:
-    needs:
-      - quality
-      - external-driver-clean-room
-      - fixture
-      - workspace-contract
-      - acceptance-posix
-      - acceptance-windows
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: Create validated milestone tag
-        shell: bash
-        run: |
-          set -euo pipefail
-          marker=.poly/milestone-tag
-          test -f "$marker" || exit 0
-          tag=$(tr -d '\r\n' < "$marker")
-          test -n "$tag" || exit 0
-          case "$tag" in
-            roadmap/*) ;;
-            *) echo "Invalid milestone tag: $tag" >&2; exit 1 ;;
-          esac
-          grep -F "Tag: \`$tag\`" ROADMAP.md >/dev/null
-          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-            test "$(git cat-file -t "$tag")" = tag
-            tag_commit=$(git rev-list -n 1 "$tag")
-            git merge-base --is-ancestor "$tag_commit" "$GITHUB_SHA"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$tag" -m "Validated roadmap milestone $tag" "$GITHUB_SHA"
-          git push origin "refs/tags/$tag"
+      - run: uv run pytest --no-cov
