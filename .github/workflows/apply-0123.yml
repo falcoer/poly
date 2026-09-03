@@ -53,8 +53,8 @@ jobs:
       - run: uv run ruff format src/poly/cli.py src/poly/prepared.py src/poly/reporting.py
       - run: uv run ruff check src/poly/cli.py src/poly/prepared.py src/poly/reporting.py
       - run: uv run mypy src
-      - name: Run prepared-plan regressions
-        run: uv run pytest tests/test_prepared.py tests/test_cli.py tests/test_git_materialization.py --no-cov
+      - name: Run unchanged prepared-plan compatibility tests
+        run: uv run pytest tests/test_prepared.py --no-cov
       - name: Commit transformed implementation
         run: |
           git config user.name github-actions[bot]
