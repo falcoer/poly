@@ -36,9 +36,9 @@ _KINDS = frozenset(("workspace", "repository", "module"))
 _MANIFEST_FIELDS = frozenset(("schema", "workspace", "nodes"))
 _WORKSPACE_FIELDS = frozenset(("id", "name", "root-node"))
 _NODE_FIELDS = frozenset(("id", "parent", "kind", "path", "source", "natures"))
-_SOURCE_FIELDS = frozenset(("driver", "url", "ref"))
+_SOURCE_FIELDS = frozenset(("driver", "url", "ref", "depth"))
 _LOCK_FIELDS = frozenset(("schema", "manifest-digest", "sources"))
-_LOCK_SOURCE_FIELDS = frozenset(("driver", "url", "requested-ref", "resolved"))
+_LOCK_SOURCE_FIELDS = frozenset(("driver", "url", "requested-ref", "depth", "resolved"))
 _RESOLVED_FIELDS = frozenset(("commit", "ref-kind"))
 
 
@@ -51,11 +51,14 @@ class SourceDeclaration:
     driver: str
     url: str
     ref: str | None = None
+    depth: int | None = None
 
     def semantic(self) -> dict[str, JsonValue]:
         value: dict[str, JsonValue] = {"driver": self.driver, "url": self.url}
         if self.ref is not None:
             value["ref"] = self.ref
+        if self.depth is not None:
+            value["depth"] = self.depth
         return value
 
 
@@ -123,6 +126,7 @@ class LockedSource:
     requested_ref: str | None
     commit: str
     ref_kind: str
+    depth: int | None = None
 
     def semantic(self) -> dict[str, JsonValue]:
         value: dict[str, JsonValue] = {
@@ -132,6 +136,8 @@ class LockedSource:
         }
         if self.requested_ref is not None:
             value["requested-ref"] = self.requested_ref
+        if self.depth is not None:
+            value["depth"] = self.depth
         return value
 
 
@@ -581,7 +587,13 @@ def _parse_lock(raw: object, manifest: WorkspaceManifest) -> WorkspaceLock:
             if requested_value is None
             else _non_empty(requested_value, f"lock sources.{node_id}.requested-ref")
         )
-        if (driver, url, requested) != (declared.driver, declared.url, declared.ref):
+        depth = _depth(raw_source.get("depth"), f"lock sources.{node_id}.depth")
+        if (driver, url, requested, depth) != (
+            declared.driver,
+            declared.url,
+            declared.ref,
+            declared.depth,
+        ):
             raise WorkspaceError(f"lock source {node_id!r} is inconsistent with poly.yaml")
         resolved = _mapping(raw_source.get("resolved"), f"lock sources.{node_id}.resolved")
         _known_fields(resolved, _RESOLVED_FIELDS, f"lock sources.{node_id}.resolved")
@@ -589,7 +601,9 @@ def _parse_lock(raw: object, manifest: WorkspaceManifest) -> WorkspaceLock:
         if driver == "git" and not _COMMIT.fullmatch(commit):
             raise WorkspaceError(f"lock source {node_id!r} has no immutable full Git commit")
         ref_kind = _non_empty(resolved.get("ref-kind"), f"lock sources.{node_id}.resolved.ref-kind")
-        sources.append(LockedSource(node_id, driver, url, requested, commit.lower(), ref_kind))
+        sources.append(
+            LockedSource(node_id, driver, url, requested, commit.lower(), ref_kind, depth)
+        )
     return WorkspaceLock(digest, tuple(sources))
 
 
@@ -602,7 +616,16 @@ def _parse_source(value: object, where: str) -> SourceDeclaration | None:
     url = _source_url(source.get("url"), f"{where}.url")
     ref_value = source.get("ref")
     ref = None if ref_value is None else _non_empty(ref_value, f"{where}.ref")
-    return SourceDeclaration(driver, url, ref)
+    depth = _depth(source.get("depth"), f"{where}.depth")
+    return SourceDeclaration(driver, url, ref, depth)
+
+
+def _depth(value: object, where: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise WorkspaceError(f"{where} must be a positive integer or omitted")
+    return value
 
 
 def _declared_node(node: WorkspaceNode, locked: LockedSource | None = None) -> Node:
@@ -619,6 +642,7 @@ def _declared_node(node: WorkspaceNode, locked: LockedSource | None = None) -> N
                 "poly.source.driver": node.source.driver,
                 "poly.source.url": node.source.url,
                 "poly.source.ref": node.source.ref,
+                "poly.source.depth": node.source.depth,
             }
         )
     if locked is not None:
@@ -626,6 +650,7 @@ def _declared_node(node: WorkspaceNode, locked: LockedSource | None = None) -> N
             {
                 "poly.lock.commit": locked.commit,
                 "poly.lock.ref-kind": locked.ref_kind,
+                "poly.source.depth": locked.depth,
             }
         )
     natures = set(node.natures)

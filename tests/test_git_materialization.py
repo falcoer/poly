@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 
 from poly.cli import main
+from poly.driver import FacadeRequest
+from poly.drivers.git import GitActionHandler, RepositoryAddFacade
 from poly.workspace import validate_workspace
 
 
@@ -56,6 +58,39 @@ def _advance(source: Path, text: str) -> str:
 def _attach_source(source: Path, remote: Path) -> None:
     _git(source, "remote", "add", "origin", str(remote))
     _git(source, "push", "--quiet", "-u", "origin", "main")
+
+
+def test_git_clone_uses_long_materialization_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[tuple[str, ...], float | None]] = []
+
+    def fake_run(command: tuple[str, ...], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append((command, kwargs.get("timeout")))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("poly.drivers.git.subprocess.run", fake_run)
+    handler = GitActionHandler()
+
+    handler._git_process(Path("."), "clone", "--no-checkout", "remote", "target")
+    handler._git(Path("."), "rev-parse", "--verify", "HEAD")
+
+    assert calls[0][1] == 600.0
+    assert calls[1][1] == 60.0
+
+
+def test_repository_facade_persists_optional_shallow_clone_depth(tmp_path: Path) -> None:
+    facade = RepositoryAddFacade()
+    parameters = facade.translate(
+        FacadeRequest(
+            tmp_path,
+            {"node_id": "service", "node_path": "service", "depth": "3"},
+            {},
+        )
+    )
+
+    assert parameters["poly.source.depth"] == "3"
+    assert "poly.source.depth" not in facade.translate(
+        FacadeRequest(tmp_path, {"node_id": "full", "node_path": "full"}, {})
+    )
 
 
 def test_add_hydrate_eclipse_pull_lock_and_update_journey(

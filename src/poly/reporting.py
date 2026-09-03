@@ -403,7 +403,7 @@ def _render_planned_cli(
     count = int(count_value) if isinstance(count_value, int | str) else 0
     verb = str(request.get("verb", "command")) if isinstance(request, dict) else "command"
     noun = "command" if count == 1 else "commands"
-    separator = _styled("─" * _usable_width(width), "white", color)
+    frame_tone = "muted"
     if verbosity < 0:
         return _styled(f"○ PLANNED  poly {verb}", "magenta", color) + "\n"
 
@@ -411,16 +411,18 @@ def _render_planned_cli(
     if verbosity >= 1:
         lines.append(f"{_SECTION_INDENT}COMMAND  {command}")
 
+    lines.append(_styled("┌" + "─" * max(0, _usable_width(width) - 1), frame_tone, color))
+
     body = (
         f"○ PLANNED  poly {verb}",
         f"{count} {noun} in current plan",
         "Run `poly exec` when the plan is ready.",
     )
     for index, line in enumerate(body):
-        gutter = _styled("│", "white", color)
+        gutter = _styled("├" if index == 0 else "│", frame_tone, color)
         indent = "  " if index == 0 else "    "
         lines.append(f"{gutter}{indent}{_styled(line, 'magenta', color)}")
-    lines.append(separator)
+    lines.append(_styled("└" + "─" * max(0, _usable_width(width) - 1), frame_tone, color))
     return "\n".join(lines) + "\n"
 
 
