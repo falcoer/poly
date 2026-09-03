@@ -44,7 +44,7 @@ def test_composition_detects_duplicate_actions_and_claims() -> None:
     }
 
 
-def test_composition_preserves_provider_diagnostics_and_command_order() -> None:
+def test_composition_preserves_provider_diagnostics_and_completion_markers() -> None:
     first = ActionSpec("z-parent", "driver.one", "add", "create", ())
     second = ActionSpec("a-child", "driver.two", "add", "create", ())
     rejected = Plan(
@@ -73,7 +73,25 @@ def test_composition_preserves_provider_diagnostics_and_command_order() -> None:
     child = next(action for action in composed.actions if action.id == second.id)
     completion = Constraint(f"poly/prepared-complete:{first.id}")
     assert completion in parent.produces
-    assert completion in child.requires
+    assert completion not in child.requires
+
+
+def test_composition_orders_overlapping_actions_but_keeps_independent_work_ready() -> None:
+    first = ActionSpec("first", "driver.one", "update", "update", ("shared",))
+    second = ActionSpec("second", "driver.two", "verify", "verify", ("shared",))
+    independent = ActionSpec("independent", "driver.two", "verify", "verify", ("other",))
+
+    composed = compose_plans(
+        (
+            _plan("one", first),
+            Plan("two", "verify", (), (second, independent), (), (), PlanStatus.EXECUTABLE),
+        )
+    )
+
+    actions = {action.id: action for action in composed.actions}
+    completion = Constraint("poly/prepared-complete:first")
+    assert completion in actions["second"].requires
+    assert completion not in actions["independent"].requires
 
 
 def test_composition_recomputes_graph_diagnostics() -> None:

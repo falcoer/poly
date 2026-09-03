@@ -527,8 +527,9 @@ Cross-milestone invariants:
   - repeated preparation validates the complete action graph, including
     preserved provider diagnostics, duplicate action identifiers, claims,
     missing constraints, and cycles;
-  - prepared commands execute in authoring order through canonical constraints,
-    while actions within one command retain their negotiated dependency graph;
+  - cross-command dependencies and overlapping structural mutations preserve
+    authoring order through canonical constraints, while independent work
+    remains eligible for bounded parallel execution;
   - `poly plan` renders the current prepared plan and `poly plan clean`
     idempotently removes only its disposable `.poly/` state;
   - the former expert syntax `poly plan <verb>` is removed, while

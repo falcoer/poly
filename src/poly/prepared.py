@@ -142,26 +142,37 @@ def compose_plans(plans: tuple[Plan, ...]) -> Plan:
 
 
 def _sequenced_actions(plans: tuple[Plan, ...]) -> tuple[ActionSpec, ...]:
-    """Preserve command order while retaining each command's internal action graph."""
+    """Order overlapping commands without serializing independent work."""
 
     actions: list[ActionSpec] = []
-    previous_completions: frozenset[Constraint] = frozenset()
     for plan in plans:
         current: list[ActionSpec] = []
         for action in plan.actions:
             completion = Constraint(f"poly/prepared-complete:{action.id}")
+            dependencies = frozenset(
+                Constraint(f"poly/prepared-complete:{previous.id}")
+                for previous in actions
+                if _must_follow(previous, action) and previous.id != action.id
+            )
             current.append(
                 replace(
                     action,
-                    requires=action.requires | (previous_completions - {completion}),
+                    requires=action.requires | dependencies,
                     produces=action.produces | {completion},
                 )
             )
         actions.extend(current)
-        previous_completions |= frozenset(
-            Constraint(f"poly/prepared-complete:{action.id}") for action in current
-        )
     return tuple(sorted(actions, key=lambda action: action.id))
+
+
+def _must_follow(previous: ActionSpec, current: ActionSpec) -> bool:
+    if previous.changes_structure and current.changes_structure:
+        return True
+    if set(previous.node_ids) & set(current.node_ids):
+        return True
+    previous_scopes = {claim.scope for claim in previous.claims}
+    current_scopes = {claim.scope for claim in current.claims}
+    return bool(previous_scopes & current_scopes)
 
 
 def plan_from_document(document: ReportDocument) -> Plan:

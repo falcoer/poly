@@ -469,10 +469,7 @@ def test_prepared_additions_execute_in_command_order(
     )
     prepared = json.loads(capsys.readouterr().out)
     actions = {action["id"]: action for action in prepared["plan"]["planned_actions"]}
-    assert (
-        "poly/prepared-complete:construct.add:z-parent"
-        in actions["construct.add:a-child"]["requires"]
-    )
+    assert "poly/manifest-added:z-parent" in actions["construct.add:a-child"]["requires"]
 
     assert main(["exec", "--workspace", str(tmp_path), "--format", "json"]) == 0
     executed = json.loads(capsys.readouterr().out)
