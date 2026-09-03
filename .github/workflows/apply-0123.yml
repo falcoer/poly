@@ -40,11 +40,9 @@ jobs:
           from pathlib import Path
           path = Path('src/poly/_version.py')
           path.write_text(path.read_text().replace('0.12.2', '0.12.3'), encoding='utf-8')
-          path = Path('.github/workflows/ci.yml')
-          path.write_text(path.read_text().replace('0.12.2', '0.12.3'), encoding='utf-8')
           PY
       - name: Remove staging transformer
-        run: rm tools/apply_0123_transform.py .github/workflows/apply-0123.yml
+        run: rm tools/apply_0123_transform.py
       - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
