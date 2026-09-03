@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 import poly.cli as cli
-from poly.model import ActionClaim, ActionSpec, Constraint, RejectedCandidate
+from poly.model import ActionClaim, ActionSpec, Constraint, JsonValue, RejectedCandidate
 from poly.persistence import StateStore
 from poly.prepared import (
     PreparedPlanError,
@@ -199,12 +200,12 @@ def test_legacy_frozen_plan_decoder_round_trips_full_action_shape() -> None:
     document: ReportDocument = {
         "schema": "poly.report/v1",
         "kind": "prepared-plan",
-        "rejected_candidates": [rejected_document(rejected)],
+        "rejected_candidates": [cast(JsonValue, rejected_document(rejected))],
         "plan": {
             "id": "legacy-plan",
             "verb": "prepared",
             "selected_node_ids": ["api"],
-            "planned_actions": [action_document(action)],
+            "planned_actions": [cast(JsonValue, action_document(action))],
             "diagnostics": [
                 {"code": "legacy.warning", "message": "retained", "action_id": action.id}
             ],
