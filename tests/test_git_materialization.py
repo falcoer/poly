@@ -9,8 +9,9 @@ from pathlib import Path
 import pytest
 
 from poly.cli import main
-from poly.driver import FacadeRequest
-from poly.drivers.git import GitActionHandler, RepositoryAddFacade
+from poly.driver import ExecutionContext, FacadeRequest
+from poly.drivers.git import GitActionHandler, RepositoryAddFacade, _positive_depth, _repository_url
+from poly.model import ActionSpec
 from poly.workspace import validate_workspace
 
 
@@ -64,7 +65,9 @@ def test_git_clone_uses_long_materialization_timeout(monkeypatch: pytest.MonkeyP
     calls: list[tuple[tuple[str, ...], float | None]] = []
 
     def fake_run(command: tuple[str, ...], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        calls.append((command, kwargs.get("timeout")))
+        timeout = kwargs.get("timeout")
+        assert timeout is None or isinstance(timeout, float)
+        calls.append((command, timeout))
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr("poly.drivers.git.subprocess.run", fake_run)
@@ -93,6 +96,65 @@ def test_repository_facade_persists_optional_shallow_clone_depth(tmp_path: Path)
     )
 
 
+@pytest.mark.parametrize("value", ["0", "-1", "many"])
+def test_git_positive_depth_rejects_invalid_values(value: str) -> None:
+    with pytest.raises(ValueError, match="positive integer"):
+        _positive_depth(value)
+
+
+def test_git_positive_depth_normalizes_integer() -> None:
+    assert _positive_depth("003") == "3"
+
+
+def test_repository_url_preserves_remote_alias() -> None:
+    assert _repository_url("company/repository") == "company/repository"
+
+
+def test_git_clone_places_optional_depth_before_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_directory = tmp_path / ".poly" / "runs" / "clone"
+    action = ActionSpec(
+        "clone:service",
+        "poly.driver.git",
+        "hydrate",
+        "git/clone",
+        ("service",),
+        environment={
+            "poly.node.id": "service",
+            "poly.node.path": "services/service",
+            "poly.source.url": "https://example.invalid/repo.git",
+            "poly.source.depth": "3",
+        },
+    )
+    calls: list[tuple[str, ...]] = []
+
+    def fake_git_process(
+        _self: GitActionHandler, _directory: Path, *arguments: str
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(arguments)
+        (Path(arguments[-1]) / ".git").mkdir(parents=True)
+        return subprocess.CompletedProcess(arguments, 0, "", "")
+
+    monkeypatch.setattr(
+        GitActionHandler,
+        "_git_process",
+        fake_git_process,
+    )
+    result = GitActionHandler()._clone(action, ExecutionContext(tmp_path, run_directory))
+    assert result.success
+    assert calls == [
+        (
+            "clone",
+            "--no-checkout",
+            "--depth",
+            "3",
+            "https://example.invalid/repo.git",
+            str(tmp_path / "services/service"),
+        )
+    ]
+
+
 def test_add_hydrate_eclipse_pull_lock_and_update_journey(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -119,6 +181,8 @@ def test_add_hydrate_eclipse_pull_lock_and_update_journey(
                 str(remote),
                 "--ref",
                 "main",
+                "--depth",
+                "1",
                 "--format",
                 "json",
             ]
@@ -132,6 +196,7 @@ def test_add_hydrate_eclipse_pull_lock_and_update_journey(
     child = workspace / "services" / "service"
     assert not child.exists()
     assert validate_workspace(workspace).lock.sources[0].commit == initial
+    assert validate_workspace(workspace).lock.sources[0].depth == 1
 
     assert main(["hydrate", "--workspace", str(workspace), "--select", "service"]) == 0
     capsys.readouterr()
