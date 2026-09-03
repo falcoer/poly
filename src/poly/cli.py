@@ -533,7 +533,8 @@ def _bootstrap_root(
             "root repository bootstrap cannot be prepared because its recursive hydration "
             "cannot be frozen before the root repository is cloned"
         )
-    _reject_active_prepared_plan(parser, _nearest_workspace(parent) or parent)
+    containing_plan = _nearest_prepared_plan_root(parent)
+    _reject_active_prepared_plan(parser, containing_plan or _nearest_workspace(parent) or parent)
     with tempfile.TemporaryDirectory(prefix="poly-bootstrap-", dir=parent) as run_path:
         result = Executor(_controller_runner(registry, options.controller)).execute(
             snapshot.plan, ExecutionContext(parent, Path(run_path))
@@ -635,6 +636,13 @@ def _append_prepared_plan(
 def _reject_active_prepared_plan(parser: argparse.ArgumentParser, workspace: Path) -> None:
     if (workspace / ".poly" / "state" / "plan.json").is_file():
         parser.error("a prepared plan is active; use 'poly exec' or 'poly plan clean'")
+
+
+def _nearest_prepared_plan_root(start: Path) -> Path | None:
+    for candidate in (start, *start.parents):
+        if (candidate / ".poly" / "state" / "plan.json").is_file():
+            return candidate
+    return None
 
 
 def _report_options(parser: argparse.ArgumentParser) -> None:

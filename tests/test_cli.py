@@ -576,6 +576,35 @@ def test_root_bootstrap_honors_plan_in_containing_workspace(
     assert not target.exists()
 
 
+def test_root_bootstrap_honors_prepared_init_in_ancestor_directory(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert (
+        main(
+            [
+                "init",
+                "--workspace",
+                str(tmp_path),
+                "--name",
+                "Pending",
+                "--prepare",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert not (tmp_path / "poly.yaml").exists()
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    target = nested / "target"
+
+    with pytest.raises(SystemExit):
+        main(["init", "https://example.test/root.git", str(target)])
+
+    assert "prepared plan is active" in capsys.readouterr().err
+    assert not target.exists()
+
+
 def test_cli_rejects_stale_and_bypassed_prepared_plans(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
