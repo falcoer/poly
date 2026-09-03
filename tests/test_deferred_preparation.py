@@ -156,7 +156,7 @@ def test_deferred_journal_validates_previous_state_and_payload(tmp_path: Path) -
 
     with pytest.raises(PreparedPlanError, match="not a prepared plan"):
         deferred_document(tmp_path, "add", (), True, {}, "poly add --prepare", {"kind": "x"})
-    with pytest.raises(PreparedPlanError, match="0.12.2"):
+    with pytest.raises(PreparedPlanError, match=r"0\.12\.2"):
         deferred_document(
             tmp_path,
             "add",
