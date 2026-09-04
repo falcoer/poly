@@ -61,7 +61,7 @@ def _attach_source(source: Path, remote: Path) -> None:
     _git(source, "push", "--quiet", "-u", "origin", "main")
 
 
-def test_git_clone_uses_long_materialization_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_git_materialization_uses_long_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[tuple[str, ...], float | None]] = []
 
     def fake_run(command: tuple[str, ...], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -77,7 +77,7 @@ def test_git_clone_uses_long_materialization_timeout(monkeypatch: pytest.MonkeyP
     handler._git(Path("."), "rev-parse", "--verify", "HEAD")
 
     assert calls[0][1] == 600.0
-    assert calls[1][1] == 60.0
+    assert calls[1][1] == 600.0
 
 
 def test_repository_facade_persists_optional_shallow_clone_depth(tmp_path: Path) -> None:

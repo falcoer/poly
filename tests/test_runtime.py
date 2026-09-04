@@ -229,6 +229,29 @@ def test_executor_records_utc_instants_and_monotonic_duration(tmp_path: Path) ->
     assert action.started_at == "2026-09-02T12:00:00.002Z"
     assert action.completed_at == "2026-09-02T12:00:00.000Z"
     assert action.duration_ms == 125
-    assert result.duration_ms == 175
+    assert result.duration_ms == 300
     assert all(event.occurred_at.endswith("Z") for event in result.events)
     assert [event.sequence for event in result.events] == [1, 2, 3, 4]
+
+
+def test_executor_total_duration_covers_all_actions(tmp_path: Path) -> None:
+    start = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
+    monotonic_values = iter((10.0, 10.100, 10.200, 10.300, 10.301, 10.302))
+    runner = StubRunner(
+        {
+            "first": ActionAttempt(True, "done"),
+            "second": ActionAttempt(True, "done"),
+        },
+        [],
+    )
+    context = ExecutionContext(tmp_path, tmp_path / ".poly" / "runs" / "plan")
+
+    result = Executor(
+        runner,
+        wall_clock=lambda: start,
+        monotonic_clock=lambda: next(monotonic_values),
+    ).execute(_plan((_action("first"), _action("second"))), context)
+
+    assert result.actions[0].duration_ms == 100
+    assert result.actions[1].duration_ms == 1
+    assert result.duration_ms == 302
