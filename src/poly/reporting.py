@@ -113,6 +113,8 @@ def run_document(snapshot: PlanningSnapshot, result: RunResult) -> ReportDocumen
         "plan_id": result.plan_id,
         "status": result.status.value,
         "available_constraints": list(result.available_constraints),
+        "duration_ms": result.duration_ms,
+        "slowest_action": _slowest_action(result),
         "actions": [_action_result_document(action) for action in result.actions],
         "events": [_event_document(event) for event in result.events],
     }
@@ -128,6 +130,8 @@ def prepared_run_document(document: ReportDocument, result: RunResult) -> Report
         "plan_id": result.plan_id,
         "status": result.status.value,
         "available_constraints": list(result.available_constraints),
+        "duration_ms": result.duration_ms,
+        "slowest_action": _slowest_action(result),
         "actions": [_action_result_document(action) for action in result.actions],
         "events": [_event_document(event) for event in result.events],
     }
@@ -752,12 +756,40 @@ def _completion_line(document: ReportDocument, exit_code: int, color: bool) -> s
             counts[state] = counts.get(state, 0) + 1
     result = " · ".join(f"{value} {state}" for state, value in sorted(counts.items()))
     suffix = f" · {result}" if result else ""
+    duration = run.get("duration_ms") if isinstance(run, dict) else None
+    if isinstance(duration, (int, float)):
+        suffix += f" · {_format_duration(int(duration))}"
+    slowest = run.get("slowest_action") if isinstance(run, dict) else None
+    if isinstance(slowest, dict):
+        action_id = slowest.get("action_id")
+        action_duration = slowest.get("duration_ms")
+        if isinstance(action_id, str) and isinstance(action_duration, (int, float)):
+            suffix += f" · max {action_id} {_format_duration(int(action_duration))}"
     plan = document.get("plan", {})
     if isinstance(plan, dict) and plan.get("status") == "empty":
         return _styled(f"· NONE     poly {verb}", "muted", color)
     if exit_code == 0:
         return _styled(f"✓ SUCCESS  poly {verb}{suffix}", "green", color)
     return _styled(f"✗ FAILURE  poly {verb}{suffix}", "red", color)
+
+
+def _slowest_action(result: RunResult) -> dict[str, JsonValue] | None:
+    timed = [
+        action
+        for action in result.actions
+        if action.duration_ms is not None and action.duration_ms >= 0
+    ]
+    if not timed:
+        return None
+    action = max(timed, key=lambda item: (item.duration_ms or 0, item.action_id))
+    return {"action_id": action.action_id, "duration_ms": action.duration_ms or 0}
+
+
+def _format_duration(duration_ms: int) -> str:
+    total_seconds = max(0, duration_ms) // 1000
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}h {minutes:02d}m {seconds:02d}s"
 
 
 def _usable_width(width: int) -> int:
