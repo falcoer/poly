@@ -82,6 +82,7 @@ def test_run_document_keeps_attempt_logs_and_state(tmp_path: Path) -> None:
         ),
         (),
         (),
+        3723000,
     )
 
     document = run_document(planning, result)
@@ -109,6 +110,7 @@ def test_interactive_renderer_has_command_statuses_and_distinct_completion(
         ),
         (),
         (),
+        3723000,
     )
     document = run_document(planning, result)
 
@@ -137,6 +139,7 @@ def test_interactive_renderer_has_command_statuses_and_distinct_completion(
     assert concise.splitlines()[1].startswith("        PLAN")
     assert "                ✓ OK       verify:node" in concise
     assert concise.splitlines()[-2].startswith("        ✓ SUCCESS  poly verify")
+    assert "01h 02m 03s" in concise
     assert "Schema: poly.report/v1" in verbose
     assert "        COMMAND  poly verify --select node -vv" in verbose
     assert "\x1b[32m" in verbose
