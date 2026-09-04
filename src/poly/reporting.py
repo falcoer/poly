@@ -7,6 +7,7 @@ import re
 import unicodedata
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
 
@@ -323,6 +324,12 @@ def render_cli_event(
     elif event.message:
         suffix = "blocked by " if event.state is ActionState.BLOCKED else ""
         line += f" · {suffix}{_safe_visible(event.message)}"
+    if event.state in {
+        ActionState.SUCCEEDED,
+        ActionState.FAILED,
+        ActionState.BLOCKED,
+    }:
+        line += f" · [{_format_cli_timestamp(event.occurred_at)}]"
     return _render_action_lines(line, tone, color, width)
 
 
@@ -335,6 +342,7 @@ def render_cli_progress(
     color: bool = False,
     width: int = _FALLBACK_WIDTH,
     elapsed_ms: int = 0,
+    occurred_at: str | None = None,
 ) -> str:
     """Render one adaptive global plan progress row."""
 
@@ -343,15 +351,19 @@ def render_cli_progress(
     percentage = bounded_completed * 100 // bounded_total
     label = "IN PROGRESS KO" if failed else "IN PROGRESS WARN" if blocked else "IN PROGRESS"
     prefix = f"{_SECTION_INDENT}{label} "
+    timestamp = _format_cli_timestamp(
+        occurred_at or datetime.now(UTC).isoformat(timespec="seconds")
+    )
     suffix = (
         f"{bounded_completed}/{bounded_total} actions · {percentage:3d} %"
-        f" · {_format_clock(elapsed_ms)}"
+        f" · {_format_clock(elapsed_ms)} · [{timestamp}]"
     )
     available = _usable_width(width)
     bar_width = available - _display_width(prefix) - _display_width(suffix) - 3
     if bar_width < 5:
         suffix = (
             f"{bounded_completed}/{bounded_total} · {percentage}% · {_format_clock(elapsed_ms)}"
+            f" · [{timestamp}]"
         )
         bar_width = available - _display_width(prefix) - _display_width(suffix) - 3
     if bar_width >= 5:
@@ -364,7 +376,7 @@ def render_cli_progress(
         )
         compact = (
             f"{compact_label} {bounded_completed}/{bounded_total} {percentage}%"
-            f" · {_format_clock(elapsed_ms)}"
+            f" · {_format_clock(elapsed_ms)} · [{timestamp}]"
         )
         indent = " " * min(len(_SECTION_INDENT), max(0, available - _display_width(compact)))
         line = indent + compact
@@ -743,6 +755,9 @@ def _concise_action(
     blocked = action.get("blocked_by")
     if blocked:
         line += f" · blocked by {_compact(blocked)}"
+    completed_at = action.get("completed_at")
+    if isinstance(completed_at, str):
+        line += f" · [{_format_cli_timestamp(completed_at)}]"
     lines.extend(_render_action_lines(line, tone, color, width).rstrip().splitlines())
 
     if isinstance(attempt, dict) and verbosity >= 1:
@@ -809,6 +824,18 @@ def _format_clock(duration_ms: int) -> str:
     hours, remainder = divmod(total_seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def _format_cli_timestamp(value: str) -> str:
+    """Render a canonical timestamp in process-local time at second precision."""
+
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return _safe_visible(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _usable_width(width: int) -> int:
@@ -1307,9 +1334,15 @@ def _text_run(lines: list[str], document: ReportDocument) -> None:
         lines.append(f"Events: {len(events)}")
         for event in events:
             if isinstance(event, dict):
+                occurred_at = event.get("occurred_at")
+                timestamp = (
+                    _format_cli_timestamp(occurred_at)
+                    if isinstance(occurred_at, str)
+                    else _safe_visible(str(occurred_at))
+                )
                 lines.append(
                     f"  {event.get('sequence')}. {event.get('action_id')} "
-                    f"{event.get('state')} {event.get('message')} @ {event.get('occurred_at')}"
+                    f"{event.get('state')} {event.get('message')} @ [{timestamp}]"
                 )
 
 

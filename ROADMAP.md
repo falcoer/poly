@@ -681,7 +681,7 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
 
 ## 0.12.5 — Terminal rendering modes and durable history
 
-- Status: `planned`
+- Status: `implemented-awaiting-validation`
 - Tag: `roadmap/0.12.5-terminal-rendering-modes`
 - Depends on: validated 0.12.4 interactive rendering corrections.
 - Scope: replace the unbounded incremental repaint with an explicit terminal
@@ -703,9 +703,9 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
   - one renderer-owned dispatcher is the sole writer of text and OSC terminal
     sequences; worker threads, action runners, drivers, and timer threads only
     publish events and never write or repaint the terminal directly;
-  - the dispatcher applies action events using their synchronized global
-    sequence and maintains an immutable latest-state snapshot for rendering;
-  - progress clock ticks pass through the same serialized dispatcher as action
+  - the dispatcher serializes event admission and maintains a private
+    latest-state snapshot for rendering;
+  - progress clock ticks execute in the same serialized dispatcher as action
     events, so repaint, completion, interruption, and shutdown cannot interleave;
   - leaving `live`, whether after success, failure, interruption, or an internal
     exception, atomically stops further repaint, restores the primary terminal

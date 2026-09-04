@@ -167,7 +167,7 @@ def test_cli_flushes_heading_and_terminal_action_before_completion(
     output = RecordingOutput()
     monkeypatch.setattr(sys, "stdout", output)
 
-    assert main(["init", "--workspace", str(tmp_path), "--name", "Streaming"]) == 0
+    assert main(["init", "--workspace", str(tmp_path), "--name", "Streaming", "--flow"]) == 0
 
     assert any("INITIALIZING" in value and "SUCCESS" not in value for value in output.flushes)
     assert all("> RUNNING" not in value for value in output.flushes)

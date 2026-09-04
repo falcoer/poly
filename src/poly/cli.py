@@ -182,7 +182,11 @@ def main(arguments: list[str] | None = None) -> int:
         streamed = options.format == "text"
         renderer = (
             SerializedRunRenderer(
-                sys.stdout, plan.actions, options.verbosity, _color_enabled(options)
+                sys.stdout,
+                plan.actions,
+                options.verbosity,
+                _color_enabled(options),
+                force_flow=options.flow,
             )
             if streamed
             else None
@@ -280,6 +284,7 @@ def main(arguments: list[str] | None = None) -> int:
                         snapshot.plan.actions,
                         options.verbosity,
                         _color_enabled(options),
+                        force_flow=options.flow,
                     )
                     if streamed
                     else None
@@ -482,6 +487,7 @@ def _nature_command(
             snapshot.plan.actions,
             options.verbosity,
             _color_enabled(options),
+            force_flow=options.flow,
         )
         if streamed
         else None
@@ -733,6 +739,11 @@ def _report_options(parser: argparse.ArgumentParser) -> None:
         choices=("auto", "always", "never"),
         default="auto",
         help="colorize interactive text output (default: auto)",
+    )
+    parser.add_argument(
+        "--flow",
+        action="store_true",
+        help="use append-only execution output instead of live terminal rendering",
     )
 
 

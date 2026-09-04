@@ -29,6 +29,7 @@ from poly.reporting import (
     render_cli,
     render_cli_completion,
     render_cli_event,
+    render_cli_progress,
     render_cli_start,
     run_document,
 )
@@ -241,7 +242,8 @@ def test_streaming_renderer_separates_start_events_logs_and_completion(tmp_path:
     assert "COMMAND  poly verify -v" in start
     assert "PLAN     plan · 1 action(s) · executable" in start
     assert "> RUNNING  verify:node (fixture/verify)" in running
-    assert "✓ OK       verify:node (fixture/verify) · verified" in succeeded
+    assert "✓ OK       verify:node (fixture/verify)" in succeeded
+    assert "· verified · [" in succeeded
     assert "stdout: details" in completion
     assert "✓ SUCCESS  poly verify" in completion
 
@@ -348,6 +350,7 @@ def test_scalar_values_and_outputs_render_without_losing_structured_data(
 
     plain = render_cli(document, "poly verify", exit_code=1)
     linked = render_cli(document, "poly verify", exit_code=1, hyperlinks=True)
+    detailed_text = render(document, "text")
     structured = json.loads(render(document, "json"))
 
     assert "· coverage: 82.4" in plain
@@ -359,6 +362,9 @@ def test_scalar_values_and_outputs_render_without_losing_structured_data(
     assert structured["run"]["actions"][0]["duration_ms"] == 125
     assert structured["run"]["actions"][0]["attempt"]["outputs"][2]["kind"] == "url"
     assert structured["run"]["events"][0]["occurred_at"].endswith("Z")
+    assert "[2026-09-02 " in plain
+    assert "@ [2026-09-02 " in detailed_text
+    assert "T12:00:00.125Z" not in detailed_text
 
 
 def test_narrow_action_detail_wraps_at_the_third_indent(tmp_path: Path) -> None:
@@ -375,6 +381,34 @@ def test_narrow_action_detail_wraps_at_the_third_indent(tmp_path: Path) -> None:
     assert output.splitlines()[0].startswith("                ✓ OK")
     assert any(line.startswith("                        · ") for line in output.splitlines()[1:])
     assert all(len(line) <= 48 for line in output.splitlines())
+
+
+def test_terminal_timestamps_are_bracketed_at_the_end_of_actions_and_progress(
+    tmp_path: Path,
+) -> None:
+    _, planning = _snapshots(tmp_path)
+    event = RunEvent(
+        1,
+        ActionState.SUCCEEDED,
+        "verify:node",
+        "verified",
+        "2026-09-04T12:00:10.000Z",
+    )
+
+    action = render_cli_event(event, planning.plan.actions[0], width=100).rstrip()
+    progress = render_cli_progress(
+        1,
+        2,
+        width=120,
+        elapsed_ms=5_000,
+        occurred_at="2026-09-04T12:00:15.000Z",
+    ).rstrip()
+
+    assert action.endswith("]")
+    assert progress.endswith("]")
+    assert "00:00:05" in progress
+    assert "[2026-09-04 " in action
+    assert "[2026-09-04 " in progress
 
 
 def test_terminal_renderer_neutralizes_controls_in_summaries(tmp_path: Path) -> None:
