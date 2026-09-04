@@ -50,16 +50,22 @@ exécute le plan affiché sans relancer l'inspection ni la planification.
 
 ## Comment suivre une opération longue ?
 
-Le format texte interactif affiche et vide immédiatement le titre de la
-commande et le plan figé. Chaque action affiche ensuite `RUNNING` au démarrage,
-puis `OK`, `KO` ou `WARN` dès que son état terminal est connu. Le résumé final
-n'est donc plus le premier retour visible d'un `hydrate`, d'un build ou d'un
-test long.
+Sur un terminal compatible, le format texte affiche une vue temps réel paginée
+dans un écran isolé. Elle suit les actions courantes sans réécrire l'historique
+principal. À la fin, Poly restaure la console puis écrit une ligne horodatée par
+action et le résumé final dans un historique continu. Une console non
+interactive ou incompatible sélectionne automatiquement ce mode continu.
 
 ### Bash
 
 ```bash
 poly hydrate --workspace workspace
+```
+
+Pour imposer une sortie continue directement scrollable :
+
+```bash
+poly hydrate --workspace workspace --flow
 ```
 
 ### PowerShell
@@ -68,13 +74,21 @@ poly hydrate --workspace workspace
 poly hydrate --workspace workspace
 ```
 
+Pour imposer une sortie continue directement scrollable :
+
+```powershell
+poly hydrate --workspace workspace --flow
+```
+
 ### Résultat attendu
 
-Les lignes arrivent au fil de l'eau dans le terminal. `-q` conserve uniquement
-le résultat final ; `-v` ajoute la commande exacte et les sorties de processus ;
-`-vv` ajoute le rapport canonique complet en fin d'exécution. Les formats
-`json`, `yaml` et `xml` restent émis en un document complet, sans lignes de
-progression intercalées.
+La vue temps réel affiche une barre de progression horodatée avec la durée
+écoulée. Le mode `--flow` ajoute uniquement les états terminaux, dans leur ordre
+d'achèvement, sans mouvement de curseur. `-q` conserve uniquement le résultat
+final ; `-v` ajoute la commande exacte et les sorties de processus ; `-vv`
+ajoute le rapport canonique complet en fin d'exécution. Les formats `json`,
+`yaml` et `xml` restent émis en un document complet, sans lignes de progression
+intercalées et avec les horodatages UTC canoniques.
 
 ## Comment vérifier un module Maven précis ?
 

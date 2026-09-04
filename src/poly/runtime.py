@@ -185,6 +185,7 @@ class Executor:
                     action.id,
                     ActionState.BLOCKED,
                     blocked_by=tuple(sorted(constraint.key for constraint in action.requires)),
+                    completed_at=_timestamp(self.wall_clock()),
                 )
                 for action in plan.actions
             )
@@ -203,7 +204,7 @@ class Executor:
                     ActionState.BLOCKED,
                     result.action_id,
                     "plan is not executable",
-                    _timestamp(self.wall_clock()),
+                    result.completed_at or _timestamp(self.wall_clock()),
                 )
                 for index, result in enumerate(blocked_results, start=1)
             )
@@ -271,9 +272,17 @@ class Executor:
                         )
                     )
                     results[action_id] = ActionResult(
-                        action_id, ActionState.BLOCKED, blocked_by=missing
+                        action_id,
+                        ActionState.BLOCKED,
+                        blocked_by=missing,
+                        completed_at=_timestamp(self.wall_clock()),
                     )
-                    transition(action_id, ActionState.BLOCKED, ", ".join(missing))
+                    transition(
+                        action_id,
+                        ActionState.BLOCKED,
+                        ", ".join(missing),
+                        results[action_id].completed_at,
+                    )
                 break
 
             action_id = ready[0]

@@ -52,7 +52,7 @@ jobs:
           import zipfile
           import poly
 
-          version = "0.12.4"
+          version = "0.12.5"
           dist = pathlib.Path("dist")
           wheel = dist / f"poly-{version}-py3-none-any.whl"
           sdist = dist / f"poly-{version}.tar.gz"
@@ -86,16 +86,16 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: poly-0.12.4-distributions-${{ github.sha }}
+          name: poly-0.12.5-distributions-${{ github.sha }}
           path: |
-            dist/poly-0.12.4-py3-none-any.whl
-            dist/poly-0.12.4.tar.gz
+            dist/poly-0.12.5-py3-none-any.whl
+            dist/poly-0.12.5.tar.gz
             dist/SHA256SUMS
             dist/build-metadata.json
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: poly-0.12.4-quality-${{ github.sha }}
+          name: poly-0.12.5-quality-${{ github.sha }}
           path: evidence/
           if-no-files-found: error
 
@@ -146,7 +146,7 @@ jobs:
           prune-cache: true
       - uses: actions/download-artifact@v4
         with:
-          name: poly-0.12.4-distributions-${{ github.sha }}
+          name: poly-0.12.5-distributions-${{ github.sha }}
           path: ${{ runner.temp }}/distributions
       - name: Build deterministic Git fixture twice
         shell: bash
@@ -161,7 +161,7 @@ jobs:
           set -euo pipefail
           clean="$RUNNER_TEMP/poly-fixture-venv"
           uv venv --python 3.12 "$clean"
-          uv pip install --python "$clean/bin/python" "$RUNNER_TEMP/distributions/poly-0.12.4-py3-none-any.whl"
+          uv pip install --python "$clean/bin/python" "$RUNNER_TEMP/distributions/poly-0.12.5-py3-none-any.whl"
           "$clean/bin/poly" driver new sample-tech --path "$RUNNER_TEMP/sample-driver"
           (cd "$RUNNER_TEMP/sample-driver" && uv build)
           cp "$RUNNER_TEMP/sample-driver/dist/poly_driver_sample_tech-0.1.0-py3-none-any.whl" "$RUNNER_TEMP/fixture-a/"
@@ -169,7 +169,7 @@ jobs:
           cp tools/acceptance/run_acceptance.py tools/acceptance/run-posix.sh tools/acceptance/run-powershell.ps1 "$RUNNER_TEMP/fixture-a/scripts/"
       - uses: actions/upload-artifact@v4
         with:
-          name: poly-0.12.4-acceptance-fixture-${{ github.sha }}
+          name: poly-0.12.5-acceptance-fixture-${{ github.sha }}
           path: ${{ runner.temp }}/fixture-a/
           if-no-files-found: error
 
@@ -205,11 +205,11 @@ jobs:
       - uses: astral-sh/setup-uv@v9.0.0
       - uses: actions/download-artifact@v4
         with:
-          name: poly-0.12.4-distributions-${{ github.sha }}
+          name: poly-0.12.5-distributions-${{ github.sha }}
           path: ${{ runner.temp }}/distributions
       - uses: actions/download-artifact@v4
         with:
-          name: poly-0.12.4-acceptance-fixture-${{ github.sha }}
+          name: poly-0.12.5-acceptance-fixture-${{ github.sha }}
           path: ${{ runner.temp }}/fixture
       - name: Install retained wheels without source checkout
         shell: bash
@@ -218,7 +218,7 @@ jobs:
           clean="$RUNNER_TEMP/poly-clean-room"
           uv venv --python 3.12 "$clean"
           driver=$(find "$RUNNER_TEMP/fixture" -maxdepth 1 -name 'poly_driver_sample_tech-*.whl' -print -quit)
-          uv pip install --python "$clean/bin/python" "$RUNNER_TEMP/distributions/poly-0.12.4-py3-none-any.whl" "$driver"
+          uv pip install --python "$clean/bin/python" "$RUNNER_TEMP/distributions/poly-0.12.5-py3-none-any.whl" "$driver"
           echo "python=$clean/bin/python" >> "$GITHUB_ENV"
           echo "poly=$clean/bin/poly" >> "$GITHUB_ENV"
       - name: Execute documented POSIX journey
@@ -229,7 +229,7 @@ jobs:
           cat "$RUNNER_TEMP/evidence-posix/SUMMARY.md" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
-          name: poly-0.12.4-acceptance-linux-${{ github.sha }}
+          name: poly-0.12.5-acceptance-linux-${{ github.sha }}
           path: ${{ runner.temp }}/evidence-posix/
           if-no-files-found: error
 
@@ -247,11 +247,11 @@ jobs:
       - uses: astral-sh/setup-uv@v9.0.0
       - uses: actions/download-artifact@v4
         with:
-          name: poly-0.12.4-distributions-${{ github.sha }}
+          name: poly-0.12.5-distributions-${{ github.sha }}
           path: ${{ runner.temp }}/distributions
       - uses: actions/download-artifact@v4
         with:
-          name: poly-0.12.4-acceptance-fixture-${{ github.sha }}
+          name: poly-0.12.5-acceptance-fixture-${{ github.sha }}
           path: ${{ runner.temp }}/fixture
       - name: Install retained wheels without source checkout
         shell: pwsh
@@ -260,7 +260,7 @@ jobs:
           uv venv --python 3.12 $clean
           $python = Join-Path $clean "Scripts/python.exe"
           $poly = Join-Path $clean "Scripts/poly.exe"
-          $core = Join-Path $env:RUNNER_TEMP "distributions/poly-0.12.4-py3-none-any.whl"
+          $core = Join-Path $env:RUNNER_TEMP "distributions/poly-0.12.5-py3-none-any.whl"
           $driver = (Get-ChildItem (Join-Path $env:RUNNER_TEMP "fixture") -Filter "poly_driver_sample_tech-*.whl" | Select-Object -First 1).FullName
           uv pip install --python $python $core $driver
           "python=$python" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -275,7 +275,7 @@ jobs:
           Get-Content (Join-Path $output "SUMMARY.md") | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
       - uses: actions/upload-artifact@v4
         with:
-          name: poly-0.12.4-acceptance-windows-${{ github.sha }}
+          name: poly-0.12.5-acceptance-windows-${{ github.sha }}
           path: ${{ runner.temp }}/evidence-windows/
           if-no-files-found: error
 

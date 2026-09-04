@@ -190,22 +190,23 @@ compact terminal result whose `OUTPUT` section links to the generated report.
 `run` stores process output and state transitions in its report. It executes
 only the frozen plan printed in the same document.
 
-Interactive text output is grouped into one visual block per command: an
-action-oriented heading, an indented plan, one detailed status line per action,
-and a framed success or failure summary. For executed plans, the heading and
-plan are flushed before work begins; `RUNNING`, `OK`, `KO`, and `WARN` lines
-then appear as each action changes state, so long operations such as
-materialization also update the native iTerm2 or Windows Terminal progress
-indicator. Every interactive terminal also receives one adaptive progress row
-below the action rows; it shows the completed action count and percentage, then
-is removed before the final summary. The native indicator and portable row are
-cleared when the plan completes or is interrupted.
+Interactive text execution automatically uses a paginated live view when the
+terminal safely supports an isolated screen, cursor addressing, and sufficient
+dimensions. The live view follows current activity without rewriting primary
+scrollback. On exit, Poly restores the terminal and writes one complete,
+duplicate-free action history. Unsupported and redirected terminals use
+append-only flow output automatically; `--flow` forces that mode. Terminal
+action rows end with their completion time, and the live progress row shows
+both elapsed time and the current timestamp. Long operations also update the
+native iTerm2 or Windows Terminal progress indicator when available. All
+terminal state and native progress are cleared on completion or interruption.
 `poly hydrate` never waits for the final report before showing progress. Use
 `-q` for only the unchanged final result,
 `-v` to also show the exact invoked command and process output, and `-vv` for
 the complete canonical report. Colors are automatic on terminals and can be
 controlled with `--color auto|always|never`; `NO_COLOR` is honored. Structured
-JSON, YAML, and XML output is never decorated.
+JSON, YAML, and XML output is never decorated and retains canonical UTC
+timestamps.
 
 The subcommands below `poly add` are contributed dynamically by loaded drivers;
 the engine contains no facade inventory. `poly init` creates `poly.yaml`,
