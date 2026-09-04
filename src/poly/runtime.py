@@ -163,6 +163,7 @@ class RunResult:
     actions: tuple[ActionResult, ...]
     events: tuple[RunEvent, ...]
     available_constraints: tuple[str, ...]
+    duration_ms: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,8 +176,9 @@ class Executor:
     monotonic_clock: Callable[[], float] = time.monotonic
 
     def execute(self, plan: Plan, context: ExecutionContext) -> RunResult:
+        started_monotonic = self.monotonic_clock()
         if plan.status is PlanStatus.EMPTY:
-            return RunResult(plan.id, RunStatus.EMPTY, (), (), _constraint_keys(plan))
+            return RunResult(plan.id, RunStatus.EMPTY, (), (), _constraint_keys(plan), 0)
         if plan.status is not PlanStatus.EXECUTABLE:
             blocked_results = tuple(
                 ActionResult(
@@ -214,6 +216,7 @@ class Executor:
                 blocked_results,
                 blocked_events,
                 _constraint_keys(plan),
+                max(0, round((self.monotonic_clock() - started_monotonic) * 1000)),
             )
 
         available = {constraint.key for constraint in plan.initial_constraints}
@@ -318,6 +321,7 @@ class Executor:
             ordered_results,
             tuple(events),
             tuple(sorted(available)),
+            max(0, round((self.monotonic_clock() - started_monotonic) * 1000)),
         )
 
 

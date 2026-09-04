@@ -669,6 +669,10 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
     commands;
   - repository nodes use a complete Git clone by default and accept an
     optional positive `depth` setting through `poly add repository --depth`;
+  - `poly hydrate --depth N` overrides the persisted depth for one execution,
+    and `poly hydrate --unshallow` expands existing shallow repositories;
+  - the compact completion line reports total elapsed time and the longest
+    timed action, with equivalent structured `run` fields;
 - Checks: focused renderer snapshots with and without color, generic command-start
   regression, progress-state variants, existing terminal tests, and the complete
   Windows/Linux quality and acceptance matrix.

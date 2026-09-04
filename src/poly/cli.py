@@ -29,6 +29,7 @@ from poly.driver import (
 )
 from poly.driver.scaffold import DriverScaffoldError, scaffold_driver
 from poly.drivers import git_driver, maven_driver
+from poly.drivers.git import _positive_depth
 from poly.model import Node
 from poly.persistence import StateError, StateStore
 from poly.prepared import (
@@ -406,6 +407,16 @@ def _parser(registry: DriverRegistry) -> argparse.ArgumentParser:
     dynamic = sorted(set(_driver_verbs(registry)) - RESERVED_COMMANDS - INTERNAL_VERBS - structural)
     for verb in dynamic:
         direct = commands.add_parser(verb, help=f"plan and execute the {verb!r} driver verb")
+        if verb == "hydrate":
+            direct.add_argument(
+                "--depth",
+                help="override shallow clone depth for this hydration only",
+            )
+            direct.add_argument(
+                "--unshallow",
+                action="store_true",
+                help="convert shallow repositories to complete history",
+            )
         if verb == "lock":
             direct.add_argument(
                 "--from-workspace",
@@ -846,6 +857,15 @@ def _command_parameters(options: argparse.Namespace, registry: DriverRegistry) -
         parameters["poly.node.id"] = options.node_id
     elif options.command == "lock" and options.from_workspace:
         parameters["poly.lock.from-workspace"] = "true"
+    elif options.command == "hydrate":
+        depth = getattr(options, "depth", None)
+        if depth:
+            try:
+                parameters["poly.source.depth"] = str(_positive_depth(depth))
+            except ValueError as error:
+                raise ValueError(str(error)) from error
+        if getattr(options, "unshallow", False):
+            parameters["poly.source.unshallow"] = "true"
     return parameters
 
 

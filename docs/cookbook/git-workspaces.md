@@ -43,6 +43,19 @@ poly hydrate \
   --select "$node_id"
 ```
 
+Pour accélérer ponctuellement une nouvelle matérialisation, une profondeur
+peut être surchargée sans modifier `poly.yaml` ni `poly.lock.yaml` :
+
+```bash
+poly hydrate --workspace "$workspace_path" --depth 1
+```
+
+Pour récupérer ensuite l'historique complet d'un dépôt shallow :
+
+```bash
+poly hydrate --workspace "$workspace_path" --select "$node_id" --unshallow
+```
+
 ### PowerShell
 
 ```powershell
