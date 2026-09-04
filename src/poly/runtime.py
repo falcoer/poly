@@ -176,7 +176,7 @@ class Executor:
     monotonic_clock: Callable[[], float] = time.monotonic
 
     def execute(self, plan: Plan, context: ExecutionContext) -> RunResult:
-        started_monotonic = self.monotonic_clock()
+        run_started_monotonic = self.monotonic_clock()
         if plan.status is PlanStatus.EMPTY:
             return RunResult(plan.id, RunStatus.EMPTY, (), (), _constraint_keys(plan), 0)
         if plan.status is not PlanStatus.EXECUTABLE:
@@ -216,7 +216,7 @@ class Executor:
                 blocked_results,
                 blocked_events,
                 _constraint_keys(plan),
-                max(0, round((self.monotonic_clock() - started_monotonic) * 1000)),
+                max(0, round((self.monotonic_clock() - run_started_monotonic) * 1000)),
             )
 
         available = {constraint.key for constraint in plan.initial_constraints}
@@ -281,7 +281,7 @@ class Executor:
             transition(action_id, ActionState.READY)
             started_wall = self.wall_clock()
             started_at = _timestamp(started_wall)
-            started_monotonic = self.monotonic_clock()
+            action_started_monotonic = self.monotonic_clock()
             transition(action_id, ActionState.RUNNING, occurred_at=started_at)
             try:
                 attempt = self.runner.run(action, context)
@@ -290,7 +290,7 @@ class Executor:
                     False, f"action runner raised {type(error).__name__}: {error}"
                 )
             completed_at = _timestamp(self.wall_clock())
-            duration_ms = max(0, round((self.monotonic_clock() - started_monotonic) * 1000))
+            duration_ms = max(0, round((self.monotonic_clock() - action_started_monotonic) * 1000))
             if attempt.success:
                 available.update(constraint.key for constraint in action.produces)
                 state = ActionState.SUCCEEDED
@@ -321,7 +321,7 @@ class Executor:
             ordered_results,
             tuple(events),
             tuple(sorted(available)),
-            max(0, round((self.monotonic_clock() - started_monotonic) * 1000)),
+            max(0, round((self.monotonic_clock() - run_started_monotonic) * 1000)),
         )
 
 
