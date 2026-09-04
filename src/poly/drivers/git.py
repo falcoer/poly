@@ -573,7 +573,7 @@ class GitPlanningProvider:
 @dataclass(frozen=True, slots=True)
 class GitActionHandler:
     name: str = GIT_DRIVER_NAME
-    command_timeout_seconds: float = 60.0
+    command_timeout_seconds: float = 600.0
     clone_timeout_seconds: float = 600.0
 
     def execute(self, action: ActionSpec, context: ExecutionContext) -> DriverExecutionResult:
