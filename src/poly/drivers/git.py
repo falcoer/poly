@@ -407,7 +407,12 @@ class GitPlanningProvider:
                 "poly.node.path": node.path,
                 "poly.source.url": url,
                 "poly.source.ref": str(node.metadata.get("poly.source.ref") or ""),
-                "poly.source.depth": str(node.metadata.get("poly.source.depth") or ""),
+                "poly.source.depth": str(
+                    request.parameters.get("poly.source.depth")
+                    or node.metadata.get("poly.source.depth")
+                    or ""
+                ),
+                "poly.source.unshallow": request.parameters.get("poly.source.unshallow", ""),
                 "poly.lock.commit": commit,
                 "poly.lock.ref-kind": str(node.metadata.get("poly.lock.ref-kind") or "commit"),
                 "poly.workspace.path": str(request.workspace or ""),
@@ -704,6 +709,13 @@ class GitActionHandler:
     def _fetch(self, action: ActionSpec, context: ExecutionContext) -> DriverExecutionResult:
         target = self._target(action, context)
         commit, _kind = self._resolution(action, context)
+        if action.environment.get("poly.source.unshallow") == "true":
+            shallow = self._git(target, "rev-parse", "--is-shallow-repository")
+            self._ensure_success(shallow, f"cannot inspect repository depth: {target}")
+            if shallow.stdout.strip().lower() == "true":
+                process = self._git(target, "fetch", "--unshallow", "--tags", "origin")
+                self._ensure_success(process, f"cannot unshallow {target}")
+                return DriverExecutionResult(True, f"unshallowed {target}")
         if self._has_commit(target, commit):
             return DriverExecutionResult(True, f"commit {commit} already available")
         process = self._git(target, "fetch", "--tags", "--prune", "origin")
