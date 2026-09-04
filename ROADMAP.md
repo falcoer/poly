@@ -679,11 +679,74 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
 - Excluded for now: semantic changes to prepared plans, execution scheduling, or
   persistence; final scope freeze until the additional correction is added.
 
+## 0.12.5 — Terminal rendering modes and durable history
+
+- Status: `planned`
+- Tag: `roadmap/0.12.5-terminal-rendering-modes`
+- Depends on: validated 0.12.4 interactive rendering corrections.
+- Scope: replace the unbounded incremental repaint with an explicit terminal
+  presentation state machine that preserves a truthful scrollback and provides
+  the serialized output contract required by bounded parallel execution.
+- Acceptance:
+  - text execution output has two modes: automatically selected paginated `live`
+    rendering and append-only `flow` rendering;
+  - `--flow` forces append-only output for every executing command; redirected
+    output, non-interactive terminals, dumb terminals, unsupported cursor
+    addressing, unknown or insufficient terminal height, CI, and other
+    unsupported environments select `flow` automatically;
+  - `live` uses an isolated terminal screen and a viewport bounded by detected
+    terminal height; it never attempts to address lines in the primary
+    scrollback, and automatic page changes require no keyboard input;
+  - the live viewport displays a page indicator when all action rows do not fit
+    and follows the page containing current activity; interactive page
+    navigation is not required by this milestone;
+  - one renderer-owned dispatcher is the sole writer of text and OSC terminal
+    sequences; worker threads, action runners, drivers, and timer threads only
+    publish events and never write or repaint the terminal directly;
+  - the dispatcher applies action events using their synchronized global
+    sequence and maintains an immutable latest-state snapshot for rendering;
+  - progress clock ticks pass through the same serialized dispatcher as action
+    events, so repaint, completion, interruption, and shutdown cannot interleave;
+  - leaving `live`, whether after success, failure, interruption, or an internal
+    exception, atomically stops further repaint, restores the primary terminal
+    screen, resets terminal state, and writes one complete append-only historical
+    view;
+  - that final historical view contains the command heading, exactly one terminal
+    row per planned action in canonical plan order, the completion summary, and
+    output references; it contains no transient `RUNNING` rows and no duplicate
+    action rows;
+  - native OSC progress is emitted only by the terminal owner, remains compatible
+    with the selected text mode, and is cleared on every exit path;
+  - successful, failed, and blocked action rows end with the action completion
+    timestamp formatted `[YYYY-MM-DD HH:MM:SS]`; the live progress row ends with
+    the current timestamp in the same bracketed form while retaining elapsed
+    duration;
+  - every human-readable timestamp uses the process-local timezone and square
+    brackets; canonical JSON, YAML, and XML continue to expose UTC ISO-8601
+    timestamps with millisecond precision;
+  - timestamp wrapping and pagination use rendered display width and visual-line
+    height rather than Python character counts, including colored and wide
+    Unicode output.
+- Checks: deterministic renderer-state tests; small-height multi-page transcripts;
+  alternate-screen enter/leave and terminal-reset assertions; automatic fallback
+  matrix; explicit `--flow`; exactly-once historical rows; timestamp placement,
+  timezone conversion, color, narrow-width, and Unicode wrapping; serialized
+  action/timer/finish race tests; interruption and exception cleanup; OSC
+  ownership; redirected-output snapshots; canonical structured-report parity;
+  POSIX pseudo-terminal coverage where available; and the complete Windows/Linux
+  quality and acceptance matrix.
+- Demonstration: execute a plan spanning several terminal pages, observe the
+  automatically paginated live view and timestamped progress, then prove that
+  returning to the shell leaves one complete, scrollable, duplicate-free flow
+  history. Repeat with `--flow` and with concurrent synthetic event producers.
+- Excluded: bounded parallel action scheduling itself, interactive keyboard page
+  navigation, a full-screen TUI framework, user-configurable timestamp formats
+  or timezones, and persistence changes to canonical run reports.
 ## 0.13 — Bounded parallel plan execution
 
 - Status: `pending`
 - Tag: `roadmap/0.13-bounded-parallel-execution`
-- Depends on: validated 0.12.1 interactive CLI baseline and validated 0.12.2
+- Depends on: validated 0.12.5 terminal rendering modes and validated 0.12.2
   prepared-plan composition.
 - Scope: execute independent actions from the same ready frontier concurrently,
   with deterministic frontier selection, explicit execution-resource isolation,
@@ -718,8 +781,9 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
   - action results retain canonical plan order, while timestamped events record
     actual causal start and completion order with a synchronized global
     sequence;
-  - the interactive renderer maintains one stable row per running action and
-    leaves only terminal rows when the frontier completes;
+  - concurrent workers publish timestamped transitions to one synchronized event
+    dispatcher; the 0.12.5 terminal owner alone updates paginated `live` output,
+    append-only `flow` output, native progress, and final history;
   - interruption stops admission of new actions, records the affected states,
     collects or terminates running work according to explicit policy, and leaves
     a reloadable run report.
