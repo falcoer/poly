@@ -152,7 +152,7 @@ def test_inline_progress_is_stable_adaptive_and_removed_before_completion() -> N
 
     renderer.start(document, "poly verify")
     assert "IN PROGRESS [" in output.getvalue()
-    assert "0/2 actions ·   0 %" in output.getvalue()
+    assert "0/2 · 0% · 00:00:00" in output.getvalue()
     renderer.handle(RunEvent(1, ActionState.SUCCEEDED, "a"))
     renderer.handle(RunEvent(2, ActionState.BLOCKED, "b"))
 
@@ -183,6 +183,35 @@ def test_inline_progress_uses_compact_fallback_at_narrow_width() -> None:
 
     assert "IN PROGRESS 0/1 0%" in output.getvalue()
     assert "IN PROGRESS [" not in output.getvalue()
+
+
+def test_elapsed_progress_refresh_paints_until_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class StopAfterOneRefresh:
+        calls = 0
+
+        def wait(self, _timeout: float) -> bool:
+            self.calls += 1
+            return self.calls > 1
+
+        def set(self) -> None:
+            pass
+
+    output = InteractiveOutput()
+    renderer = SerializedRunRenderer(
+        output,
+        (_action("a"),),
+        capabilities=TerminalCapabilities(True, True, False, 80),
+    )
+    renderer._inline_progress_active = True
+    renderer._elapsed_started = 0.0
+    renderer._rendered_line_count = 1
+    monkeypatch.setattr("poly.terminal.time.monotonic", lambda: 0.0)
+    renderer._elapsed_stop = StopAfterOneRefresh()  # type: ignore[assignment]
+    renderer._refresh_elapsed_progress()
+
+    assert "00:00:00" in output.getvalue()
 
 
 def test_native_progress_is_cleared_on_abort() -> None:
