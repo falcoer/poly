@@ -351,8 +351,7 @@ def render_cli_progress(
     bar_width = available - _display_width(prefix) - _display_width(suffix) - 3
     if bar_width < 5:
         suffix = (
-            f"{bounded_completed}/{bounded_total} · {percentage}%"
-            f" · {_format_clock(elapsed_ms)}"
+            f"{bounded_completed}/{bounded_total} · {percentage}% · {_format_clock(elapsed_ms)}"
         )
         bar_width = available - _display_width(prefix) - _display_width(suffix) - 3
     if bar_width >= 5:
