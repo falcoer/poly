@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import os
 import shutil
+import time
 from dataclasses import dataclass, field
-from threading import Lock
+from threading import Event, Lock, Thread
 from typing import TextIO
 
 from poly.model import ActionSpec
@@ -62,6 +63,9 @@ class SerializedRunRenderer:
     _inline_progress_active: bool = field(default=False, init=False)
     _closed: bool = field(default=False, init=False)
     _lock: Lock = field(default_factory=Lock, init=False)
+    _elapsed_started: float | None = field(default=None, init=False)
+    _elapsed_stop: Event = field(default_factory=Event, init=False)
+    _elapsed_thread: Thread | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         if self.capabilities is None:
@@ -90,6 +94,13 @@ class SerializedRunRenderer:
         )
         if self._inline_progress_active:
             self._rendered_line_count = 1
+            self._elapsed_started = time.monotonic()
+            self._elapsed_thread = Thread(
+                target=self._refresh_elapsed_progress,
+                name="poly-progress",
+                daemon=True,
+            )
+            self._elapsed_thread.start()
 
     def handle(self, event: RunEvent) -> None:
         if self._closed or self.verbosity < 0:
@@ -121,23 +132,10 @@ class SerializedRunRenderer:
         with self._lock:
             self._record_progress(event)
             self._rows[event.action_id] = rendered
-            order = {action.id: index for index, action in enumerate(self.actions)}
-            rows = [
-                row
-                for action_id, row in sorted(
-                    self._rows.items(), key=lambda item: (order.get(item[0], len(order)), item[0])
-                )
-            ]
-            prefix = f"\x1b[{self._rendered_line_count}A\x1b[J" if self._rendered_line_count else ""
-            visual_rows = [*rows]
-            if self._inline_progress_active:
-                visual_rows.append(self._inline_progress().rstrip("\n"))
-            progress = self._native_progress_update(event)
-            self.stream.write(prefix + "\n".join(visual_rows) + "\n" + progress)
-            self.stream.flush()
-            self._rendered_line_count = sum(len(row.splitlines()) for row in visual_rows)
+            self._paint(event)
 
     def finish(self, document: ReportDocument, exit_code: int) -> None:
+        self._elapsed_stop.set()
         capabilities = self._capabilities()
         clear_progress = _native_progress_sequence(0, 0) if self._progress_active else ""
         clear_inline = "\x1b[1A\x1b[J" if self._inline_progress_active else ""
@@ -158,6 +156,7 @@ class SerializedRunRenderer:
         self._closed = True
 
     def abort(self) -> None:
+        self._elapsed_stop.set()
         if not self._closed and self._capabilities().interactive:
             clear_progress = _native_progress_sequence(0, 0) if self._progress_active else ""
             clear_inline = "\x1b[1A\x1b[J" if self._inline_progress_active else ""
@@ -191,6 +190,9 @@ class SerializedRunRenderer:
         return _native_progress_sequence(state, percentage)
 
     def _inline_progress(self) -> str:
+        elapsed_ms = 0
+        if self._elapsed_started is not None:
+            elapsed_ms = round((time.monotonic() - self._elapsed_started) * 1000)
         return render_cli_progress(
             len(self._completed_action_ids),
             len(self.actions),
@@ -198,7 +200,32 @@ class SerializedRunRenderer:
             blocked=self._blocked,
             color=self.color,
             width=self._capabilities().width,
+            elapsed_ms=elapsed_ms,
         )
+
+    def _paint(self, event: RunEvent | None = None) -> None:
+        order = {action.id: index for index, action in enumerate(self.actions)}
+        rows = [
+            row
+            for action_id, row in sorted(
+                self._rows.items(), key=lambda item: (order.get(item[0], len(order)), item[0])
+            )
+        ]
+        prefix = f"\x1b[{self._rendered_line_count}A\x1b[J" if self._rendered_line_count else ""
+        visual_rows = [*rows]
+        if self._inline_progress_active:
+            visual_rows.append(self._inline_progress().rstrip("\n"))
+        progress = self._native_progress_update(event) if event is not None else ""
+        self.stream.write(prefix + "\n".join(visual_rows) + "\n" + progress)
+        self.stream.flush()
+        self._rendered_line_count = sum(len(row.splitlines()) for row in visual_rows)
+
+    def _refresh_elapsed_progress(self) -> None:
+        while not self._elapsed_stop.wait(1.0):
+            with self._lock:
+                if self._closed or not self._inline_progress_active:
+                    return
+                self._paint()
 
     def _capabilities(self) -> TerminalCapabilities:
         assert self.capabilities is not None

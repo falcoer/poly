@@ -334,6 +334,7 @@ def render_cli_progress(
     blocked: bool = False,
     color: bool = False,
     width: int = _FALLBACK_WIDTH,
+    elapsed_ms: int = 0,
 ) -> str:
     """Render one adaptive global plan progress row."""
 
@@ -342,9 +343,17 @@ def render_cli_progress(
     percentage = bounded_completed * 100 // bounded_total
     label = "IN PROGRESS KO" if failed else "IN PROGRESS WARN" if blocked else "IN PROGRESS"
     prefix = f"{_SECTION_INDENT}{label} "
-    suffix = f"{bounded_completed}/{bounded_total} actions · {percentage:3d} %"
+    suffix = (
+        f"{bounded_completed}/{bounded_total} actions · {percentage:3d} %"
+        f" · {_format_clock(elapsed_ms)}"
+    )
     available = _usable_width(width)
     bar_width = available - _display_width(prefix) - _display_width(suffix) - 3
+    if bar_width < 5:
+        suffix = (
+            f"{bounded_completed}/{bounded_total} · {percentage}% · {_format_clock(elapsed_ms)}"
+        )
+        bar_width = available - _display_width(prefix) - _display_width(suffix) - 3
     if bar_width >= 5:
         filled = percentage * bar_width // 100
         bar = "█" * filled + "─" * (bar_width - filled)
@@ -353,7 +362,10 @@ def render_cli_progress(
         compact_label = (
             "IN PROGRESS KO" if failed else "IN PROGRESS WARN" if blocked else "IN PROGRESS"
         )
-        compact = f"{compact_label} {bounded_completed}/{bounded_total} {percentage}%"
+        compact = (
+            f"{compact_label} {bounded_completed}/{bounded_total} {percentage}%"
+            f" · {_format_clock(elapsed_ms)}"
+        )
         indent = " " * min(len(_SECTION_INDENT), max(0, available - _display_width(compact)))
         line = indent + compact
     tone = "red" if failed else "yellow" if blocked else "cyan"
@@ -790,6 +802,13 @@ def _format_duration(duration_ms: int) -> str:
     hours, remainder = divmod(total_seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
     return f"{hours:02d}h {minutes:02d}m {seconds:02d}s"
+
+
+def _format_clock(duration_ms: int) -> str:
+    total_seconds = max(0, duration_ms) // 1000
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
 def _usable_width(width: int) -> int:
