@@ -202,6 +202,22 @@ def test_add_hydrate_eclipse_pull_lock_and_update_journey(
     capsys.readouterr()
     assert _git(child, "rev-parse", "HEAD") == initial
 
+    assert (
+        main(
+            [
+                "hydrate",
+                "--workspace",
+                str(workspace),
+                "--select",
+                "service",
+                "--unshallow",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert _git(child, "rev-parse", "--is-shallow-repository") == "false"
+
     second = _advance(source, "two\n")
     assert main(["inspect", "--remote", "--workspace", str(workspace), "--format", "json"]) == 0
     remote_inspection = json.loads(capsys.readouterr().out)
