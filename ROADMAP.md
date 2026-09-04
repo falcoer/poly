@@ -711,10 +711,12 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
     exception, atomically stops further repaint, restores the primary terminal
     screen, resets terminal state, and writes one complete append-only historical
     view;
-  - that final historical view contains the command heading, exactly one terminal
-    row per planned action in canonical plan order, the completion summary, and
-    output references; it contains no transient `RUNNING` rows and no duplicate
-    action rows;
+  - after normal completion, that final historical view contains the command
+    heading, exactly one terminal row per planned action in canonical plan order,
+    the completion summary, and output references; after interruption or an
+    internal exception it contains exactly one latest-known-state row per planned
+    action and an explicit abnormal-exit diagnostic, without inventing a terminal
+    result; no exit path duplicates action rows;
   - native OSC progress is emitted only by the terminal owner, remains compatible
     with the selected text mode, and is cleared on every exit path;
   - successful, failed, and blocked action rows end with the action completion
@@ -742,6 +744,7 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
 - Excluded: bounded parallel action scheduling itself, interactive keyboard page
   navigation, a full-screen TUI framework, user-configurable timestamp formats
   or timezones, and persistence changes to canonical run reports.
+
 ## 0.13 — Bounded parallel plan execution
 
 - Status: `pending`
