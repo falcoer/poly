@@ -251,7 +251,12 @@ class _AbortCommand:
     completed: Event
 
 
-type _RenderCommand = _EventCommand | _FinishCommand | _AbortCommand
+@dataclass(frozen=True, slots=True)
+class _NavigationCommand:
+    key: NavigationKey | None
+
+
+type _RenderCommand = _EventCommand | _FinishCommand | _AbortCommand | _NavigationCommand
 
 
 @dataclass(slots=True)
@@ -278,10 +283,13 @@ class SerializedRunRenderer:
     _command: str = field(default="", init=False)
     _start_document: ReportDocument | None = field(default=None, init=False)
     _start_lines: tuple[str, ...] = field(default=(), init=False)
+    _live_start_lines: tuple[str, ...] = field(default=(), init=False)
     _current_page: int = field(default=0, init=False)
     _follow_last_page: bool = field(default=True, init=False)
     _live_pages: tuple[tuple[str, ...], ...] = field(default=((),), init=False)
     _navigation_active: bool = field(default=False, init=False)
+    _navigation_stop: Event = field(default_factory=Event, init=False)
+    _navigation_thread: Thread | None = field(default=None, init=False)
     _elapsed_started: float | None = field(default=None, init=False)
     _next_refresh_at: float | None = field(default=None, init=False)
     _commands: Queue[_RenderCommand] = field(default_factory=Queue, init=False)
@@ -365,9 +373,8 @@ class SerializedRunRenderer:
             self._begin()
             self._dispatcher_ready.set()
             while True:
-                self._poll_navigation()
                 try:
-                    timeout = 0.1 if self._mode is TerminalOutputMode.LIVE else None
+                    timeout = 1.0 if self._mode is TerminalOutputMode.LIVE else None
                     command = self._commands.get(timeout=timeout)
                 except Empty:
                     now = time.monotonic()
@@ -376,7 +383,9 @@ class SerializedRunRenderer:
                         self._next_refresh_at = now + 1.0
                     continue
                 try:
-                    if isinstance(command, _EventCommand):
+                    if isinstance(command, _NavigationCommand):
+                        self._navigate(command.key)
+                    elif isinstance(command, _EventCommand):
                         self._handle_event(command.event)
                     elif isinstance(command, _FinishCommand):
                         self._finish(command.document, command.exit_code)
@@ -385,7 +394,8 @@ class SerializedRunRenderer:
                         self._abort()
                         return
                 finally:
-                    command.completed.set()
+                    if not isinstance(command, _NavigationCommand):
+                        command.completed.set()
                     self._commands.task_done()
         except BaseException as error:
             self._dispatcher_error = error
@@ -415,6 +425,7 @@ class SerializedRunRenderer:
             width=capabilities.width,
         )
         self._start_lines = tuple(start.rstrip("\n").splitlines())
+        self._live_start_lines = self._start_lines
         if self._mode is TerminalOutputMode.LIVE:
             try:
                 self._write(_ENTER_ALTERNATE_SCREEN)
@@ -423,6 +434,7 @@ class SerializedRunRenderer:
                     self._navigation_active = self.navigation_input.start()
                 except Exception:
                     self._navigation_active = False
+                self._start_navigation_reader()
                 self._paint_live()
             except Exception:
                 self._stop_navigation()
@@ -515,7 +527,7 @@ class SerializedRunRenderer:
         self._current_page = min(max(0, self._current_page), page_count - 1)
         page = self._live_pages[self._current_page]
 
-        frame = [*self._start_lines, *page]
+        frame = [*self._live_start_lines, *page]
         if page_count > 1:
             navigation = ""
             if self._navigation_active:
@@ -532,10 +544,12 @@ class SerializedRunRenderer:
         for _, row in self._ordered_rows():
             flattened.extend(row.splitlines())
 
-        base_capacity = max(1, capabilities.height - len(self._start_lines) - 1)
-        page_capacity = base_capacity
-        if len(flattened) > base_capacity:
-            page_capacity = max(1, base_capacity - 1)
+        full_capacity = max(1, capabilities.height - len(self._start_lines) - 1)
+        compact = len(flattened) > full_capacity
+        self._live_start_lines = () if compact else self._start_lines
+        base_capacity = max(1, capabilities.height - len(self._live_start_lines) - 1)
+        paginated = len(flattened) > base_capacity
+        page_capacity = max(1, base_capacity - 1) if paginated else base_capacity
         pages = tuple(
             tuple(flattened[first : first + page_capacity])
             for first in range(0, len(flattened), page_capacity)
@@ -553,16 +567,32 @@ class SerializedRunRenderer:
             ),
         )
 
-    def _poll_navigation(self) -> None:
-        if not self._navigation_active or self.navigation_input is None:
+    def _start_navigation_reader(self) -> None:
+        if not self._navigation_active:
             return
-        try:
-            key = self.navigation_input.read()
-        except Exception:
+        self._navigation_stop.clear()
+        self._navigation_thread = Thread(
+            target=self._read_navigation,
+            name="poly-terminal-input",
+            daemon=True,
+        )
+        self._navigation_thread.start()
+
+    def _read_navigation(self) -> None:
+        assert self.navigation_input is not None
+        while not self._navigation_stop.wait(0.01):
+            try:
+                key = self.navigation_input.read()
+            except Exception:
+                self._commands.put(_NavigationCommand(None))
+                return
+            if key is not None:
+                self._commands.put(_NavigationCommand(key))
+
+    def _navigate(self, key: NavigationKey | None) -> None:
+        if key is None:
             self._stop_navigation()
             self._paint_live()
-            return
-        if key is None:
             return
         if key is NavigationKey.FOLLOW:
             self._follow_last_page = True
@@ -577,6 +607,10 @@ class SerializedRunRenderer:
     def _stop_navigation(self) -> None:
         if not self._navigation_active or self.navigation_input is None:
             return
+        self._navigation_stop.set()
+        if self._navigation_thread is not None:
+            self._navigation_thread.join(timeout=1.0)
+            self._navigation_thread = None
         try:
             self.navigation_input.stop()
         except Exception:
@@ -639,7 +673,8 @@ class SerializedRunRenderer:
                 command = self._commands.get_nowait()
             except Empty:
                 return
-            command.completed.set()
+            if not isinstance(command, _NavigationCommand):
+                command.completed.set()
             self._commands.task_done()
 
     def _restore_terminal_after_error(self) -> None:

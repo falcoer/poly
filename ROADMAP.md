@@ -701,6 +701,9 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
     and follows the last page, where running actions are grouped; on terminals
     with usable interactive input, left and right select a page that remains
     stable across refreshes, while `End` or `f` resumes last-page following;
+    key events wake the renderer independently from the one-second progress tick;
+  - multipage live rendering omits the selected-node heading so action progress
+    receives the full viewport; final flow history retains the complete heading;
   - one renderer-owned dispatcher is the sole writer of text and OSC terminal
     sequences; worker threads, action runners, drivers, and timer threads only
     publish events and never write or repaint the terminal directly;

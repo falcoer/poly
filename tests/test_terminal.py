@@ -77,11 +77,18 @@ def _action(action_id: str) -> ActionSpec:
     return ActionSpec(action_id, "fixture", "verify", "fixture/verify", ("node",))
 
 
-def _document(action_ids: tuple[str, ...] = ("a", "b")) -> ReportDocument:
+def _document(
+    action_ids: tuple[str, ...] = ("a", "b"),
+    selected_node_ids: tuple[str, ...] = ("node",),
+) -> ReportDocument:
     return {
         "schema": "poly.report/v1",
         "kind": "run",
-        "request": {"verb": "verify", "selected_node_ids": ["node"], "parameters": {}},
+        "request": {
+            "verb": "verify",
+            "selected_node_ids": list(selected_node_ids),
+            "parameters": {},
+        },
         "plan": {
             "id": "plan",
             "status": "executable",
@@ -378,7 +385,8 @@ def test_live_renderer_pages_inside_viewport_and_emits_one_final_history() -> No
         actions,
         capabilities=_live_capabilities(height=8),
     )
-    document = _document(action_ids)
+    node_ids = tuple(f"node-{index}" for index in range(8))
+    document = _document(action_ids, node_ids)
     renderer.start(document, "poly verify")
     for index, action_id in enumerate(action_ids, start=1):
         renderer.handle(
@@ -393,12 +401,15 @@ def test_live_renderer_pages_inside_viewport_and_emits_one_final_history() -> No
 
     live_paint = output.getvalue().rsplit("\x1b[2J\x1b[H", 1)[-1]
     assert "PAGE" in live_paint
+    assert "VERIFYING" not in live_paint
+    assert all(node_id not in live_paint for node_id in node_ids)
     assert len(live_paint.splitlines()) <= 8
 
     renderer.finish(document, 0)
     history = output.getvalue().split("\x1b[?1049l", 1)[1]
     for action_id in action_ids:
         assert history.count(f"{action_id} (fixture/verify)") == 1
+    assert "VERIFYING node-0, node-1" in history
     assert "RUNNING" not in history
 
 
@@ -424,8 +435,10 @@ def test_live_paging_follows_last_page_until_manual_navigation() -> None:
     assert current == total
     assert "FOLLOW" in paint
 
+    pressed_at = time.monotonic()
     navigation.press(NavigationKey.LEFT)
     paint = _wait_for_paint(output, f"PAGE {total - 1}/{total}")
+    assert time.monotonic() - pressed_at < 0.5
     assert "MANUAL" in paint
 
     renderer.handle(RunEvent(20, ActionState.SUCCEEDED, action_ids[0], "updated"))
