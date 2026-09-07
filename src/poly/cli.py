@@ -26,6 +26,7 @@ from poly.driver import (
     FacadeRequest,
     OutputReference,
     discover_external_drivers,
+    discover_external_plugins,
 )
 from poly.driver.scaffold import DriverScaffoldError, scaffold_driver
 from poly.drivers import git_driver, maven_driver
@@ -80,6 +81,7 @@ def build_registry() -> DriverRegistry:
     registry.register(constructor_driver(), origin=DriverOrigin.SYSTEM)
     registry.register(git_driver(), origin=DriverOrigin.BUILTIN)
     registry.register(maven_driver(), origin=DriverOrigin.BUILTIN)
+    discover_external_plugins(registry)
     discover_external_drivers(registry)
     return registry
 
@@ -139,7 +141,12 @@ def main(arguments: list[str] | None = None) -> int:
         _write_output(document, options, command, 0)
         return 0
     if options.command == "drivers":
-        document = drivers_document(workspace, registry.inventory())
+        document = drivers_document(
+            workspace,
+            registry.inventory(),
+            registry.plugin_inventory(),
+            registry.contribution_inventory(),
+        )
         _write_output(document, options, command, 0)
         return 0
     if options.command == "plan":

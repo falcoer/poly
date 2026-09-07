@@ -258,3 +258,14 @@ class CommandFacade(Protocol):
     def arguments(self) -> tuple[FacadeArgument, ...]: ...
 
     def translate(self, request: FacadeRequest) -> dict[str, str]: ...
+
+
+@runtime_checkable
+class BlueprintContribution(Protocol):
+    """Declarative extension contribution reserved for workspace blueprints."""
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def description(self) -> str: ...

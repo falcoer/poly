@@ -7,10 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from poly.driver import (
+    ContributionInventoryItem,
     DriverInventoryItem,
     DriverRegistry,
     InspectionContext,
     InspectionDiagnostic,
+    PluginInventoryItem,
 )
 from poly.model import (
     ActionSpec,
@@ -36,6 +38,8 @@ class InspectionSnapshot:
     diagnostics: tuple[InspectionDiagnostic, ...]
     available_verbs: tuple[str, ...]
     drivers: tuple[DriverInventoryItem, ...] = ()
+    plugins: tuple[PluginInventoryItem, ...] = ()
+    contributions: tuple[ContributionInventoryItem, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +91,8 @@ def inspect_workspace(
         tuple(sorted(diagnostics)),
         available_verbs(registry),
         registry.inventory(),
+        registry.plugin_inventory(),
+        registry.contribution_inventory(),
     )
 
 

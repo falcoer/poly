@@ -752,12 +752,53 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
   framework, user-configurable timestamp formats or timezones, and persistence
   changes to canonical run reports.
 
+## 0.12.6 — Plugin extension architecture
+
+- Status: `implemented-awaiting-validation`
+- Tag: `roadmap/0.12.6-plugin-extension-architecture`
+- Depends on: implemented 0.12.5 terminal rendering modes.
+- Scope: make plugins the stable unit of extension, generalize the current
+  Driver API into a transport-neutral Poly Extension API, and establish the
+  language-independent identity boundary required by 0.13.
+- Acceptance:
+  - a serializable plugin descriptor exposes id, version, Poly Extension API
+    compatibility, contributions, optional dependencies, and resources;
+  - `PluginRegistry` validates plugin containers and rejects duplicate plugin
+    identities before partial registration;
+  - `ContributionRegistry` independently indexes stable driver, facade, and
+    blueprint contribution identities and records their owning plugin;
+  - built-in, system, and existing external drivers are represented as
+    plugin-owned contributions without changing their behavior or public SDK;
+  - explicit plugin packages can be discovered through `poly.plugins`, while
+    existing `poly.drivers` entry points remain compatible;
+  - planning providers, action handlers, and command facades are resolved
+    through the contribution registry rather than a hard-coded inventory;
+  - blueprint registration is reserved as a first-class declarative
+    contribution without introducing a blueprint execution engine;
+  - canonical structured inspection and driver reports expose plugin ownership
+    and the complete contribution inventory;
+  - descriptors, plans, actions, results, diagnostics, and outputs crossing the
+    extension boundary remain serializable and contain no callbacks or runtime
+    object identities;
+  - Poly alone owns planning, scheduling, retry, timeout, cancellation,
+    persistence, event ordering, reporting, and terminal rendering;
+  - duplicate plugin and contribution identities fail deterministically;
+  - the complete Windows/Linux quality, typing, packaging, external-driver
+    conformance, and acceptance matrix remains green.
+- Demonstration: load the unchanged built-in and legacy external drivers beside
+  an explicit plugin containing direct facade and blueprint contributions;
+  inspect the canonical plugin/contribution inventory and resolve every runtime
+  provider through stable contribution identities.
+- Excluded: marketplace/catalog behavior, network installation, automatic
+  updates, sandboxing and trust policy, process or remote transport, blueprint
+  execution, distributed execution, and bounded parallelism.
+
 ## 0.13 — Bounded parallel plan execution
 
 - Status: `pending`
 - Tag: `roadmap/0.13-bounded-parallel-execution`
-- Depends on: validated 0.12.5 terminal rendering modes and validated 0.12.2
-  prepared-plan composition.
+- Depends on: validated 0.12.6 plugin extension architecture and validated
+  0.12.5 terminal rendering modes.
 - Scope: execute independent actions from the same ready frontier concurrently,
   with deterministic frontier selection, explicit execution-resource isolation,
   and a worker limit bounded by the capabilities visible to the Poly process.

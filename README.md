@@ -32,10 +32,10 @@ For a command-oriented tour, see the [Poly cookbook](docs/cookbook/README.md).
 
 Milestone
 [0.12.2 — Prepared plans and driver-contributed add façades](docs/releases/0.12.2.md)
-is validated and field-accepted. The current development target is
-[0.12.3 — Deferred command preparation and planned UX](docs/releases/0.12.3.md),
-which makes `--prepare` immediate, introduces the magenta `PLANNED` result,
-and defers the single global workspace resolution to `poly exec`.
+is validated and field-accepted. The current implemented target is
+[0.12.6 — Plugin extension architecture](docs/releases/0.12.6.md), which makes
+plugins the stable extension container and resolves drivers, façades, and
+reserved blueprint contributions through language-neutral identities.
 
 The version 1 contract is implemented: manifests and locks are validated and
 compiled into rebuildable state, declared identities are enriched by Git and
@@ -147,10 +147,10 @@ from privileged core modules. See [External drivers](docs/drivers/external.md).
 ## Local CLI
 
 Driver verbs execute directly; add `--plan` for an isolated side-effect-free
-preview. Add `--prepare` to append the frozen actions to the workspace's single
-current plan, inspect it with `poly plan`, then execute that exact persisted plan
-with `poly exec`. `actions` remains a fresh catalog of what the current workspace
-can do.
+preview. Add `--prepare` to append normalized command intent to the workspace's
+single current plan, inspect it with `poly plan`, then resolve and execute the
+complete frozen action graph with `poly exec`. `actions` remains a fresh catalog
+of what the current workspace can do.
 
 ```shell
 poly inspect

@@ -1,11 +1,24 @@
-# Driver SDK
+# Poly Extension API and Driver SDK
 
 Every built-in and external driver registers through `poly.driver`. There is no
 privileged API for drivers shipped in the Poly repository.
 
+Since Poly 0.12.6, plugins are the extension container and drivers are one
+contribution type. Existing `DriverRegistration` factories remain compatible:
+Poly wraps each legacy driver in an implicit plugin and indexes its driver and
+facade contributions through `ContributionRegistry`.
+
+An explicit plugin returns `PluginRegistration` from the `poly.plugins` entry
+point group. Its serializable `Plugin` descriptor declares stable contribution
+identities, Extension API compatibility, optional dependencies, and resources.
+Drivers use `driver:<name>`, facades use `facade:<verb>:<name>`, and blueprints
+use `blueprint:<name>`. Blueprint lookup is reserved in 0.12.6; execution is not
+yet part of the public contract.
+
 ## Manifest compatibility
 
-The current driver API is `1.0`. A driver manifest declares its identity,
+The current driver API is `1.1`; the containing Poly Extension API is `1.0`. A
+driver manifest declares its identity,
 implementation version, API version, exact capability set, and the stable
 natures it contributes. Poly accepts the
 same major version up to its supported minor version. A future incompatible API
@@ -18,7 +31,7 @@ from poly.driver import DriverCapability, DriverManifest
 manifest = DriverManifest(
     name="example.driver",
     version="0.1.0",
-    api_version="1.0",
+    api_version="1.1",
     capabilities=frozenset((DriverCapability.INSPECT, DriverCapability.PLAN)),
     natures=("example/project",),
 )

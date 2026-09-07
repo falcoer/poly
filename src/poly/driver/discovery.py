@@ -11,11 +11,13 @@ from pathlib import Path
 from typing import cast
 
 from poly.driver.manifest import DriverProtocolError
-from poly.driver.registry import DriverRegistration, DriverRegistry
+from poly.driver.registry import DriverRegistration, DriverRegistry, PluginRegistration
 
 DRIVER_ENTRY_POINT_GROUP = "poly.drivers"
+PLUGIN_ENTRY_POINT_GROUP = "poly.plugins"
 DRIVER_SPEC_VERSION = "1"
 DriverFactory = Callable[[], DriverRegistration]
+PluginFactory = Callable[[], PluginRegistration]
 
 
 class DriverDiscoveryError(DriverProtocolError):
@@ -78,6 +80,19 @@ class DriverLoadResult:
             raise DriverDiscoveryError(f"external driver loading failed: {details}")
 
 
+@dataclass(frozen=True, slots=True)
+class PluginLoadResult:
+    loaded: tuple[str, ...]
+    rejected: tuple[DriverLoadDiagnostic, ...]
+
+    def require_success(self) -> None:
+        if self.rejected:
+            details = "; ".join(
+                f"{diagnostic.entry_point}: {diagnostic.message}" for diagnostic in self.rejected
+            )
+            raise DriverDiscoveryError(f"external plugin loading failed: {details}")
+
+
 def load_external_driver(spec: ExternalDriverSpec) -> DriverRegistration:
     """Load one declaration and validate it before returning any providers."""
 
@@ -107,6 +122,60 @@ def load_entrypoint(value: str) -> DriverRegistration:
     except (ImportError, AttributeError) as error:
         raise DriverDiscoveryError(f"cannot load driver entrypoint {value!r}: {error}") from error
     return _registration_from_factory(factory_value)
+
+
+def load_plugin_entrypoint(value: str) -> PluginRegistration:
+    """Load one explicit plugin factory through the public Extension API."""
+
+    module_name, separator, attribute = value.partition(":")
+    if not separator or not module_name or not attribute or ":" in attribute:
+        raise DriverDiscoveryError("entrypoint must use the form <module>:<factory>")
+    try:
+        factory_value = getattr(importlib.import_module(module_name), attribute)
+    except (ImportError, AttributeError) as error:
+        raise DriverDiscoveryError(f"cannot load plugin entrypoint {value!r}: {error}") from error
+    return _plugin_registration_from_factory(factory_value)
+
+
+def discover_external_plugins(
+    registry: DriverRegistry,
+    candidates: Iterable[EntryPoint] | None = None,
+) -> PluginLoadResult:
+    """Discover explicit plugin containers without changing legacy driver discovery."""
+
+    selected = tuple(
+        candidates
+        if candidates is not None
+        else entry_points().select(group=PLUGIN_ENTRY_POINT_GROUP)
+    )
+    loaded: list[str] = []
+    rejected: list[DriverLoadDiagnostic] = []
+    for entry_point in sorted(selected, key=_entry_point_key):
+        try:
+            registration = _plugin_registration_from_factory(entry_point.load())
+            registry.register_plugin(
+                registration,
+                origin=_entry_point_origin(entry_point),
+                entry_point=_entry_point_label(entry_point),
+            )
+        except Exception as error:  # third-party import, factory, and protocol boundary
+            message = f"{type(error).__name__}: {error}"
+            rejected.append(
+                DriverLoadDiagnostic(
+                    entry_point.name,
+                    message,
+                )
+            )
+            registry.plugin_registry.reject(
+                entry_point.name,
+                origin=_entry_point_origin(entry_point),
+                diagnostic=message,
+                entry_point=_entry_point_label(entry_point),
+                version=_entry_point_version(entry_point),
+            )
+            continue
+        loaded.append(registration.plugin.id)
+    return PluginLoadResult(tuple(sorted(loaded)), tuple(sorted(rejected)))
 
 
 def discover_external_drivers(
@@ -255,4 +324,14 @@ def _registration_from_factory(
         raise DriverDiscoveryError("driver factory must return DriverRegistration")
     if validate:
         registration.validate()
+    return registration
+
+
+def _plugin_registration_from_factory(factory_value: object) -> PluginRegistration:
+    if not callable(factory_value):
+        raise DriverDiscoveryError("entrypoint must resolve to a plugin factory")
+    registration = cast(PluginFactory, factory_value)()
+    if not isinstance(registration, PluginRegistration):
+        raise DriverDiscoveryError("plugin factory must return PluginRegistration")
+    registration.validate()
     return registration

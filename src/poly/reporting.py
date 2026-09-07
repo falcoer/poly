@@ -14,10 +14,12 @@ from urllib.parse import quote, urlsplit, urlunsplit
 from poly.application import InspectionSnapshot, PlanningSnapshot
 from poly.control_plane import ControllerDescriptor
 from poly.driver import (
+    ContributionInventoryItem,
     DriverInventoryItem,
     DriverManifest,
     InspectionDiagnostic,
     OutputReference,
+    PluginInventoryItem,
 )
 from poly.model import (
     ActionSpec,
@@ -47,6 +49,8 @@ def inspection_document(snapshot: InspectionSnapshot) -> ReportDocument:
             _inspection_diagnostic_document(diagnostic) for diagnostic in snapshot.diagnostics
         ],
         "drivers": [_driver_document(item) for item in snapshot.drivers],
+        "plugins": [_plugin_document(item) for item in snapshot.plugins],
+        "contributions": [_contribution_document(item) for item in snapshot.contributions],
     }
 
 
@@ -174,7 +178,12 @@ def controllers_document(
     }
 
 
-def drivers_document(workspace: Path, inventory: tuple[DriverInventoryItem, ...]) -> ReportDocument:
+def drivers_document(
+    workspace: Path,
+    inventory: tuple[DriverInventoryItem, ...],
+    plugins: tuple[PluginInventoryItem, ...] = (),
+    contributions: tuple[ContributionInventoryItem, ...] = (),
+) -> ReportDocument:
     return {
         "schema": REPORT_SCHEMA,
         "kind": "drivers",
@@ -183,6 +192,8 @@ def drivers_document(workspace: Path, inventory: tuple[DriverInventoryItem, ...]
         "inventory": {"nodes": []},
         "diagnostics": [],
         "drivers": [_driver_document(item) for item in inventory],
+        "plugins": [_plugin_document(item) for item in plugins],
+        "contributions": [_contribution_document(item) for item in contributions],
     }
 
 
@@ -200,6 +211,31 @@ def _driver_document(item: DriverInventoryItem) -> ReportDocument:
         "description": item.description,
         "natures": list(item.natures),
         "facades": list(item.facades),
+        "plugin": item.plugin,
+        "contributions": list(item.contributions),
+    }
+
+
+def _plugin_document(item: PluginInventoryItem) -> ReportDocument:
+    return {
+        "id": item.identity,
+        "version": item.version,
+        "api_version": item.api_version,
+        "dependencies": list(item.dependencies),
+        "resources": list(item.resources),
+        "contributions": list(item.contributions),
+        "origin": item.origin,
+        "status": item.status,
+        "entry_point": item.entry_point,
+        "diagnostic": item.diagnostic,
+    }
+
+
+def _contribution_document(item: ContributionInventoryItem) -> ReportDocument:
+    return {
+        "id": item.identity,
+        "kind": item.kind,
+        "plugin": item.plugin,
     }
 
 
@@ -718,6 +754,7 @@ def _concise_drivers(
         line = (
             f"{marker} {label:<8} {item.get('name')} {item.get('version') or '-'} "
             f"· {item.get('origin')} · API {item.get('api_version') or '-'} "
+            f"· plugin={item.get('plugin') or '-'} "
             f"· capabilities={','.join(str(value) for value in capability_values) or '-'} "
             f"· verbs={','.join(str(value) for value in verb_values) or '-'}"
         )
@@ -1234,7 +1271,8 @@ def _text_drivers(lines: list[str], document: ReportDocument) -> None:
         lines.append(
             f"  {driver.get('name')} {driver.get('version') or '-'} "
             f"[{driver.get('status')}] origin={driver.get('origin')} "
-            f"api={driver.get('api_version') or '-'}"
+            f"api={driver.get('api_version') or '-'} "
+            f"plugin={driver.get('plugin') or '-'}"
         )
         capabilities = driver.get("capabilities", [])
         verbs = driver.get("verbs", [])
