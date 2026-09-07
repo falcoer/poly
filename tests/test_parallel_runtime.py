@@ -5,7 +5,7 @@ import os
 import sys
 from dataclasses import replace
 from pathlib import Path
-from threading import Barrier, Event, Lock, Thread
+from threading import Barrier, Event, Lock, Thread, get_ident
 from types import ModuleType
 from typing import Any, cast
 
@@ -120,6 +120,64 @@ def test_worker_limit_is_never_exceeded(tmp_path: Path) -> None:
     assert result.status is RunStatus.SUCCEEDED
     assert maximum == 2
     assert result.workers.effective == 2
+
+
+def test_scheduler_prepares_action_directories_before_parallel_admission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    overlap = Barrier(2)
+    scheduler_thread = get_ident()
+    preparation_threads: list[int] = []
+    runner_threads: list[int] = []
+    original = ExecutionContext.for_action
+
+    def observed_for_action(self: ExecutionContext, action_id: str) -> ExecutionContext:
+        preparation_threads.append(get_ident())
+        return original(self, action_id)
+
+    class Runner:
+        def run(self, action: ActionSpec, context: ExecutionContext) -> ActionAttempt:
+            runner_threads.append(get_ident())
+            overlap.wait(timeout=5)
+            assert context.action_directory is not None
+            assert context.action_directory.is_dir()
+            return ActionAttempt(True, action.id)
+
+    monkeypatch.setattr(ExecutionContext, "for_action", observed_for_action)
+    result = Executor(Runner(), jobs=2).execute(
+        _plan((_action("a"), _action("b"))), _context(tmp_path)
+    )
+
+    assert result.status is RunStatus.SUCCEEDED
+    assert preparation_threads == [scheduler_thread, scheduler_thread]
+    assert len(set(runner_threads)) == 2
+
+
+def test_action_directory_preparation_failure_is_confined(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = ExecutionContext.for_action
+
+    def failing_for_action(self: ExecutionContext, action_id: str) -> ExecutionContext:
+        if action_id == "broken":
+            raise ValueError("action directory must belong to the run directory")
+        return original(self, action_id)
+
+    class Runner:
+        def run(self, action: ActionSpec, context: ExecutionContext) -> ActionAttempt:
+            return ActionAttempt(True, action.id)
+
+    monkeypatch.setattr(ExecutionContext, "for_action", failing_for_action)
+    result = Executor(Runner(), jobs=2).execute(
+        _plan((_action("broken"), _action("independent"))), _context(tmp_path)
+    )
+
+    assert [item.state for item in result.actions] == [
+        ActionState.FAILED,
+        ActionState.SUCCEEDED,
+    ]
+    assert result.actions[0].attempt is not None
+    assert "action preparation raised ValueError" in result.actions[0].attempt.summary
 
 
 def test_resources_serialize_conflicts_while_independent_actions_overlap(
@@ -295,22 +353,25 @@ def test_concurrent_handler_streams_and_persisted_outputs_are_action_isolated(
 
 def test_global_events_follow_real_completion_order_with_one_sequence(tmp_path: Path) -> None:
     both_started = Barrier(2)
-    allow_first = Event()
+    second_completed = Event()
     completion_order: list[str] = []
 
     class Runner:
         def run(self, action: ActionSpec, context: ExecutionContext) -> ActionAttempt:
             both_started.wait(timeout=5)
             if action.id == "a":
-                allow_first.wait(timeout=5)
+                second_completed.wait(timeout=5)
             else:
                 completion_order.append("b")
-                allow_first.set()
             if action.id == "a":
                 completion_order.append("a")
             return ActionAttempt(True, action.id)
 
-    result = Executor(Runner(), jobs=2).execute(
+    def observe(event: runtime.RunEvent) -> None:
+        if event.action_id == "b" and event.state is ActionState.SUCCEEDED:
+            second_completed.set()
+
+    result = Executor(Runner(), jobs=2, event_listener=observe).execute(
         _plan((_action("a"), _action("b"))), _context(tmp_path)
     )
     terminals = [event.action_id for event in result.events if event.state is ActionState.SUCCEEDED]

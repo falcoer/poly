@@ -405,9 +405,33 @@ class Executor:
                     if action.execution_resources & held_resources:
                         continue
                     queued.remove(action)
+                    try:
+                        action_context = context.for_action(action.id)
+                        assert action_context.action_directory is not None
+                        action_context.action_directory.mkdir(parents=True, exist_ok=True)
+                    except KeyboardInterrupt:
+                        interrupted = True
+                        queued.insert(0, action)
+                        break
+                    except BaseException as error:
+                        completed_at = _timestamp(self.wall_clock())
+                        attempt = ActionAttempt(
+                            False,
+                            f"action preparation raised {type(error).__name__}: {error}",
+                        )
+                        results[action.id] = ActionResult(
+                            action.id,
+                            ActionState.FAILED,
+                            attempt,
+                            completed_at=completed_at,
+                        )
+                        transition(action.id, ActionState.FAILED, attempt.summary, completed_at)
+                        continue
                     held_resources.update(action.execution_resources)
                     serial_running = serial_running or serial
-                    running[pool.submit(self._run_action, action, context, transition)] = action
+                    running[pool.submit(self._run_action, action, action_context, transition)] = (
+                        action
+                    )
             if not running:
                 break
             try:
@@ -468,12 +492,10 @@ class Executor:
     def _run_action(
         self,
         action: ActionSpec,
-        context: ExecutionContext,
+        action_context: ExecutionContext,
         transition: Callable[..., None],
     ) -> _CompletedAction:
-        action_context = context.for_action(action.id)
         assert action_context.action_directory is not None
-        action_context.action_directory.mkdir(parents=True, exist_ok=True)
         started_at = _timestamp(self.wall_clock())
         action_started_monotonic = self.monotonic_clock()
         transition(action.id, ActionState.RUNNING, "", started_at)
@@ -501,7 +523,7 @@ class Executor:
             completed_at=completed_at,
             duration_ms=duration_ms,
             output_directory=action_context.action_directory.relative_to(
-                context.run_directory
+                action_context.run_directory
             ).as_posix(),
         )
         transition(action.id, state, attempt.summary, completed_at, attempt.value)
