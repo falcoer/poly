@@ -119,7 +119,10 @@ def _live_capabilities(
 
 
 def _latest_paint(output: io.StringIO) -> str:
-    return output.getvalue().rsplit("\x1b[2J\x1b[H", 1)[-1]
+    value = output.getvalue()
+    markers = ("\x1b[2J\x1b[H", "\x1b[H")
+    position, marker = max((value.rfind(item), item) for item in markers)
+    return value[position + len(marker) :]
 
 
 def _wait_for_paint(output: io.StringIO, expected: str) -> str:
@@ -147,12 +150,20 @@ def test_posix_navigation_reads_keys_without_blocking_and_restores_terminal() ->
     navigation = _PosixNavigationInput(stream)
     try:
         assert navigation.start() is True
-        os.write(master_descriptor, b"\x1b[D\x1b[C\x1b[F\x1b[4~f")
+        os.write(
+            master_descriptor,
+            b"\x1b[D\x1b[C\x1b[F\x1bOD\x1bOC\x1bOF\x1b[1;5D\x1b[1;5C\x1b[4~f",
+        )
 
         expected = [
             NavigationKey.LEFT,
             NavigationKey.RIGHT,
             NavigationKey.FOLLOW,
+            NavigationKey.LEFT,
+            NavigationKey.RIGHT,
+            NavigationKey.FOLLOW,
+            NavigationKey.LEFT,
+            NavigationKey.RIGHT,
             NavigationKey.FOLLOW,
             NavigationKey.FOLLOW,
         ]
@@ -216,7 +227,7 @@ def test_live_renderer_replaces_interleaved_rows_in_plan_order() -> None:
         )
     )
 
-    final_paint = output.getvalue().rsplit("\x1b[2J\x1b[H", 1)[-1]
+    final_paint = _latest_paint(output)
     assert final_paint.count(" a (fixture/verify)") == 1
     assert final_paint.count(" b (fixture/verify)") == 1
     assert final_paint.index(" a (fixture/verify)") < final_paint.index(" b (fixture/verify)")
@@ -388,6 +399,9 @@ def test_live_renderer_pages_inside_viewport_and_emits_one_final_history() -> No
     node_ids = tuple(f"node-{index}" for index in range(8))
     document = _document(action_ids, node_ids)
     renderer.start(document, "poly verify")
+    initial_paint = _latest_paint(output)
+    assert "VERIFYING" not in initial_paint
+    assert all(node_id not in initial_paint for node_id in node_ids)
     for index, action_id in enumerate(action_ids, start=1):
         renderer.handle(
             RunEvent(
@@ -399,11 +413,14 @@ def test_live_renderer_pages_inside_viewport_and_emits_one_final_history() -> No
             )
         )
 
-    live_paint = output.getvalue().rsplit("\x1b[2J\x1b[H", 1)[-1]
-    assert "PAGE" in live_paint
+    live_paint = _latest_paint(output)
+    live_lines = live_paint.splitlines()
+    assert "PAGE" in live_lines[-2]
+    assert "IN PROGRESS" in live_lines[-1]
     assert "VERIFYING" not in live_paint
     assert all(node_id not in live_paint for node_id in node_ids)
-    assert len(live_paint.splitlines()) <= 8
+    assert len(live_lines) == 8
+    assert output.getvalue().count("\x1b[2J") == 1
 
     renderer.finish(document, 0)
     history = output.getvalue().split("\x1b[?1049l", 1)[1]

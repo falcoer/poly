@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 import shutil
 import sys
 import time
@@ -28,6 +29,8 @@ from poly.runtime import ActionState, RunEvent
 _ENTER_ALTERNATE_SCREEN = "\x1b[?1049h"
 _LEAVE_ALTERNATE_SCREEN = "\x1b[?1049l"
 _CLEAR_SCREEN = "\x1b[2J\x1b[H"
+_HOME_CURSOR = "\x1b[H"
+_CLEAR_TO_END = "\x1b[J"
 _RESET_STYLE = "\x1b[0m"
 _MINIMUM_LIVE_WIDTH = 64
 _MINIMUM_LIVE_HEIGHT = 8
@@ -119,15 +122,30 @@ class _PosixNavigationInput:
             ("\x1b[D", NavigationKey.LEFT),
             ("\x1b[C", NavigationKey.RIGHT),
             ("\x1b[F", NavigationKey.FOLLOW),
+            ("\x1bOD", NavigationKey.LEFT),
+            ("\x1bOC", NavigationKey.RIGHT),
+            ("\x1bOF", NavigationKey.FOLLOW),
             ("\x1b[4~", NavigationKey.FOLLOW),
             ("f", NavigationKey.FOLLOW),
             ("F", NavigationKey.FOLLOW),
         )
+        candidates: list[tuple[int, int, NavigationKey]] = []
         for sequence, key in sequences:
             position = self._buffer.find(sequence)
             if position >= 0:
-                self._buffer = self._buffer[position + len(sequence) :]
-                return key
+                candidates.append((position, position + len(sequence), key))
+        modified_arrow = re.search(r"\x1b\[[0-9;]*([CDF])", self._buffer)
+        if modified_arrow is not None:
+            key = {
+                "D": NavigationKey.LEFT,
+                "C": NavigationKey.RIGHT,
+                "F": NavigationKey.FOLLOW,
+            }[modified_arrow.group(1)]
+            candidates.append((modified_arrow.start(), modified_arrow.end(), key))
+        if candidates:
+            _, end, key = min(candidates, key=lambda candidate: candidate[0])
+            self._buffer = self._buffer[end:]
+            return key
         if len(self._buffer) > 8:
             self._buffer = self._buffer[-8:]
         return None
@@ -284,6 +302,8 @@ class SerializedRunRenderer:
     _start_document: ReportDocument | None = field(default=None, init=False)
     _start_lines: tuple[str, ...] = field(default=(), init=False)
     _live_start_lines: tuple[str, ...] = field(default=(), init=False)
+    _compact_live: bool = field(default=False, init=False)
+    _live_painted: bool = field(default=False, init=False)
     _current_page: int = field(default=0, init=False)
     _follow_last_page: bool = field(default=True, init=False)
     _live_pages: tuple[tuple[str, ...], ...] = field(default=((),), init=False)
@@ -425,7 +445,10 @@ class SerializedRunRenderer:
             width=capabilities.width,
         )
         self._start_lines = tuple(start.rstrip("\n").splitlines())
-        self._live_start_lines = self._start_lines
+        initial_capacity = max(1, capabilities.height - len(self._start_lines) - 1)
+        context_wraps = any(len(line) > capabilities.width for line in self._start_lines)
+        self._compact_live = len(self.actions) > initial_capacity or context_wraps
+        self._live_start_lines = () if self._compact_live else self._start_lines
         if self._mode is TerminalOutputMode.LIVE:
             try:
                 self._write(_ENTER_ALTERNATE_SCREEN)
@@ -527,16 +550,21 @@ class SerializedRunRenderer:
         self._current_page = min(max(0, self._current_page), page_count - 1)
         page = self._live_pages[self._current_page]
 
-        frame = [*self._live_start_lines, *page]
+        footer: list[str] = []
         if page_count > 1:
             navigation = ""
             if self._navigation_active:
                 mode = "FOLLOW" if self._follow_last_page else "MANUAL · F/END FOLLOW"
                 navigation = f" · ←/→ PAGE · {mode}"
-            frame.append(f"        PAGE {self._current_page + 1}/{page_count}{navigation}")
-        frame.append(self._inline_progress().rstrip("\n"))
+            footer.append(f"        PAGE {self._current_page + 1}/{page_count}{navigation}")
+        footer.append(self._inline_progress().rstrip("\n"))
+        occupied = len(self._live_start_lines) + len(page) + len(footer)
+        padding = ("",) * max(0, self._capabilities().height - occupied)
+        frame = [*self._live_start_lines, *page, *padding, *footer]
         progress = self._native_progress_update(event) if event is not None else ""
-        self._write(_CLEAR_SCREEN + "\n".join(frame) + progress)
+        cursor = _HOME_CURSOR if self._live_painted else _CLEAR_SCREEN
+        self._write(cursor + "\n".join(frame) + _CLEAR_TO_END + progress)
+        self._live_painted = True
 
     def _rebuild_live_pages(self) -> None:
         capabilities = self._capabilities()
@@ -545,8 +573,8 @@ class SerializedRunRenderer:
             flattened.extend(row.splitlines())
 
         full_capacity = max(1, capabilities.height - len(self._start_lines) - 1)
-        compact = len(flattened) > full_capacity
-        self._live_start_lines = () if compact else self._start_lines
+        self._compact_live = self._compact_live or len(flattened) > full_capacity
+        self._live_start_lines = () if self._compact_live else self._start_lines
         base_capacity = max(1, capabilities.height - len(self._live_start_lines) - 1)
         paginated = len(flattened) > base_capacity
         page_capacity = max(1, base_capacity - 1) if paginated else base_capacity

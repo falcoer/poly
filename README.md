@@ -195,8 +195,10 @@ terminal safely supports an isolated screen, cursor addressing, and sufficient
 dimensions. The live view keeps current activity on the last page without
 rewriting primary scrollback. Left and right select a stable page, and `End` or
 `f` resumes last-page following. Multipage views omit the potentially long node
-selection heading to leave the viewport to action progress. On exit, Poly restores
-the terminal and writes one complete, duplicate-free action history. Unsupported
+selection heading to leave the viewport to action progress. The page indicator and
+progress bar remain anchored at the bottom without a full-screen clear on each
+refresh. On exit, Poly restores the terminal and writes one complete, duplicate-free
+action history. Unsupported
 and redirected terminals use append-only flow output automatically; `--flow`
 forces that mode. Terminal
 action rows end with their completion time, and the live progress row shows

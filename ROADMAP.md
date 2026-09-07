@@ -704,6 +704,8 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
     key events wake the renderer independently from the one-second progress tick;
   - multipage live rendering omits the selected-node heading so action progress
     receives the full viewport; final flow history retains the complete heading;
+  - page navigation and progress remain anchored to the bottom of the viewport,
+    and refreshes overwrite the current frame without flashing a cleared screen;
   - one renderer-owned dispatcher is the sole writer of text and OSC terminal
     sequences; worker threads, action runners, drivers, and timer threads only
     publish events and never write or repaint the terminal directly;
