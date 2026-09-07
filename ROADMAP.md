@@ -754,7 +754,7 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
 
 ## 0.12.6 — Plugin extension architecture
 
-- Status: `implemented-awaiting-validation`
+- Status: `validated`
 - Tag: `roadmap/0.12.6-plugin-extension-architecture`
 - Depends on: implemented 0.12.5 terminal rendering modes.
 - Scope: make plugins the stable unit of extension, generalize the current
@@ -792,6 +792,16 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
 - Excluded: marketplace/catalog behavior, network installation, automatic
   updates, sandboxing and trust policy, process or remote transport, blueprint
   execution, distributed execution, and bounded parallelism.
+
+Validation evidence:
+
+- GitHub Actions run `34120292348` passed quality, external-driver clean-room,
+  Ubuntu/Windows workspace contracts, fixture construction, and POSIX/Windows
+  clean-workstation acceptance on implementation commit
+  `5fc726fe530d8d198f14394bb3bbed0e3b14e55e`;
+- real-use validation confirmed that the standard execution path has no
+  observed regression; the release adds extension interfaces and registry
+  preparation without changing that behavior.
 
 ## 0.13 — Bounded parallel plan execution
 
