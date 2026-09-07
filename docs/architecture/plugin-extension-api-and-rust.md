@@ -178,15 +178,20 @@ A Rust implementation must preserve at minimum:
 
 The migration should compare Python and Rust implementations against the same fixtures and externally observable outcomes.
 
+The intervening [0.13.1 executable-specification milestone](../releases/0.13.1.md)
+turns this gate into versioned fixtures, a black-box conformance corpus, and a
+differential runner. Rust implementation starts only after that parity baseline
+is validated.
+
 ## Future multi-language extensions
 
 Once the logical boundary is validated, a later milestone may introduce an out-of-process transport allowing contributions implemented in Rust, Python, Java, TypeScript, Go, or other languages.
 
 That future capability must not require redesign of plan semantics or 0.13 scheduling. If adding a transport requires scheduler-specific exceptions or exposing core internals, the 0.12.6 boundary should be considered incomplete.
 
-## Non-goals before 0.13
+## Deferred capabilities
 
-Do not expand the pre-0.13 work into:
+Do not implicitly expand the executable-specification work into:
 
 - marketplace design;
 - remote plugin repositories;
