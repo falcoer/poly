@@ -205,6 +205,7 @@ def main(arguments: list[str] | None = None) -> int:
             result = Executor(
                 _controller_runner(registry, options.controller),
                 renderer.handle if renderer else None,
+                jobs=options.jobs,
             ).execute(plan, ExecutionContext(workspace, run_directory))
         except BaseException:
             if renderer is not None:
@@ -212,7 +213,7 @@ def main(arguments: list[str] | None = None) -> int:
             raise
         document = prepared_run_document(execution_document, result)
         store.save_run(plan.id, document)
-        exit_code = 0 if result.status in {RunStatus.SUCCEEDED, RunStatus.EMPTY} else 1
+        exit_code = _run_exit_code(result.status)
         if exit_code == 0:
             store.clear_prepared_plan()
         if renderer is not None:
@@ -300,16 +301,18 @@ def main(arguments: list[str] | None = None) -> int:
                     assert renderer is not None
                     renderer.start(planning_document(snapshot), command)
                 try:
-                    result = Executor(runner, renderer.handle if renderer else None).execute(
-                        snapshot.plan, context
-                    )
+                    result = Executor(
+                        runner,
+                        renderer.handle if renderer else None,
+                        jobs=options.jobs,
+                    ).execute(snapshot.plan, context)
                 except BaseException:
                     if renderer is not None:
                         renderer.abort()
                     raise
                 document = run_document(snapshot, result)
                 _save_run_if_initialized(workspace, snapshot.plan.id, document)
-                exit_code = 0 if result.status in {RunStatus.SUCCEEDED, RunStatus.EMPTY} else 1
+                exit_code = _run_exit_code(result.status)
                 if streamed:
                     assert renderer is not None
                     renderer.finish(document, exit_code)
@@ -374,11 +377,13 @@ def _parser(registry: DriverRegistry) -> argparse.ArgumentParser:
 
     execute = commands.add_parser("exec", help="execute the exact current prepared plan")
     execute.add_argument("--controller", default="local")
+    _jobs_option(execute)
     _report_options(execute)
 
     run = commands.add_parser("run", help="negotiate and execute a finite plan")
     run.add_argument("verb")
     run.add_argument("--controller", default="local")
+    _jobs_option(run)
     _planning_options(run)
 
     report = commands.add_parser("report", help="render a persisted plan or run")
@@ -506,6 +511,7 @@ def _nature_command(
         result = Executor(
             _controller_runner(registry, options.controller),
             renderer.handle if renderer else None,
+            jobs=options.jobs,
         ).execute(snapshot.plan, ExecutionContext(workspace, run_directory))
     except BaseException:
         if renderer is not None:
@@ -513,7 +519,7 @@ def _nature_command(
         raise
     document = run_document(snapshot, result)
     _save_run_if_initialized(workspace, snapshot.plan.id, document)
-    exit_code = 0 if result.status in {RunStatus.SUCCEEDED, RunStatus.EMPTY} else 1
+    exit_code = _run_exit_code(result.status)
     if streamed:
         assert renderer is not None
         renderer.finish(document, exit_code)
@@ -604,13 +610,14 @@ def _bootstrap_root(
     containing_plan = _nearest_prepared_plan_root(target)
     _reject_active_prepared_plan(parser, containing_plan or _nearest_workspace(target) or parent)
     with tempfile.TemporaryDirectory(prefix="poly-bootstrap-", dir=parent) as run_path:
-        result = Executor(_controller_runner(registry, options.controller)).execute(
-            snapshot.plan, ExecutionContext(parent, Path(run_path))
-        )
+        result = Executor(
+            _controller_runner(registry, options.controller), jobs=options.jobs
+        ).execute(snapshot.plan, ExecutionContext(parent, Path(run_path)))
         root_document = run_document(snapshot, result)
         if result.status is not RunStatus.SUCCEEDED:
-            _write_output(root_document, options, command, 1)
-            return 1
+            exit_code = _run_exit_code(result.status)
+            _write_output(root_document, options, command, exit_code)
+            return exit_code
     try:
         validate_workspace(target)
         hydration_inspection = inspect_workspace(registry, target)
@@ -624,9 +631,9 @@ def _bootstrap_root(
     hydration = prepare_planning(registry, hydration_inspection, "hydrate", source_ids)
     run_directory = target / ".poly" / "runs" / hydration.plan.id
     run_directory.mkdir(parents=True, exist_ok=True)
-    hydrated = Executor(_controller_runner(registry, options.controller)).execute(
-        hydration.plan, ExecutionContext(target, run_directory)
-    )
+    hydrated = Executor(
+        _controller_runner(registry, options.controller), jobs=options.jobs
+    ).execute(hydration.plan, ExecutionContext(target, run_directory))
     document = run_document(hydration, hydrated)
     document["kind"] = "bootstrap"
     document["phases"] = [
@@ -642,7 +649,7 @@ def _bootstrap_root(
         },
     ]
     StateStore(target).save_run(hydration.plan.id, document)
-    exit_code = 0 if hydrated.status in {RunStatus.SUCCEEDED, RunStatus.EMPTY} else 1
+    exit_code = _run_exit_code(hydrated.status)
     _write_output(document, options, command, exit_code)
     return exit_code
 
@@ -826,7 +833,36 @@ def _direct_verb_options(parser: argparse.ArgumentParser) -> None:
     mode.add_argument("--plan", action="store_true", dest="plan_only")
     mode.add_argument("--prepare", action="store_true")
     parser.add_argument("--controller", default="local")
+    _jobs_option(parser)
     _planning_options(parser)
+
+
+def _jobs_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--jobs",
+        type=_jobs_value,
+        default=1,
+        metavar="N|auto",
+        help="maximum parallel actions (default: 1)",
+    )
+
+
+def _jobs_value(value: str) -> int | str:
+    if value == "auto":
+        return value
+    try:
+        jobs = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("jobs must be 'auto' or a positive integer") from error
+    if jobs < 1:
+        raise argparse.ArgumentTypeError("jobs must be 'auto' or a positive integer")
+    return jobs
+
+
+def _run_exit_code(status: RunStatus) -> int:
+    if status in {RunStatus.SUCCEEDED, RunStatus.EMPTY}:
+        return 0
+    return 130 if status is RunStatus.INTERRUPTED else 1
 
 
 def _selection_values(values: list[str]) -> tuple[str, ...]:

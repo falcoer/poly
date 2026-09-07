@@ -210,6 +210,8 @@ def _action_payload(action: ActionSpec) -> dict[str, object]:
         "environment": dict(action.environment),
         "changes_structure": action.changes_structure,
         "required_capability": action.required_capability,
+        "execution_resources": sorted(action.execution_resources),
+        "concurrency_safe": action.concurrency_safe,
     }
 
 

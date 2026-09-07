@@ -33,9 +33,9 @@ For a command-oriented tour, see the [Poly cookbook](docs/cookbook/README.md).
 Milestone
 [0.12.2 — Prepared plans and driver-contributed add façades](docs/releases/0.12.2.md)
 is validated and field-accepted. The current implemented target is
-[0.12.6 — Plugin extension architecture](docs/releases/0.12.6.md), which makes
-plugins the stable extension container and resolves drivers, façades, and
-reserved blueprint contributions through language-neutral identities.
+[0.13 — Bounded parallel plan execution](docs/releases/0.13.0.md), which runs
+deterministic ready fronts with bounded workers, exclusive runtime resources,
+isolated action output, and stable language-neutral contribution identities.
 
 The version 1 contract is implemented: manifests and locks are validated and
 compiled into rebuildable state, declared identities are enriched by Git and

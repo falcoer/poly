@@ -45,6 +45,36 @@ def test_cli_reports_installed_version(capsys: pytest.CaptureFixture[str]) -> No
     assert version("poly") == __version__
 
 
+def test_cli_jobs_are_execution_policy_and_are_reported(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _workspace(tmp_path)
+
+    assert main(["status", "--workspace", str(tmp_path), "--jobs", "4", "--format", "json"]) == 0
+    explicit = json.loads(capsys.readouterr().out)
+    assert explicit["run"]["workers"] == {
+        "requested_mode": "explicit",
+        "requested": 4,
+        "effective": 4,
+    }
+
+    monkeypatch.setattr("poly.runtime.automatic_worker_capacity", lambda: 3)
+    assert main(["status", "--workspace", str(tmp_path), "--jobs", "auto", "--format", "json"]) == 0
+    automatic = json.loads(capsys.readouterr().out)
+    assert automatic["run"]["workers"] == {
+        "requested_mode": "auto",
+        "requested": None,
+        "effective": 3,
+    }
+    assert automatic["plan"]["id"] == explicit["plan"]["id"]
+
+    with pytest.raises(SystemExit):
+        main(["status", "--workspace", str(tmp_path), "--jobs", "0"])
+    assert "positive integer" in capsys.readouterr().err
+
+
 def test_cli_inspect_actions_and_plan_reports(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

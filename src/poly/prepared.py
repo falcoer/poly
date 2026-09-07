@@ -407,6 +407,8 @@ def action_document(action: ActionSpec) -> dict[str, object]:
         "environment": dict(action.environment),
         "changes_structure": action.changes_structure,
         "required_capability": action.required_capability,
+        "execution_resources": sorted(action.execution_resources),
+        "concurrency_safe": action.concurrency_safe,
     }
 
 
@@ -435,23 +437,25 @@ def _action_from_value(value: object) -> ActionSpec:
     if command is not None and not isinstance(command, list):
         raise TypeError("action command must be a list or null")
     return ActionSpec(
-        _string(value, "id"),
-        _string(value, "driver"),
-        _string(value, "verb"),
-        _string(value, "operation"),
-        tuple(_strings(value.get("node_ids", []))),
-        tuple(_strings(value.get("requested_node_ids", []))),
-        frozenset(Constraint(item) for item in _strings(value.get("requires", []))),
-        frozenset(Constraint(item) for item in _strings(value.get("produces", []))),
-        frozenset(
+        id=_string(value, "id"),
+        driver=_string(value, "driver"),
+        verb=_string(value, "verb"),
+        operation=_string(value, "operation"),
+        node_ids=tuple(_strings(value.get("node_ids", []))),
+        requested_node_ids=tuple(_strings(value.get("requested_node_ids", []))),
+        requires=frozenset(Constraint(item) for item in _strings(value.get("requires", []))),
+        produces=frozenset(Constraint(item) for item in _strings(value.get("produces", []))),
+        claims=frozenset(
             ActionClaim(_string(item, "operation"), _string(item, "scope"))
             for item in claims
             if isinstance(item, dict)
         ),
-        tuple(_strings(command)) if command is not None else None,
-        dict(environment),
-        bool(value.get("changes_structure", False)),
-        _string(value, "required_capability"),
+        command=tuple(_strings(command)) if command is not None else None,
+        environment=dict(environment),
+        changes_structure=bool(value.get("changes_structure", False)),
+        required_capability=_string(value, "required_capability"),
+        execution_resources=frozenset(_strings(value.get("execution_resources", []))),
+        concurrency_safe=bool(value.get("concurrency_safe", False)),
     )
 
 

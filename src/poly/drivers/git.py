@@ -294,6 +294,8 @@ class GitPlanningProvider:
                 claims=frozenset((ActionClaim("git/resolve-source", "node:root-bootstrap"),)),
                 environment=environment,
                 required_capability="git.materialize",
+                execution_resources=frozenset(("repository:root-bootstrap",)),
+                concurrency_safe=True,
             ),
             self._materialization_action(
                 "prepare", node_id, path, environment, resolution, checkout, "bootstrap"
@@ -314,6 +316,8 @@ class GitPlanningProvider:
                 claims=frozenset((ActionClaim("git/verify-head", "node:root-bootstrap"),)),
                 environment=environment,
                 required_capability="git.materialize",
+                execution_resources=frozenset(("repository:root-bootstrap",)),
+                concurrency_safe=True,
             ),
         )
         return DriverProposal(self.name, actions)
@@ -343,6 +347,8 @@ class GitPlanningProvider:
                     requested_node_ids=(node.id,),
                     claims=frozenset((ActionClaim("git/status", f"node:{node.id}"),)),
                     command=("git", "-C", node.path, "status", "--short", "--branch"),
+                    execution_resources=frozenset((f"repository:{node.id}",)),
+                    concurrency_safe=True,
                 )
             )
         return DriverProposal(self.name, tuple(actions), tuple(rejected))
@@ -385,6 +391,8 @@ class GitPlanningProvider:
                 claims=frozenset((ActionClaim("git/resolve-source", f"node:{node_id}"),)),
                 environment=environment,
                 required_capability="git.materialize",
+                execution_resources=frozenset((f"repository:{node_id}",)),
+                concurrency_safe=True,
             ),
         )
         return DriverProposal(self.name, actions)
@@ -442,6 +450,7 @@ class GitPlanningProvider:
                         environment=environment,
                         changes_structure=True,
                         required_capability="git.materialize",
+                        execution_resources=frozenset(("workspace:lock", f"repository:{node.id}")),
                     )
                 )
                 continue
@@ -463,6 +472,8 @@ class GitPlanningProvider:
                         claims=frozenset((ActionClaim("git/resolve-source", f"node:{node.id}"),)),
                         environment=environment,
                         required_capability="git.materialize",
+                        execution_resources=frozenset((f"repository:{node.id}",)),
+                        concurrency_safe=True,
                     )
                 )
                 prerequisites.append(resolution)
@@ -511,6 +522,8 @@ class GitPlanningProvider:
                         claims=frozenset((ActionClaim("git/verify-head", f"node:{node.id}"),)),
                         environment=environment,
                         required_capability="git.materialize",
+                        execution_resources=frozenset((f"repository:{node.id}",)),
+                        concurrency_safe=True,
                     ),
                 )
             )
@@ -528,6 +541,7 @@ class GitPlanningProvider:
                         environment=environment,
                         changes_structure=True,
                         required_capability="git.materialize",
+                        execution_resources=frozenset(("workspace:lock", f"repository:{node.id}")),
                     )
                 )
         return DriverProposal(self.name, tuple(actions), tuple(rejected))
@@ -562,6 +576,8 @@ class GitPlanningProvider:
             environment=environment,
             changes_structure=phase in {"prepare", "checkout"},
             required_capability="git.materialize",
+            execution_resources=frozenset((f"repository:{node_id}",)),
+            concurrency_safe=True,
         )
 
     def _checkout_exists(self, path: str, environment: dict[str, str]) -> bool:

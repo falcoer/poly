@@ -801,17 +801,45 @@ Validation evidence:
   `5fc726fe530d8d198f14394bb3bbed0e3b14e55e`;
 - real-use validation confirmed that the standard execution path has no
   observed regression; the release adds extension interfaces and registry
-  preparation without changing that behavior.
+  preparation without changing that behavior;
+- validation commit `f436de1776e6a76ed883f66e1ccfa29a8c028a53` then passed
+  GitHub Actions run `34122115756`; the remote annotated tag
+  `roadmap/0.12.6-plugin-extension-architecture` (tag object
+  `f8d55e18da694f39a27177515695f9dd4069338b`) resolves to that exact commit.
 
 ## 0.13 — Bounded parallel plan execution
 
-- Status: `pending`
+- Status: `implemented-awaiting-validation`
 - Tag: `roadmap/0.13-bounded-parallel-execution`
 - Depends on: validated 0.12.6 plugin extension architecture and validated
   0.12.5 terminal rendering modes.
+- Prerequisite note: the remote annotated 0.12.6 tag resolves to the validated
+  commit, but this roadmap still records 0.12.5 as
+  `implemented-awaiting-validation`. No 0.12.5 validation evidence has been
+  inferred or invented, and no matching remote 0.12.5 tag was found during the
+  implementation audit. Implementation proceeded by explicit user direction;
+  this documentary prerequisite remains to be reconciled before 0.13 can be
+  validated.
 - Scope: execute independent actions from the same ready frontier concurrently,
   with deterministic frontier selection, explicit execution-resource isolation,
   and a worker limit bounded by the capabilities visible to the Poly process.
+- Implemented:
+  - the executor freezes deterministic fronts, applies a front barrier, bounds
+    admission, and preserves the legacy sequential admission path when the
+    effective worker count is one;
+  - `--jobs 1`, positive explicit limits, and `--jobs auto` are execution-only
+    policy, reported as requested mode/value and effective workers without
+    changing the plan identifier;
+  - process-visible CPU count, POSIX affinity, Linux cgroup quota, and Windows
+    process affinity are combined conservatively with a one-worker fallback;
+  - serializable exclusive execution resources and explicit concurrency safety
+    are distinct from planning claims; undeclared and structural handlers remain
+    serialized, while audited Git repository and Maven reactor actions opt in;
+  - every action receives an isolated directory for stdout, stderr, and details;
+    failures, runner exceptions, and interruption are contained and persisted in
+    canonical result order;
+  - synchronized event sequencing records actual concurrent start/completion
+    order and feeds the existing sole-owner live/flow terminal dispatcher.
 - Acceptance:
   - parallel execution never mutates, extends, or reinterprets the frozen plan;
   - at the start of each execution iteration, the executor freezes the

@@ -458,6 +458,7 @@ class SerializedRunRenderer:
             ActionState.SUCCEEDED,
             ActionState.FAILED,
             ActionState.BLOCKED,
+            ActionState.INTERRUPTED,
         }
         self._record_progress(event)
         if self._mode is TerminalOutputMode.FLOW:
@@ -647,6 +648,7 @@ class SerializedRunRenderer:
             ActionState.SUCCEEDED,
             ActionState.FAILED,
             ActionState.BLOCKED,
+            ActionState.INTERRUPTED,
         }:
             return
         action_ids = {action.id for action in self.actions}
@@ -654,12 +656,14 @@ class SerializedRunRenderer:
             self._completed_action_ids.add(event.action_id)
         self._failed = self._failed or event.state is ActionState.FAILED
         self._blocked = self._blocked or event.state is ActionState.BLOCKED
+        self._blocked = self._blocked or event.state is ActionState.INTERRUPTED
 
     def _native_progress_update(self, event: RunEvent) -> str:
         if not self._progress_active or event.state not in {
             ActionState.SUCCEEDED,
             ActionState.FAILED,
             ActionState.BLOCKED,
+            ActionState.INTERRUPTED,
         }:
             return ""
         percentage = len(self._completed_action_ids) * 100 // max(1, len(self.actions))

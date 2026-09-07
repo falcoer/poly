@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -115,6 +116,7 @@ class ExecutionContext:
     workspace: Path
     run_directory: Path
     environment: dict[str, str] = field(default_factory=dict)
+    action_directory: Path | None = None
 
     def __post_init__(self) -> None:
         workspace = self.workspace.resolve()
@@ -128,6 +130,24 @@ class ExecutionContext:
         object.__setattr__(self, "workspace", workspace)
         object.__setattr__(self, "run_directory", run_directory)
         object.__setattr__(self, "environment", MappingProxyType(dict(self.environment)))
+        if self.action_directory is not None:
+            action_directory = self.action_directory.resolve()
+            try:
+                action_directory.relative_to(run_directory)
+            except ValueError as error:
+                raise ValueError("action directory must belong to the run directory") from error
+            object.__setattr__(self, "action_directory", action_directory)
+
+    def for_action(self, action_id: str) -> ExecutionContext:
+        """Return an action-isolated view while retaining the shared run root."""
+
+        digest = hashlib.sha256(action_id.encode("utf-8")).hexdigest()[:16]
+        return ExecutionContext(
+            self.workspace,
+            self.run_directory,
+            dict(self.environment),
+            self.run_directory / "actions" / digest,
+        )
 
 
 @dataclass(frozen=True, slots=True, init=False)

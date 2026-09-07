@@ -297,6 +297,8 @@ class MavenPlanningProvider:
                         (ActionClaim(f"maven/{request.verb}", f"reactor:{reactor_id}"),)
                     ),
                     command=command,
+                    execution_resources=frozenset((f"reactor:{reactor_id}",)),
+                    concurrency_safe=True,
                 )
             )
         return DriverProposal(self.name, tuple(actions), tuple(rejected))

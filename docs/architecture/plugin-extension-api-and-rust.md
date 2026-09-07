@@ -152,6 +152,12 @@ The transport must be replaceable and must not leak into the planner or schedule
 
 The scheduler must refer only to stable contribution/action identities and public contracts. It must not know whether the executing contribution is Python, Rust, Java, TypeScript, or built in.
 
+The Python implementation realizes this boundary with serializable action-level
+`execution_resources` and `concurrency_safe` declarations. The executor receives
+only a frozen action plus an execution adapter, creates per-action contexts, and
+never branches on plugin packaging or Python object identity. Extensions still
+cannot own pools, frontiers, event sequences, cancellation, or terminal output.
+
 ## Rust migration gate
 
 The end of validated 0.13 is the first intended point at which a serious Rust port should be evaluated.

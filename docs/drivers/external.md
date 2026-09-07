@@ -15,7 +15,7 @@ uv sync --all-groups
 
 During development against a local core checkout, add
 `--poly-source /path/to/poly`. This writes a development-only `uv` source while
-the built distribution retains the portable requirement `poly>=0.12.0,<0.13`.
+the built distribution retains the portable requirement `poly>=0.13.0,<0.14`.
 
 The generator creates:
 

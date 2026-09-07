@@ -52,6 +52,27 @@ provider must use the manifest name. Duplicate driver names are rejected.
 Planning and inspection are read-only. The executor is the only role authorized
 to invoke an action handler.
 
+## Parallel execution declarations
+
+Poly 0.13 keeps scheduling in the core. An `ActionSpec` may declare
+`execution_resources`, a serializable set of exclusive runtime resource names,
+and must set `concurrency_safe=True` to opt into concurrent admission. These
+resources are runtime locks only; they are independent from planning
+`ActionClaim` ownership and do not resolve provider conflicts.
+
+The default is deliberately conservative. Actions that do not opt in, including
+existing command-less external handlers, execute alone. Structural actions also
+remain serialized unless their driver has explicitly audited and opted in the
+action. Built-in Git materialization uses `repository:<node-id>` and Maven uses
+`reactor:<id>`, so independent repositories/reactors can overlap while operations
+on one resource cannot. Drivers must not create their own scheduler or thread
+pool.
+
+Every handler receives `ExecutionContext.action_directory`, an isolated location
+below the run directory for action-specific artifacts. `${POLY_ACTION_DIRECTORY}`
+provides the equivalent placeholder to explicit commands. Poly captures and
+persists stdout, stderr, and structured details per action.
+
 ## Conformance testkit
 
 `poly.driver.testkit` contains black-box assertions intended to be imported by

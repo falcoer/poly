@@ -119,6 +119,7 @@ def run_document(snapshot: PlanningSnapshot, result: RunResult) -> ReportDocumen
         "status": result.status.value,
         "available_constraints": list(result.available_constraints),
         "duration_ms": result.duration_ms,
+        "workers": _worker_document(result),
         "slowest_action": _slowest_action(result),
         "actions": [_action_result_document(action) for action in result.actions],
         "events": [_event_document(event) for event in result.events],
@@ -136,6 +137,7 @@ def prepared_run_document(document: ReportDocument, result: RunResult) -> Report
         "status": result.status.value,
         "available_constraints": list(result.available_constraints),
         "duration_ms": result.duration_ms,
+        "workers": _worker_document(result),
         "slowest_action": _slowest_action(result),
         "actions": [_action_result_document(action) for action in result.actions],
         "events": [_event_document(event) for event in result.events],
@@ -158,6 +160,8 @@ def construction_document(workspace: Path, plan: Plan, result: RunResult) -> Rep
             "plan_id": result.plan_id,
             "status": result.status.value,
             "available_constraints": list(result.available_constraints),
+            "duration_ms": result.duration_ms,
+            "workers": _worker_document(result),
             "actions": [_action_result_document(action) for action in result.actions],
             "events": [_event_document(event) for event in result.events],
         },
@@ -344,6 +348,7 @@ def render_cli_event(
         ActionState.SUCCEEDED,
         ActionState.FAILED,
         ActionState.BLOCKED,
+        ActionState.INTERRUPTED,
     }:
         return ""
     marker, label, tone = _state_style(event.state.value)
@@ -364,6 +369,7 @@ def render_cli_event(
         ActionState.SUCCEEDED,
         ActionState.FAILED,
         ActionState.BLOCKED,
+        ActionState.INTERRUPTED,
     }:
         line += f" · [{_format_cli_timestamp(event.occurred_at)}]"
     return _render_action_lines(line, tone, color, width)
@@ -1002,6 +1008,8 @@ def _state_style(state: str) -> tuple[str, str, str]:
         return "✗", "KO", "red"
     if state in {"blocked", "skipped"}:
         return "⚠", "WARN", "yellow"
+    if state == "interrupted":
+        return "■", "STOP", "yellow"
     return ">", state.upper(), "cyan"
 
 
@@ -1057,6 +1065,8 @@ def _action_document(action: ActionSpec) -> ReportDocument:
         "environment": dict(action.environment),
         "changes_structure": action.changes_structure,
         "required_capability": action.required_capability,
+        "execution_resources": _string_values(action.execution_resources),
+        "concurrency_safe": action.concurrency_safe,
     }
 
 
@@ -1101,6 +1111,7 @@ def _action_result_document(result: ActionResult) -> ReportDocument:
         "started_at": result.started_at,
         "completed_at": result.completed_at,
         "duration_ms": result.duration_ms,
+        "output_directory": result.output_directory,
         "attempt": None
         if attempt is None
         else {
@@ -1115,6 +1126,14 @@ def _action_result_document(result: ActionResult) -> ReportDocument:
             else {"value": attempt.value.value, "label": attempt.value.label},
             "outputs": [_output_document(output) for output in attempt.outputs],
         },
+    }
+
+
+def _worker_document(result: RunResult) -> ReportDocument:
+    return {
+        "requested_mode": result.workers.requested_mode.value,
+        "requested": result.workers.requested,
+        "effective": result.workers.effective,
     }
 
 
@@ -1343,6 +1362,10 @@ def _text_run(lines: list[str], document: ReportDocument) -> None:
     if not isinstance(run, dict):
         return
     lines.append(f"Run: {run.get('status')}")
+    workers = run.get("workers")
+    if isinstance(workers, dict):
+        requested = workers.get("requested") or workers.get("requested_mode")
+        lines.append(f"Workers: requested={requested}, effective={workers.get('effective')}")
     actions = run.get("actions", [])
     for action in actions if isinstance(actions, list) else []:
         if not isinstance(action, dict):

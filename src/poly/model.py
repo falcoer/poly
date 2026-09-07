@@ -152,6 +152,8 @@ class ActionSpec:
     environment: dict[str, str] = field(default_factory=dict)
     changes_structure: bool = False
     required_capability: str = "process.execute"
+    execution_resources: frozenset[str] = frozenset()
+    concurrency_safe: bool = False
 
     def __post_init__(self) -> None:
         for name in ("id", "driver", "verb", "operation"):
@@ -168,6 +170,17 @@ class ActionSpec:
             self,
             "required_capability",
             _required(self.required_capability, "required capability"),
+        )
+        if not isinstance(self.concurrency_safe, bool):
+            raise TypeError("concurrency_safe must be a boolean")
+        if any(not isinstance(resource, str) for resource in self.execution_resources):
+            raise TypeError("execution resources must be strings")
+        object.__setattr__(
+            self,
+            "execution_resources",
+            frozenset(
+                _required(resource, "execution resource") for resource in self.execution_resources
+            ),
         )
         if self.command is not None and not self.command:
             raise ValueError("command must contain at least an executable")

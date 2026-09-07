@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 from poly.driver import ActionValue, ExecutionContext, OutputReference
 from poly.model import ActionSpec, JsonValue
@@ -103,6 +103,9 @@ class RemoteController:
                 "controller": self.descriptor.name,
                 "workspace": str(context.workspace),
                 "run_directory": str(context.run_directory),
+                "action_directory": (
+                    str(context.action_directory) if context.action_directory is not None else None
+                ),
                 "action": _action_request(action),
             }
         )
@@ -169,6 +172,8 @@ def _action_request(action: ActionSpec) -> dict[str, JsonValue]:
         "environment": dict(action.environment),
         "changes_structure": action.changes_structure,
         "required_capability": action.required_capability,
+        "execution_resources": cast(list[JsonValue], sorted(action.execution_resources)),
+        "concurrency_safe": action.concurrency_safe,
     }
 
 
