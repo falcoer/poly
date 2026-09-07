@@ -420,7 +420,7 @@ def test_live_renderer_pages_inside_viewport_and_emits_one_final_history() -> No
     assert "VERIFYING" not in live_paint
     assert all(node_id not in live_paint for node_id in node_ids)
     assert len(live_lines) == 8
-    assert output.getvalue().count("\x1b[2J") == 1
+    assert live_paint.count("\x1b[K") == 8
 
     renderer.finish(document, 0)
     history = output.getvalue().split("\x1b[?1049l", 1)[1]
@@ -452,14 +452,17 @@ def test_live_paging_follows_last_page_until_manual_navigation() -> None:
     assert current == total
     assert "FOLLOW" in paint
 
+    clears_before_navigation = output.getvalue().count("\x1b[2J")
     pressed_at = time.monotonic()
     navigation.press(NavigationKey.LEFT)
     paint = _wait_for_paint(output, f"PAGE {total - 1}/{total}")
     assert time.monotonic() - pressed_at < 0.5
     assert "MANUAL" in paint
+    assert output.getvalue().count("\x1b[2J") == clears_before_navigation + 1
 
     renderer.handle(RunEvent(20, ActionState.SUCCEEDED, action_ids[0], "updated"))
     assert f"PAGE {total - 1}/{total}" in _latest_paint(output)
+    assert output.getvalue().count("\x1b[2J") == clears_before_navigation + 1
 
     navigation.press(NavigationKey.FOLLOW)
     paint = _wait_for_paint(output, f"PAGE {total}/{total}")

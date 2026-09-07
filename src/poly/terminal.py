@@ -30,6 +30,7 @@ _ENTER_ALTERNATE_SCREEN = "\x1b[?1049h"
 _LEAVE_ALTERNATE_SCREEN = "\x1b[?1049l"
 _CLEAR_SCREEN = "\x1b[2J\x1b[H"
 _HOME_CURSOR = "\x1b[H"
+_CLEAR_LINE_TO_END = "\x1b[K"
 _CLEAR_TO_END = "\x1b[J"
 _RESET_STYLE = "\x1b[0m"
 _MINIMUM_LIVE_WIDTH = 64
@@ -271,7 +272,7 @@ class _AbortCommand:
 
 @dataclass(frozen=True, slots=True)
 class _NavigationCommand:
-    key: NavigationKey | None
+    """Wake the renderer after input was added to the priority navigation queue."""
 
 
 type _RenderCommand = _EventCommand | _FinishCommand | _AbortCommand | _NavigationCommand
@@ -304,12 +305,14 @@ class SerializedRunRenderer:
     _live_start_lines: tuple[str, ...] = field(default=(), init=False)
     _compact_live: bool = field(default=False, init=False)
     _live_painted: bool = field(default=False, init=False)
+    _painted_layout: tuple[int, int, bool] | None = field(default=None, init=False)
     _current_page: int = field(default=0, init=False)
     _follow_last_page: bool = field(default=True, init=False)
     _live_pages: tuple[tuple[str, ...], ...] = field(default=((),), init=False)
     _navigation_active: bool = field(default=False, init=False)
     _navigation_stop: Event = field(default_factory=Event, init=False)
     _navigation_thread: Thread | None = field(default=None, init=False)
+    _navigation_keys: Queue[NavigationKey | None] = field(default_factory=Queue, init=False)
     _elapsed_started: float | None = field(default=None, init=False)
     _next_refresh_at: float | None = field(default=None, init=False)
     _commands: Queue[_RenderCommand] = field(default_factory=Queue, init=False)
@@ -403,8 +406,11 @@ class SerializedRunRenderer:
                         self._next_refresh_at = now + 1.0
                     continue
                 try:
+                    navigation_changed = self._drain_navigation()
+                    if navigation_changed:
+                        self._paint_live()
                     if isinstance(command, _NavigationCommand):
-                        self._navigate(command.key)
+                        pass
                     elif isinstance(command, _EventCommand):
                         self._handle_event(command.event)
                     elif isinstance(command, _FinishCommand):
@@ -562,9 +568,13 @@ class SerializedRunRenderer:
         padding = ("",) * max(0, self._capabilities().height - occupied)
         frame = [*self._live_start_lines, *page, *padding, *footer]
         progress = self._native_progress_update(event) if event is not None else ""
-        cursor = _HOME_CURSOR if self._live_painted else _CLEAR_SCREEN
-        self._write(cursor + "\n".join(frame) + _CLEAR_TO_END + progress)
+        layout = (self._current_page, page_count, bool(self._live_start_lines))
+        page_changed = self._painted_layout is not None and layout != self._painted_layout
+        cursor = _CLEAR_SCREEN if not self._live_painted or page_changed else _HOME_CURSOR
+        rendered_frame = (_CLEAR_LINE_TO_END + "\n").join(frame) + _CLEAR_LINE_TO_END
+        self._write(cursor + rendered_frame + _CLEAR_TO_END + progress)
         self._live_painted = True
+        self._painted_layout = layout
 
     def _rebuild_live_pages(self) -> None:
         capabilities = self._capabilities()
@@ -612,25 +622,37 @@ class SerializedRunRenderer:
             try:
                 key = self.navigation_input.read()
             except Exception:
-                self._commands.put(_NavigationCommand(None))
+                self._navigation_keys.put(None)
+                self._commands.put(_NavigationCommand())
                 return
             if key is not None:
-                self._commands.put(_NavigationCommand(key))
+                self._navigation_keys.put(key)
+                self._commands.put(_NavigationCommand())
 
-    def _navigate(self, key: NavigationKey | None) -> None:
-        if key is None:
-            self._stop_navigation()
-            self._paint_live()
-            return
-        if key is NavigationKey.FOLLOW:
-            self._follow_last_page = True
-        else:
-            self._follow_last_page = False
-            change = -1 if key is NavigationKey.LEFT else 1
-            self._current_page += change
+    def _drain_navigation(self) -> bool:
+        changed = False
+        while True:
+            try:
+                key = self._navigation_keys.get_nowait()
+            except Empty:
+                break
+            try:
+                if key is None:
+                    self._stop_navigation()
+                elif key is NavigationKey.FOLLOW:
+                    self._follow_last_page = True
+                else:
+                    self._follow_last_page = False
+                    change = -1 if key is NavigationKey.LEFT else 1
+                    self._current_page += change
+                changed = True
+            finally:
+                self._navigation_keys.task_done()
+        if not changed:
+            return False
         page_count = len(self._live_pages)
         self._current_page = min(max(0, self._current_page), page_count - 1)
-        self._paint_live()
+        return True
 
     def _stop_navigation(self) -> None:
         if not self._navigation_active or self.navigation_input is None:
