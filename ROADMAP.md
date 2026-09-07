@@ -696,10 +696,11 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
     unsupported environments select `flow` automatically;
   - `live` uses an isolated terminal screen and a viewport bounded by detected
     terminal height; it never attempts to address lines in the primary
-    scrollback, and automatic page changes require no keyboard input;
+    scrollback, and last-page following requires no keyboard input;
   - the live viewport displays a page indicator when all action rows do not fit
-    and follows the page containing current activity; interactive page
-    navigation is not required by this milestone;
+    and follows the last page, where running actions are grouped; on terminals
+    with usable interactive input, left and right select a page that remains
+    stable across refreshes, while `End` or `f` resumes last-page following;
   - one renderer-owned dispatcher is the sole writer of text and OSC terminal
     sequences; worker threads, action runners, drivers, and timer threads only
     publish events and never write or repaint the terminal directly;
@@ -741,9 +742,9 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
   automatically paginated live view and timestamped progress, then prove that
   returning to the shell leaves one complete, scrollable, duplicate-free flow
   history. Repeat with `--flow` and with concurrent synthetic event producers.
-- Excluded: bounded parallel action scheduling itself, interactive keyboard page
-  navigation, a full-screen TUI framework, user-configurable timestamp formats
-  or timezones, and persistence changes to canonical run reports.
+- Excluded: bounded parallel action scheduling itself, a full-screen TUI
+  framework, user-configurable timestamp formats or timezones, and persistence
+  changes to canonical run reports.
 
 ## 0.13 — Bounded parallel plan execution
 

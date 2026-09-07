@@ -192,10 +192,11 @@ only the frozen plan printed in the same document.
 
 Interactive text execution automatically uses a paginated live view when the
 terminal safely supports an isolated screen, cursor addressing, and sufficient
-dimensions. The live view follows current activity without rewriting primary
-scrollback. On exit, Poly restores the terminal and writes one complete,
-duplicate-free action history. Unsupported and redirected terminals use
-append-only flow output automatically; `--flow` forces that mode. Terminal
+dimensions. The live view keeps current activity on the last page without
+rewriting primary scrollback. Left and right select a stable page, and `End` or
+`f` resumes last-page following. On exit, Poly restores the terminal and writes
+one complete, duplicate-free action history. Unsupported and redirected
+terminals use append-only flow output automatically; `--flow` forces that mode. Terminal
 action rows end with their completion time, and the live progress row shows
 both elapsed time and the current timestamp. Long operations also update the
 native iTerm2 or Windows Terminal progress indicator when available. All

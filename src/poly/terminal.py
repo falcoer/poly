@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 import shutil
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
-from typing import Protocol, TextIO, runtime_checkable
+from typing import Protocol, TextIO, cast, runtime_checkable
 
 from poly.model import ActionSpec
 from poly.reporting import (
@@ -36,6 +38,136 @@ class TerminalOutputMode(StrEnum):
 
     LIVE = "live"
     FLOW = "flow"
+
+
+class NavigationKey(StrEnum):
+    """Page navigation commands understood by the live renderer."""
+
+    LEFT = "left"
+    RIGHT = "right"
+    FOLLOW = "follow"
+
+
+class NavigationInput(Protocol):
+    """Non-blocking terminal input used while the alternate screen is active."""
+
+    def start(self) -> bool: ...
+
+    def read(self) -> NavigationKey | None: ...
+
+    def stop(self) -> None: ...
+
+
+class _Msvcrt(Protocol):
+    def kbhit(self) -> bool: ...
+
+    def getwch(self) -> str: ...
+
+
+type _TerminalAttributes = list[int | list[bytes | int]]
+
+
+@dataclass(slots=True)
+class _PosixNavigationInput:
+    stream: TextIO
+    _file_descriptor: int | None = field(default=None, init=False)
+    _saved_attributes: _TerminalAttributes | None = field(default=None, init=False)
+    _buffer: str = field(default="", init=False)
+
+    def start(self) -> bool:
+        if not self.stream.isatty():
+            return False
+        try:
+            import termios
+            import tty
+
+            file_descriptor = self.stream.fileno()
+            attributes = cast(_TerminalAttributes, termios.tcgetattr(file_descriptor))
+            tty.setcbreak(file_descriptor)
+        except (AttributeError, OSError, ValueError, termios.error):
+            return False
+        self._file_descriptor = file_descriptor
+        self._saved_attributes = attributes
+        return True
+
+    def read(self) -> NavigationKey | None:
+        if self._file_descriptor is None:
+            return None
+        import select
+
+        readable, _, _ = select.select((self._file_descriptor,), (), (), 0)
+        if readable:
+            self._buffer += os.read(self._file_descriptor, 16).decode(errors="ignore")
+        return self._consume_key()
+
+    def stop(self) -> None:
+        if self._file_descriptor is None or self._saved_attributes is None:
+            return
+        import termios
+
+        termios.tcsetattr(
+            self._file_descriptor,
+            termios.TCSADRAIN,
+            self._saved_attributes,
+        )
+        self._file_descriptor = None
+        self._saved_attributes = None
+        self._buffer = ""
+
+    def _consume_key(self) -> NavigationKey | None:
+        sequences = (
+            ("\x1b[D", NavigationKey.LEFT),
+            ("\x1b[C", NavigationKey.RIGHT),
+            ("\x1b[F", NavigationKey.FOLLOW),
+            ("\x1b[4~", NavigationKey.FOLLOW),
+            ("f", NavigationKey.FOLLOW),
+            ("F", NavigationKey.FOLLOW),
+        )
+        for sequence, key in sequences:
+            position = self._buffer.find(sequence)
+            if position >= 0:
+                self._buffer = self._buffer[position + len(sequence) :]
+                return key
+        if len(self._buffer) > 8:
+            self._buffer = self._buffer[-8:]
+        return None
+
+
+@dataclass(slots=True)
+class _WindowsNavigationInput:  # pragma: no cover - exercised on Windows
+    stream: TextIO
+    _active: bool = field(default=False, init=False)
+
+    def start(self) -> bool:
+        self._active = self.stream.isatty()
+        return self._active
+
+    def read(self) -> NavigationKey | None:
+        if not self._active:
+            return None
+        msvcrt = cast(_Msvcrt, importlib.import_module("msvcrt"))
+
+        if not msvcrt.kbhit():
+            return None
+        character = msvcrt.getwch()
+        if character in {"\x00", "\xe0"} and msvcrt.kbhit():
+            return {
+                "K": NavigationKey.LEFT,
+                "M": NavigationKey.RIGHT,
+                "O": NavigationKey.FOLLOW,
+            }.get(msvcrt.getwch())
+        if character.lower() == "f":
+            return NavigationKey.FOLLOW
+        return None
+
+    def stop(self) -> None:
+        self._active = False
+
+
+def _navigation_input(stream: TextIO) -> NavigationInput:
+    if os.name == "nt":  # pragma: no cover - exercised on Windows
+        return _WindowsNavigationInput(stream)
+    return _PosixNavigationInput(stream)
 
 
 @runtime_checkable
@@ -132,7 +264,10 @@ class SerializedRunRenderer:
     color: bool = False
     capabilities: TerminalCapabilities | None = None
     force_flow: bool = False
+    input_stream: TextIO | None = None
+    navigation_input: NavigationInput | None = None
     _rows: dict[str, str] = field(default_factory=dict, init=False)
+    _states: dict[str, ActionState] = field(default_factory=dict, init=False)
     _completed_action_ids: set[str] = field(default_factory=set, init=False)
     _failed: bool = field(default=False, init=False)
     _blocked: bool = field(default=False, init=False)
@@ -143,11 +278,12 @@ class SerializedRunRenderer:
     _command: str = field(default="", init=False)
     _start_document: ReportDocument | None = field(default=None, init=False)
     _start_lines: tuple[str, ...] = field(default=(), init=False)
-    _focus_action_id: str | None = field(default=None, init=False)
     _current_page: int = field(default=0, init=False)
+    _follow_last_page: bool = field(default=True, init=False)
     _live_pages: tuple[tuple[str, ...], ...] = field(default=((),), init=False)
-    _action_pages: dict[str, int] = field(default_factory=dict, init=False)
+    _navigation_active: bool = field(default=False, init=False)
     _elapsed_started: float | None = field(default=None, init=False)
+    _next_refresh_at: float | None = field(default=None, init=False)
     _commands: Queue[_RenderCommand] = field(default_factory=Queue, init=False)
     _submission_lock: Lock = field(default_factory=Lock, init=False)
     _dispatcher_ready: Event = field(default_factory=Event, init=False)
@@ -157,6 +293,10 @@ class SerializedRunRenderer:
     def __post_init__(self) -> None:
         if self.capabilities is None:
             self.capabilities = TerminalCapabilities.detect(self.stream)
+        if self.navigation_input is None:
+            if self.input_stream is None:
+                self.input_stream = sys.stdin
+            self.navigation_input = _navigation_input(self.input_stream)
 
     @property
     def mode(self) -> TerminalOutputMode | None:
@@ -225,11 +365,15 @@ class SerializedRunRenderer:
             self._begin()
             self._dispatcher_ready.set()
             while True:
+                self._poll_navigation()
                 try:
-                    timeout = 1.0 if self._mode is TerminalOutputMode.LIVE else None
+                    timeout = 0.1 if self._mode is TerminalOutputMode.LIVE else None
                     command = self._commands.get(timeout=timeout)
                 except Empty:
-                    self._paint_live()
+                    now = time.monotonic()
+                    if self._next_refresh_at is not None and now >= self._next_refresh_at:
+                        self._paint_live()
+                        self._next_refresh_at = now + 1.0
                     continue
                 try:
                     if isinstance(command, _EventCommand):
@@ -249,6 +393,7 @@ class SerializedRunRenderer:
             self._release_waiters()
             self._restore_terminal_after_error()
         finally:
+            self._stop_navigation()
             self._closed = True
             self._accepting = False
 
@@ -256,6 +401,7 @@ class SerializedRunRenderer:
         assert self._start_document is not None
         capabilities = self._capabilities()
         self._elapsed_started = time.monotonic()
+        self._next_refresh_at = self._elapsed_started + 1.0
         self._progress_active = bool(
             capabilities.native_progress and self.actions and self.verbosity >= 0
         )
@@ -272,8 +418,14 @@ class SerializedRunRenderer:
         if self._mode is TerminalOutputMode.LIVE:
             try:
                 self._write(_ENTER_ALTERNATE_SCREEN)
+                assert self.navigation_input is not None
+                try:
+                    self._navigation_active = self.navigation_input.start()
+                except Exception:
+                    self._navigation_active = False
                 self._paint_live()
             except Exception:
+                self._stop_navigation()
                 self._write(_RESET_STYLE + _LEAVE_ALTERNATE_SCREEN)
                 self._mode = TerminalOutputMode.FLOW
                 self._write(start)
@@ -298,7 +450,7 @@ class SerializedRunRenderer:
         rendered = self._render_event(event).rstrip("\n")
         if rendered:
             self._rows[event.action_id] = rendered
-            self._focus_action_id = event.action_id
+            self._states[event.action_id] = event.state
             self._rebuild_live_pages()
             self._paint_live(event)
 
@@ -306,6 +458,7 @@ class SerializedRunRenderer:
         capabilities = self._capabilities()
         clear_progress = _native_progress_sequence(0, 0) if self._progress_active else ""
         if self._mode is TerminalOutputMode.LIVE:
+            self._stop_navigation()
             self._write(_RESET_STYLE + _LEAVE_ALTERNATE_SCREEN)
             self._write(
                 render_cli(
@@ -335,6 +488,7 @@ class SerializedRunRenderer:
     def _abort(self) -> None:
         clear_progress = _native_progress_sequence(0, 0) if self._progress_active else ""
         if self._mode is TerminalOutputMode.LIVE:
+            self._stop_navigation()
             self._write(_RESET_STYLE + _LEAVE_ALTERNATE_SCREEN + self._aborted_history())
         elif self._mode is TerminalOutputMode.FLOW:
             self._write(f"        ✗ ABORTED  {self._command}\n")
@@ -355,15 +509,19 @@ class SerializedRunRenderer:
     def _paint_live(self, event: RunEvent | None = None) -> None:
         if self._mode is not TerminalOutputMode.LIVE or self._closed:
             return
-        if self._focus_action_id in self._action_pages:
-            self._current_page = self._action_pages[self._focus_action_id]
         page_count = len(self._live_pages)
+        if self._follow_last_page:
+            self._current_page = page_count - 1
         self._current_page = min(max(0, self._current_page), page_count - 1)
         page = self._live_pages[self._current_page]
 
         frame = [*self._start_lines, *page]
         if page_count > 1:
-            frame.append(f"        PAGE {self._current_page + 1}/{page_count}")
+            navigation = ""
+            if self._navigation_active:
+                mode = "FOLLOW" if self._follow_last_page else "MANUAL · F/END FOLLOW"
+                navigation = f" · ←/→ PAGE · {mode}"
+            frame.append(f"        PAGE {self._current_page + 1}/{page_count}{navigation}")
         frame.append(self._inline_progress().rstrip("\n"))
         progress = self._native_progress_update(event) if event is not None else ""
         self._write(_CLEAR_SCREEN + "\n".join(frame) + progress)
@@ -371,9 +529,7 @@ class SerializedRunRenderer:
     def _rebuild_live_pages(self) -> None:
         capabilities = self._capabilities()
         flattened: list[str] = []
-        action_offsets: dict[str, int] = {}
-        for action_id, row in self._ordered_rows():
-            action_offsets[action_id] = len(flattened)
+        for _, row in self._ordered_rows():
             flattened.extend(row.splitlines())
 
         base_capacity = max(1, capabilities.height - len(self._start_lines) - 1)
@@ -385,16 +541,48 @@ class SerializedRunRenderer:
             for first in range(0, len(flattened), page_capacity)
         )
         self._live_pages = pages or ((),)
-        self._action_pages = {
-            action_id: offset // page_capacity for action_id, offset in action_offsets.items()
-        }
 
     def _ordered_rows(self) -> list[tuple[str, str]]:
         order = {action.id: index for index, action in enumerate(self.actions)}
         return sorted(
             self._rows.items(),
-            key=lambda item: (order.get(item[0], len(order)), item[0]),
+            key=lambda item: (
+                self._states.get(item[0]) is ActionState.RUNNING,
+                order.get(item[0], len(order)),
+                item[0],
+            ),
         )
+
+    def _poll_navigation(self) -> None:
+        if not self._navigation_active or self.navigation_input is None:
+            return
+        try:
+            key = self.navigation_input.read()
+        except Exception:
+            self._stop_navigation()
+            self._paint_live()
+            return
+        if key is None:
+            return
+        if key is NavigationKey.FOLLOW:
+            self._follow_last_page = True
+        else:
+            self._follow_last_page = False
+            change = -1 if key is NavigationKey.LEFT else 1
+            self._current_page += change
+        page_count = len(self._live_pages)
+        self._current_page = min(max(0, self._current_page), page_count - 1)
+        self._paint_live()
+
+    def _stop_navigation(self) -> None:
+        if not self._navigation_active or self.navigation_input is None:
+            return
+        try:
+            self.navigation_input.stop()
+        except Exception:
+            pass
+        finally:
+            self._navigation_active = False
 
     def _render_event(self, event: RunEvent) -> str:
         actions = {action.id: action for action in self.actions}
@@ -456,6 +644,7 @@ class SerializedRunRenderer:
 
     def _restore_terminal_after_error(self) -> None:
         try:
+            self._stop_navigation()
             if self._mode is TerminalOutputMode.LIVE:
                 self.stream.write(_RESET_STYLE + _LEAVE_ALTERNATE_SCREEN)
             if self._progress_active:

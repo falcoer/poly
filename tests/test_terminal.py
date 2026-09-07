@@ -4,7 +4,9 @@ import io
 import os
 import re
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
+from queue import Empty, Queue
 
 import pytest
 
@@ -12,10 +14,12 @@ from poly.model import ActionSpec
 from poly.reporting import ReportDocument
 from poly.runtime import ActionState, RunEvent
 from poly.terminal import (
+    NavigationKey,
     RunRenderer,
     SerializedRunRenderer,
     TerminalCapabilities,
     TerminalOutputMode,
+    _PosixNavigationInput,
 )
 
 
@@ -44,6 +48,29 @@ class AlternateScreenFailureOutput(InteractiveOutput):
         if value == "\x1b[?1049h":
             raise OSError("alternate screen unavailable")
         return super().write(value)
+
+
+class FakeNavigationInput:
+    def __init__(self) -> None:
+        self.keys: Queue[NavigationKey] = Queue()
+        self.started = False
+        self.stopped = False
+
+    def start(self) -> bool:
+        self.started = True
+        return True
+
+    def read(self) -> NavigationKey | None:
+        try:
+            return self.keys.get_nowait()
+        except Empty:
+            return None
+
+    def stop(self) -> None:
+        self.stopped = True
+
+    def press(self, key: NavigationKey) -> None:
+        self.keys.put(key)
 
 
 def _action(action_id: str) -> ActionSpec:
@@ -84,10 +111,61 @@ def _live_capabilities(
     return TerminalCapabilities(True, True, True, width, native_progress, height, True)
 
 
+def _latest_paint(output: io.StringIO) -> str:
+    return output.getvalue().rsplit("\x1b[2J\x1b[H", 1)[-1]
+
+
+def _wait_for_paint(output: io.StringIO, expected: str) -> str:
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        paint = _latest_paint(output)
+        if expected in paint:
+            return paint
+        time.sleep(0.01)
+    pytest.fail(f"live renderer did not paint {expected!r}")
+
+
 def test_renderer_satisfies_execution_protocol() -> None:
     renderer = SerializedRunRenderer(io.StringIO(), ())
 
     assert isinstance(renderer, RunRenderer)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX pseudo-terminal required")
+def test_posix_navigation_reads_keys_without_blocking_and_restores_terminal() -> None:
+    import pty
+
+    master_descriptor, slave_descriptor = pty.openpty()
+    stream = os.fdopen(slave_descriptor, "r")
+    navigation = _PosixNavigationInput(stream)
+    try:
+        assert navigation.start() is True
+        os.write(master_descriptor, b"\x1b[D\x1b[C\x1b[F\x1b[4~f")
+
+        expected = [
+            NavigationKey.LEFT,
+            NavigationKey.RIGHT,
+            NavigationKey.FOLLOW,
+            NavigationKey.FOLLOW,
+            NavigationKey.FOLLOW,
+        ]
+        observed: list[NavigationKey] = []
+        deadline = time.monotonic() + 1.0
+        while len(observed) < len(expected) and time.monotonic() < deadline:
+            key = navigation.read()
+            if key is not None:
+                observed.append(key)
+            else:
+                time.sleep(0.01)
+        assert observed == expected
+    finally:
+        navigation.stop()
+        stream.close()
+        os.close(master_descriptor)
+
+    assert navigation.read() is None
+    navigation.stop()
+    assert _PosixNavigationInput(io.StringIO()).start() is False
 
 
 def test_renderer_rejects_a_second_start() -> None:
@@ -322,6 +400,62 @@ def test_live_renderer_pages_inside_viewport_and_emits_one_final_history() -> No
     for action_id in action_ids:
         assert history.count(f"{action_id} (fixture/verify)") == 1
     assert "RUNNING" not in history
+
+
+def test_live_paging_follows_last_page_until_manual_navigation() -> None:
+    output = InteractiveOutput()
+    navigation = FakeNavigationInput()
+    action_ids = tuple(f"action-{index}" for index in range(8))
+    renderer = SerializedRunRenderer(
+        output,
+        tuple(_action(action_id) for action_id in action_ids),
+        capabilities=_live_capabilities(height=8),
+        navigation_input=navigation,
+    )
+    renderer.start(_document(action_ids), "poly verify")
+    for index, action_id in enumerate(action_ids, start=1):
+        renderer.handle(RunEvent(index, ActionState.SUCCEEDED, action_id, "complete"))
+
+    paint = _latest_paint(output)
+    page = re.search(r"PAGE (\d+)/(\d+)", paint)
+    assert page is not None
+    current, total = (int(value) for value in page.groups())
+    assert total > 1
+    assert current == total
+    assert "FOLLOW" in paint
+
+    navigation.press(NavigationKey.LEFT)
+    paint = _wait_for_paint(output, f"PAGE {total - 1}/{total}")
+    assert "MANUAL" in paint
+
+    renderer.handle(RunEvent(20, ActionState.SUCCEEDED, action_ids[0], "updated"))
+    assert f"PAGE {total - 1}/{total}" in _latest_paint(output)
+
+    navigation.press(NavigationKey.FOLLOW)
+    paint = _wait_for_paint(output, f"PAGE {total}/{total}")
+    assert "FOLLOW" in paint
+
+    renderer.finish(_document(action_ids), 0)
+    assert navigation.started is True
+    assert navigation.stopped is True
+
+
+def test_live_rows_keep_running_actions_after_deterministic_terminal_rows() -> None:
+    output = InteractiveOutput()
+    actions = tuple(_action(action_id) for action_id in ("a", "b", "c", "d"))
+    renderer = SerializedRunRenderer(output, actions, capabilities=_live_capabilities())
+    renderer.start(_document(("a", "b", "c", "d")), "poly verify")
+
+    renderer.handle(RunEvent(1, ActionState.RUNNING, "a"))
+    renderer.handle(RunEvent(2, ActionState.SUCCEEDED, "b"))
+    renderer.handle(RunEvent(3, ActionState.RUNNING, "c"))
+    renderer.handle(RunEvent(4, ActionState.FAILED, "d"))
+
+    assert [action_id for action_id, _ in renderer._ordered_rows()] == ["b", "d", "a", "c"]
+
+    renderer.handle(RunEvent(5, ActionState.SUCCEEDED, "a"))
+    assert [action_id for action_id, _ in renderer._ordered_rows()] == ["a", "b", "d", "c"]
+    renderer.finish(_document(("a", "b", "c", "d")), 1)
 
 
 def test_live_progress_contains_elapsed_time_and_bracketed_timestamp() -> None:
