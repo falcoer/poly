@@ -193,8 +193,8 @@ only the frozen plan printed in the same document.
 Interactive text execution automatically uses a paginated live view when the
 terminal safely supports an isolated screen, cursor addressing, and sufficient
 dimensions. The live view keeps current activity on the last page without
-rewriting primary scrollback. Left and right select a stable page, and `End` or
-`f` resumes last-page following. Multipage views omit the potentially long node
+rewriting primary scrollback. `p` and `n` select the previous or next stable page,
+and `f` resumes last-page following. Multipage views omit the potentially long node
 selection heading to leave the viewport to action progress. The page indicator and
 progress bar remain anchored at the bottom. Ordinary refreshes overwrite in place;
 an actual page transition clears the viewport once to remove residual rows. On exit,

@@ -152,19 +152,12 @@ def test_posix_navigation_reads_keys_without_blocking_and_restores_terminal() ->
         assert navigation.start() is True
         os.write(
             master_descriptor,
-            b"\x1b[D\x1b[C\x1b[F\x1bOD\x1bOC\x1bOF\x1b[1;5D\x1b[1;5C\x1b[4~f",
+            b"\x1b[Dpn\x1b[Cf",
         )
 
         expected = [
-            NavigationKey.LEFT,
-            NavigationKey.RIGHT,
-            NavigationKey.FOLLOW,
-            NavigationKey.LEFT,
-            NavigationKey.RIGHT,
-            NavigationKey.FOLLOW,
-            NavigationKey.LEFT,
-            NavigationKey.RIGHT,
-            NavigationKey.FOLLOW,
+            NavigationKey.PREVIOUS,
+            NavigationKey.NEXT,
             NavigationKey.FOLLOW,
         ]
         observed: list[NavigationKey] = []
@@ -451,21 +444,29 @@ def test_live_paging_follows_last_page_until_manual_navigation() -> None:
     assert total > 1
     assert current == total
     assert "FOLLOW" in paint
+    assert "P/N PAGE" in paint
 
     clears_before_navigation = output.getvalue().count("\x1b[2J")
+    paints_before_navigation = output.getvalue().count("\x1b[H")
     pressed_at = time.monotonic()
-    navigation.press(NavigationKey.LEFT)
+    navigation.press(NavigationKey.PREVIOUS)
     paint = _wait_for_paint(output, f"PAGE {total - 1}/{total}")
     assert time.monotonic() - pressed_at < 0.5
     assert "MANUAL" in paint
     assert output.getvalue().count("\x1b[2J") == clears_before_navigation + 1
+    assert output.getvalue().count("\x1b[H") == paints_before_navigation + 1
 
     renderer.handle(RunEvent(20, ActionState.SUCCEEDED, action_ids[0], "updated"))
     assert f"PAGE {total - 1}/{total}" in _latest_paint(output)
     assert output.getvalue().count("\x1b[2J") == clears_before_navigation + 1
 
-    navigation.press(NavigationKey.FOLLOW)
+    navigation.press(NavigationKey.NEXT)
     paint = _wait_for_paint(output, f"PAGE {total}/{total}")
+    assert "MANUAL" in paint
+
+    navigation.press(NavigationKey.FOLLOW)
+    paint = _wait_for_paint(output, "· FOLLOW")
+    assert f"PAGE {total}/{total}" in paint
     assert "FOLLOW" in paint
 
     renderer.finish(_document(action_ids), 0)

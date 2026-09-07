@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib
 import os
-import re
 import shutil
 import sys
 import time
@@ -47,8 +46,8 @@ class TerminalOutputMode(StrEnum):
 class NavigationKey(StrEnum):
     """Page navigation commands understood by the live renderer."""
 
-    LEFT = "left"
-    RIGHT = "right"
+    PREVIOUS = "previous"
+    NEXT = "next"
     FOLLOW = "follow"
 
 
@@ -119,36 +118,20 @@ class _PosixNavigationInput:
         self._buffer = ""
 
     def _consume_key(self) -> NavigationKey | None:
-        sequences = (
-            ("\x1b[D", NavigationKey.LEFT),
-            ("\x1b[C", NavigationKey.RIGHT),
-            ("\x1b[F", NavigationKey.FOLLOW),
-            ("\x1bOD", NavigationKey.LEFT),
-            ("\x1bOC", NavigationKey.RIGHT),
-            ("\x1bOF", NavigationKey.FOLLOW),
-            ("\x1b[4~", NavigationKey.FOLLOW),
-            ("f", NavigationKey.FOLLOW),
-            ("F", NavigationKey.FOLLOW),
-        )
-        candidates: list[tuple[int, int, NavigationKey]] = []
-        for sequence, key in sequences:
-            position = self._buffer.find(sequence)
+        candidates: list[tuple[int, NavigationKey]] = []
+        for character, key in {
+            "p": NavigationKey.PREVIOUS,
+            "n": NavigationKey.NEXT,
+            "f": NavigationKey.FOLLOW,
+        }.items():
+            position = self._buffer.find(character)
             if position >= 0:
-                candidates.append((position, position + len(sequence), key))
-        modified_arrow = re.search(r"\x1b\[[0-9;]*([CDF])", self._buffer)
-        if modified_arrow is not None:
-            key = {
-                "D": NavigationKey.LEFT,
-                "C": NavigationKey.RIGHT,
-                "F": NavigationKey.FOLLOW,
-            }[modified_arrow.group(1)]
-            candidates.append((modified_arrow.start(), modified_arrow.end(), key))
+                candidates.append((position, key))
         if candidates:
-            _, end, key = min(candidates, key=lambda candidate: candidate[0])
-            self._buffer = self._buffer[end:]
+            position, key = min(candidates, key=lambda candidate: candidate[0])
+            self._buffer = self._buffer[position + 1 :]
             return key
-        if len(self._buffer) > 8:
-            self._buffer = self._buffer[-8:]
+        self._buffer = ""
         return None
 
 
@@ -170,14 +153,13 @@ class _WindowsNavigationInput:  # pragma: no cover - exercised on Windows
             return None
         character = msvcrt.getwch()
         if character in {"\x00", "\xe0"} and msvcrt.kbhit():
-            return {
-                "K": NavigationKey.LEFT,
-                "M": NavigationKey.RIGHT,
-                "O": NavigationKey.FOLLOW,
-            }.get(msvcrt.getwch())
-        if character.lower() == "f":
-            return NavigationKey.FOLLOW
-        return None
+            msvcrt.getwch()
+            return None
+        return {
+            "p": NavigationKey.PREVIOUS,
+            "n": NavigationKey.NEXT,
+            "f": NavigationKey.FOLLOW,
+        }.get(character)
 
     def stop(self) -> None:
         self._active = False
@@ -272,7 +254,7 @@ class _AbortCommand:
 
 @dataclass(frozen=True, slots=True)
 class _NavigationCommand:
-    """Wake the renderer after input was added to the priority navigation queue."""
+    key: NavigationKey | None
 
 
 type _RenderCommand = _EventCommand | _FinishCommand | _AbortCommand | _NavigationCommand
@@ -312,7 +294,6 @@ class SerializedRunRenderer:
     _navigation_active: bool = field(default=False, init=False)
     _navigation_stop: Event = field(default_factory=Event, init=False)
     _navigation_thread: Thread | None = field(default=None, init=False)
-    _navigation_keys: Queue[NavigationKey | None] = field(default_factory=Queue, init=False)
     _elapsed_started: float | None = field(default=None, init=False)
     _next_refresh_at: float | None = field(default=None, init=False)
     _commands: Queue[_RenderCommand] = field(default_factory=Queue, init=False)
@@ -406,11 +387,8 @@ class SerializedRunRenderer:
                         self._next_refresh_at = now + 1.0
                     continue
                 try:
-                    navigation_changed = self._drain_navigation()
-                    if navigation_changed:
-                        self._paint_live()
                     if isinstance(command, _NavigationCommand):
-                        pass
+                        self._navigate(command.key)
                     elif isinstance(command, _EventCommand):
                         self._handle_event(command.event)
                     elif isinstance(command, _FinishCommand):
@@ -560,8 +538,8 @@ class SerializedRunRenderer:
         if page_count > 1:
             navigation = ""
             if self._navigation_active:
-                mode = "FOLLOW" if self._follow_last_page else "MANUAL · F/END FOLLOW"
-                navigation = f" · ←/→ PAGE · {mode}"
+                mode = "FOLLOW" if self._follow_last_page else "MANUAL · F FOLLOW"
+                navigation = f" · P/N PAGE · {mode}"
             footer.append(f"        PAGE {self._current_page + 1}/{page_count}{navigation}")
         footer.append(self._inline_progress().rstrip("\n"))
         occupied = len(self._live_start_lines) + len(page) + len(footer)
@@ -622,37 +600,23 @@ class SerializedRunRenderer:
             try:
                 key = self.navigation_input.read()
             except Exception:
-                self._navigation_keys.put(None)
-                self._commands.put(_NavigationCommand())
+                self._commands.put(_NavigationCommand(None))
                 return
             if key is not None:
-                self._navigation_keys.put(key)
-                self._commands.put(_NavigationCommand())
+                self._commands.put(_NavigationCommand(key))
 
-    def _drain_navigation(self) -> bool:
-        changed = False
-        while True:
-            try:
-                key = self._navigation_keys.get_nowait()
-            except Empty:
-                break
-            try:
-                if key is None:
-                    self._stop_navigation()
-                elif key is NavigationKey.FOLLOW:
-                    self._follow_last_page = True
-                else:
-                    self._follow_last_page = False
-                    change = -1 if key is NavigationKey.LEFT else 1
-                    self._current_page += change
-                changed = True
-            finally:
-                self._navigation_keys.task_done()
-        if not changed:
-            return False
+    def _navigate(self, key: NavigationKey | None) -> None:
+        if key is None:
+            self._stop_navigation()
+        elif key is NavigationKey.FOLLOW:
+            self._follow_last_page = True
+        else:
+            self._follow_last_page = False
+            change = -1 if key is NavigationKey.PREVIOUS else 1
+            self._current_page += change
         page_count = len(self._live_pages)
         self._current_page = min(max(0, self._current_page), page_count - 1)
-        return True
+        self._paint_live()
 
     def _stop_navigation(self) -> None:
         if not self._navigation_active or self.navigation_input is None:

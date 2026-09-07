@@ -699,8 +699,8 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
     scrollback, and last-page following requires no keyboard input;
   - the live viewport displays a page indicator when all action rows do not fit
     and follows the last page, where running actions are grouped; on terminals
-    with usable interactive input, left and right select a page that remains
-    stable across refreshes, while `End` or `f` resumes last-page following;
+    with usable interactive input, `p` and `n` select a page that remains stable
+    across refreshes, while `f` resumes last-page following;
     key events wake the renderer independently from the one-second progress tick;
   - multipage live rendering omits the selected-node heading so action progress
     receives the full viewport; final flow history retains the complete heading;
