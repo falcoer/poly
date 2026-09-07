@@ -561,7 +561,8 @@ def test_add_rolls_back_a_mid_transaction_write_failure(
         )
         == 1
     )
-    assert "simulated lock replacement failure" in capsys.readouterr().out
+    rendered = " ".join(capsys.readouterr().out.replace("·", "").split())
+    assert "simulated lock replacement failure" in rendered
     assert {path: path.read_bytes() for path in paths} == before
     assert not list(workspace.glob(".*.tmp"))
     assert not list(workspace.glob(".*.bak"))

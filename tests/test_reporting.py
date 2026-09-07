@@ -137,15 +137,15 @@ def test_interactive_renderer_has_command_statuses_and_distinct_completion(
     )
 
     assert concise.splitlines()[0] == "VERIFYING node ..."
-    assert concise.splitlines()[1].startswith("        PLAN")
-    assert "                ✓ OK       verify:node" in concise
-    assert concise.splitlines()[-2].startswith("        ✓ SUCCESS  poly verify")
+    assert concise.splitlines()[1].startswith("  PLAN")
+    assert "  ✓ OK       verify:node" in concise
+    assert concise.splitlines()[-2].startswith("  ✓ SUCCESS  poly verify")
     assert "01h 02m 03s" in concise
     assert "Schema: poly.report/v1" in verbose
-    assert "        COMMAND  poly verify --select node -vv" in verbose
+    assert "  COMMAND  poly verify --select node -vv" in verbose
     assert "\x1b[32m" in verbose
     assert "COMMAND" not in quiet
-    assert quiet.splitlines()[-2].startswith("        ✓ SUCCESS")
+    assert quiet.splitlines()[-2].startswith("  ✓ SUCCESS")
 
 
 def test_interactive_renderer_distinguishes_failure_blocking_and_logs(tmp_path: Path) -> None:
@@ -177,7 +177,7 @@ def test_interactive_renderer_distinguishes_failure_blocking_and_logs(tmp_path: 
     assert "· verification failed" in output
     assert "stderr: broken" in output
     assert "⚠ WARN     follow-up · blocked by" in output
-    assert output.splitlines()[-2].startswith("        ✗ FAILURE  poly verify")
+    assert output.splitlines()[-2].startswith("  ✗ FAILURE  poly verify")
 
 
 def test_interactive_renderer_reports_none_for_an_empty_plan(tmp_path: Path) -> None:
@@ -311,7 +311,7 @@ def test_source_add_heading_uses_sanitized_authored_url_and_ref(tmp_path: Path) 
 
     output = render_cli(planning_document(add_planning), "poly add service", color=False)
 
-    assert "ADDING service from https://example.test/repo.git (ref: develop) ..." in output
+    assert "ADDING service from https://example.test/repo.git (ref: develop)" in output
     assert "secret" not in output
 
 
@@ -378,8 +378,8 @@ def test_narrow_action_detail_wraps_at_the_third_indent(tmp_path: Path) -> None:
 
     output = render_cli_event(event, planning.plan.actions[0], width=48)
 
-    assert output.splitlines()[0].startswith("                ✓ OK")
-    assert any(line.startswith("                        · ") for line in output.splitlines()[1:])
+    assert output.splitlines()[0].startswith("  ✓ OK")
+    assert any(line.startswith("    · ") for line in output.splitlines()[1:])
     assert all(len(line) <= 48 for line in output.splitlines())
 
 

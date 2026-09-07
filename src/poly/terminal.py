@@ -511,7 +511,7 @@ class SerializedRunRenderer:
             self._stop_navigation()
             self._write(_RESET_STYLE + _LEAVE_ALTERNATE_SCREEN + self._aborted_history())
         elif self._mode is TerminalOutputMode.FLOW:
-            self._write(f"        ✗ ABORTED  {self._command}\n")
+            self._write(f"  ✗ ABORTED  {self._command}\n")
         self._write(clear_progress + _RESET_STYLE + "\n")
         self._progress_active = False
 
@@ -522,8 +522,8 @@ class SerializedRunRenderer:
             if rendered:
                 lines.extend(rendered.splitlines())
             else:
-                lines.append(f"                · PENDING  {action.id} ({action.operation})")
-        lines.append(f"        ✗ ABORTED  {self._command}")
+                lines.append(f"    · PENDING  {action.id} ({action.operation})")
+        lines.append(f"  ✗ ABORTED  {self._command}")
         return "\n".join(lines) + "\n"
 
     def _paint_live(self, event: RunEvent | None = None) -> None:
@@ -541,7 +541,7 @@ class SerializedRunRenderer:
             if self._navigation_active:
                 mode = "FOLLOW" if self._follow_last_page else "MANUAL · F FOLLOW"
                 navigation = f" · P/N PAGE · {mode}"
-            footer.append(f"        PAGE {self._current_page + 1}/{page_count}{navigation}")
+            footer.append(f"  PAGE {self._current_page + 1}/{page_count}{navigation}")
         footer.append(self._inline_progress().rstrip("\n"))
         occupied = len(self._live_start_lines) + len(page) + len(footer)
         padding = ("",) * max(0, self._capabilities().height - occupied)

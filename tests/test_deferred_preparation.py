@@ -87,9 +87,9 @@ def test_prepare_cli_renders_planned_not_success(
         == 0
     )
     output = capsys.readouterr().out
-    assert "○ PLANNED  poly add" in output
-    assert "1 command in current plan" in output
-    assert "Run `poly exec` when the plan is ready." in output
+    assert "○ Planned (1 command prepared in current plan)" in output
+    assert "┌" not in output
+    assert "└" not in output
     assert "SUCCESS" not in output
     assert "executable" not in output
     assert "action(s)" not in output

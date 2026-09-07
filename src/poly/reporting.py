@@ -32,9 +32,9 @@ from poly.runtime import ActionResult, ActionState, RunEvent, RunResult
 
 type ReportDocument = dict[str, JsonValue]
 REPORT_SCHEMA = "poly.report/v1"
-_SECTION_INDENT = "        "
-_DETAIL_INDENT = "                "
-_LOG_INDENT = "                        "
+_SECTION_INDENT = "  "
+_DETAIL_INDENT = "  "
+_LOG_INDENT = "    "
 _FALLBACK_WIDTH = 72
 
 
@@ -401,13 +401,13 @@ def render_cli_progress(
         f" · {_format_clock(elapsed_ms)} · [{timestamp}]"
     )
     available = _usable_width(width)
-    bar_width = available - _display_width(prefix) - _display_width(suffix) - 3
+    bar_width = min(20, available - _display_width(prefix) - _display_width(suffix) - 3)
     if bar_width < 5:
         suffix = (
             f"{bounded_completed}/{bounded_total} · {percentage}% · {_format_clock(elapsed_ms)}"
             f" · [{timestamp}]"
         )
-        bar_width = available - _display_width(prefix) - _display_width(suffix) - 3
+        bar_width = min(20, available - _display_width(prefix) - _display_width(suffix) - 3)
     if bar_width >= 5:
         filled = percentage * bar_width // 100
         bar = "█" * filled + "─" * (bar_width - filled)
@@ -465,34 +465,20 @@ def _is_planned_command(document: ReportDocument) -> bool:
 
 
 def _render_planned_cli(
-    document: ReportDocument, command: str, verbosity: int, color: bool, width: int
+    document: ReportDocument, command: str, verbosity: int, color: bool, _width: int
 ) -> str:
     prepared = document.get("prepared", {})
-    request = document.get("request", {})
     count_value = prepared.get("command_count", 0) if isinstance(prepared, dict) else 0
     count = int(count_value) if isinstance(count_value, int | str) else 0
-    verb = str(request.get("verb", "command")) if isinstance(request, dict) else "command"
     noun = "command" if count == 1 else "commands"
-    frame_tone = "muted"
     if verbosity < 0:
-        return _styled(f"○ PLANNED  poly {verb}", "magenta", color) + "\n"
+        return _styled(f"○ Planned ({count} {noun})", "magenta", color) + "\n"
 
     lines = [_command_heading(document)]
     if verbosity >= 1:
         lines.append(f"{_SECTION_INDENT}COMMAND  {command}")
-
-    lines.append(_styled("┌" + "─" * max(0, _usable_width(width) - 1), frame_tone, color))
-
-    body = (
-        f"○ PLANNED  poly {verb}",
-        f"{count} {noun} in current plan",
-        "Run `poly exec` when the plan is ready.",
-    )
-    for index, line in enumerate(body):
-        gutter = _styled("├" if index == 0 else "│", frame_tone, color)
-        indent = "  " if index == 0 else "    "
-        lines.append(f"{gutter}{indent}{_styled(line, 'magenta', color)}")
-    lines.append(_styled("└" + "─" * max(0, _usable_width(width) - 1), frame_tone, color))
+    planned = f"○ Planned ({count} {noun} prepared in current plan)"
+    lines.append(f"{_SECTION_INDENT}{_styled(planned, 'magenta', color)}")
     return "\n".join(lines) + "\n"
 
 
@@ -500,6 +486,12 @@ def _command_heading(document: ReportDocument) -> str:
     request = document.get("request", {})
     kind = str(document.get("kind", "command"))
     verb = str(request.get("verb", kind)) if isinstance(request, dict) else kind
+    if verb == "exec":
+        prepared = document.get("prepared", {})
+        count_value = prepared.get("command_count", 0) if isinstance(prepared, dict) else 0
+        count = count_value if isinstance(count_value, int) else 0
+        noun = "command" if count == 1 else "commands"
+        return f"EXEC PLAN ({count} {noun})"
     labels = {
         "add": "ADDING",
         "actions": "LISTING ACTIONS",
@@ -533,8 +525,9 @@ def _command_heading(document: ReportDocument) -> str:
             source = _safe_source_url(str(parameters["poly.source.url"]))
             requested_ref = parameters.get("poly.source.ref")
             ref = f" (ref: {_safe_visible(str(requested_ref))})" if requested_ref else ""
-            return f"{label}{f' {target}' if target else ''} from {source}{ref} ..."
-    return f"{label}{f' {target}' if target else ''} ..."
+            return f"{label}{f' {target}' if target else ''} from {source}{ref}"
+    suffix = "" if verb == "add" else " ..."
+    return f"{label}{f' {target}' if target else ''}{suffix}"
 
 
 def _command_target(request: JsonValue) -> str:
@@ -563,16 +556,19 @@ def _concise_document(
             lines.append(f"{_DETAIL_INDENT}{_styled(f'⚠ WARN     {message}', 'yellow', color)}")
 
     prepared = document.get("prepared")
+    request = document.get("request")
+    is_exec = isinstance(request, dict) and request.get("verb") == "exec"
     if isinstance(prepared, dict) and prepared.get("journal_version") == 2:
         commands = prepared.get("commands", [])
         if isinstance(commands, list):
-            noun = "command" if len(commands) == 1 else "commands"
-            summary = f"{len(commands)} {noun} in current plan"
-            lines.append(f"{_SECTION_INDENT}{_styled(summary, 'magenta', color)}")
+            if not is_exec:
+                noun = "command" if len(commands) == 1 else "commands"
+                summary = f"{len(commands)} {noun} in current plan"
+                lines.append(f"{_SECTION_INDENT}{_styled(summary, 'magenta', color)}")
             for index, item in enumerate(commands, 1):
                 if isinstance(item, dict):
                     authored = item.get("command") or f"poly {item.get('verb', 'command')}"
-                    lines.append(f"{_DETAIL_INDENT}{index:>3}. {_safe_visible(str(authored))}")
+                    lines.append(f"{_SECTION_INDENT}{index}. {_safe_visible(str(authored))}")
         resolution = document.get("resolution")
         if isinstance(resolution, dict):
             diagnostics = resolution.get("diagnostics", [])
@@ -588,8 +584,9 @@ def _concise_document(
         for action in planned if isinstance(planned, list) else []:
             if isinstance(action, dict):
                 operations[str(action.get("id"))] = str(action.get("operation"))
-        plan_line = f"PLAN     {plan.get('id')} · {count} action(s) · {plan.get('status')}"
-        lines.append(f"{_SECTION_INDENT}{_styled(plan_line, 'cyan', color)}")
+        if not is_exec:
+            plan_line = f"PLAN     {plan.get('id')} · {count} action(s) · {plan.get('status')}"
+            lines.append(f"{_SECTION_INDENT}{_styled(plan_line, 'cyan', color)}")
         plan_diagnostics = plan.get("diagnostics", [])
         for diagnostic in plan_diagnostics if isinstance(plan_diagnostics, list) else []:
             if isinstance(diagnostic, dict):
@@ -633,6 +630,15 @@ def _concise_document(
 
 
 def _concise_plan(lines: list[str], document: ReportDocument, color: bool) -> None:
+    request = document.get("request")
+    prepared = document.get("prepared")
+    if isinstance(request, dict) and request.get("verb") == "exec" and isinstance(prepared, dict):
+        commands = prepared.get("commands", [])
+        for index, item in enumerate(commands if isinstance(commands, list) else [], 1):
+            if isinstance(item, dict):
+                authored = item.get("command") or f"poly {item.get('verb', 'command')}"
+                lines.append(f"{_SECTION_INDENT}{index}. {_safe_visible(str(authored))}")
+        return
     plan = document.get("plan")
     if not isinstance(plan, dict):
         return
