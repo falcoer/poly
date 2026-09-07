@@ -681,7 +681,7 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
 
 ## 0.12.5 — Terminal rendering modes and durable history
 
-- Status: `implemented-awaiting-validation`
+- Status: `validated`
 - Tag: `roadmap/0.12.5-terminal-rendering-modes`
 - Depends on: validated 0.12.4 interactive rendering corrections.
 - Scope: replace the unbounded incremental repaint with an explicit terminal
@@ -752,6 +752,17 @@ annotated tag `roadmap/0.12.2-prepared-plans-v2` is the validation authority.
   framework, user-configurable timestamp formats or timezones, and persistence
   changes to canonical run reports.
 
+Validation evidence:
+
+- explicit user acceptance covered the compact unframed prepared-command view,
+  reduced execution/progress indentation, the bounded progress bar, and the
+  correctly closed current-time timestamp;
+- the complete local suite passed with 235 tests and 90.25% coverage, alongside
+  format, lint, strict typing, wheel, and source-distribution checks;
+- GitHub Actions run `34136820937` completed successfully on commit
+  `2199bb5ba89af63f8f3c49dea4e408f81d80ceb0`, including the Windows/Linux and
+  clean-workstation matrices.
+
 ## 0.12.6 — Plugin extension architecture
 
 - Status: `validated`
@@ -809,17 +820,13 @@ Validation evidence:
 
 ## 0.13 — Bounded parallel plan execution
 
-- Status: `implemented-awaiting-validation`
+- Status: `validated`
 - Tag: `roadmap/0.13-bounded-parallel-execution`
 - Depends on: validated 0.12.6 plugin extension architecture and validated
   0.12.5 terminal rendering modes.
-- Prerequisite note: the remote annotated 0.12.6 tag resolves to the validated
-  commit, but this roadmap still records 0.12.5 as
-  `implemented-awaiting-validation`. No 0.12.5 validation evidence has been
-  inferred or invented, and no matching remote 0.12.5 tag was found during the
-  implementation audit. Implementation proceeded by explicit user direction;
-  this documentary prerequisite remains to be reconciled before 0.13 can be
-  validated.
+- Prerequisite note: the previously missing 0.12.5 validation was explicitly
+  supplied by the user after the final terminal rendering corrections and is
+  recorded above; the documentary prerequisite is therefore reconciled.
 - Scope: execute independent actions from the same ready frontier concurrently,
   with deterministic frontier selection, explicit execution-resource isolation,
   and a worker limit bounded by the capabilities visible to the Poly process.
@@ -888,3 +895,17 @@ Validation evidence:
 - Excluded: distributed scheduling, action preemption, adaptive CPU/memory or I/O
   weighting, speculative execution, driver-internal parallelism, and runtime
   plan expansion.
+
+Validation evidence:
+
+- deterministic local validation passed 235 tests with 90.25% coverage, format,
+  lint, strict typing, wheel, and source-distribution checks;
+- GitHub Actions run `34136820937` completed successfully on commit
+  `2199bb5ba89af63f8f3c49dea4e408f81d80ceb0`, covering the complete remote
+  quality and acceptance matrix;
+- real-use validation compared the same 81-repository workflow at one worker
+  and 12 workers: elapsed time fell from 3 minutes 16 seconds to 46 seconds,
+  and hydration completed without errors after the action-context preparation
+  correction;
+- the user explicitly accepted both the 0.12.5 and 0.13 milestones after these
+  checks.
