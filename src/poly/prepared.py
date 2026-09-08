@@ -405,6 +405,7 @@ def action_document(action: ActionSpec) -> dict[str, object]:
         ],
         "command": list(action.command) if action.command is not None else None,
         "environment": dict(action.environment),
+        "working_directory": action.working_directory,
         "changes_structure": action.changes_structure,
         "required_capability": action.required_capability,
         "execution_resources": sorted(action.execution_resources),
@@ -452,6 +453,9 @@ def _action_from_value(value: object) -> ActionSpec:
         ),
         command=tuple(_strings(command)) if command is not None else None,
         environment=dict(environment),
+        working_directory=_string(value, "working_directory")
+        if "working_directory" in value
+        else ".",
         changes_structure=bool(value.get("changes_structure", False)),
         required_capability=_string(value, "required_capability"),
         execution_resources=frozenset(_strings(value.get("execution_resources", []))),

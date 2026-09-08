@@ -259,6 +259,7 @@ def main(arguments: list[str] | None = None) -> int:
             parameters = _command_parameters(options, registry)
         except ValueError as error:
             parser.error(str(error))
+        parameters["poly.selection.mode"] = "explicit" if options.select else "implicit"
         if options.command == "actions":
             verbs = (options.verb,) if options.verb else inspection.available_verbs
             _validate_verbs(parser, verbs, inspection.available_verbs)

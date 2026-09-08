@@ -174,11 +174,15 @@ def test_workspace_policy_orders_reactors_and_materializes_upstream(tmp_path: Pa
         "maven:platform/service-a",
     )
     assert upstream.command is not None
+    assert upstream.working_directory == "platform"
+    assert upstream.command[2] == "pom.xml"
     assert upstream.command[-1] == "install"
     assert "com.example:service-a" in upstream.command
     assert f"-Dmaven.repo.local={RUN_REPOSITORY}" in upstream.command
     assert downstream.requested_node_ids == ("maven:apps/service-b",)
     assert downstream.command is not None
+    assert downstream.working_directory == "apps"
+    assert downstream.command[2] == "pom.xml"
     assert downstream.command[-1] == "verify"
     assert downstream.requires == upstream.produces
 

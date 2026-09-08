@@ -187,10 +187,24 @@ class LocalActionRunner:
         environment = os.environ.copy()
         environment.update(context.environment)
         environment.update({key: expand(value) for key, value in action.environment.items()})
+        workspace = context.workspace.resolve()
+        working_directory = (workspace / Path(action.working_directory)).resolve()
+        try:
+            working_directory.relative_to(workspace)
+        except ValueError:
+            return ActionAttempt(
+                False,
+                f"action working directory escapes workspace: {action.working_directory}",
+            )
+        if not working_directory.is_dir():
+            return ActionAttempt(
+                False,
+                f"action working directory does not exist: {action.working_directory}",
+            )
         try:
             process = subprocess.run(
                 command,
-                cwd=context.workspace,
+                cwd=working_directory,
                 env=environment,
                 check=False,
                 capture_output=True,

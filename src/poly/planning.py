@@ -208,6 +208,7 @@ def _action_payload(action: ActionSpec) -> dict[str, object]:
         "claims": sorted((claim.operation, claim.scope) for claim in action.claims),
         "command": action.command,
         "environment": dict(action.environment),
+        "working_directory": action.working_directory,
         "changes_structure": action.changes_structure,
         "required_capability": action.required_capability,
         "execution_resources": sorted(action.execution_resources),

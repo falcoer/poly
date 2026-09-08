@@ -297,6 +297,7 @@ class MavenPlanningProvider:
                         (ActionClaim(f"maven/{request.verb}", f"reactor:{reactor_id}"),)
                     ),
                     command=command,
+                    working_directory=reactor_node.path,
                     execution_resources=frozenset((f"reactor:{reactor_id}",)),
                     concurrency_safe=True,
                 )
@@ -582,18 +583,9 @@ def _command(
     also_make: bool,
 ) -> tuple[str, ...]:
     wrapper = reactor.metadata.get("maven.wrapper") is True
-    executable = (
-        f"{reactor.path}/mvnw"
-        if wrapper and reactor.path != "."
-        else "./mvnw"
-        if wrapper
-        else "mvn.cmd"
-        if os.name == "nt"
-        else "mvn"
-    )
-    pom = str(reactor.metadata["maven.pom"])
+    executable = "./mvnw" if wrapper else "mvn.cmd" if os.name == "nt" else "mvn"
     selectors = ",".join(sorted(_selector(node) for node in seeds))
-    arguments = [executable, "-f", pom, "-pl", selectors]
+    arguments = [executable, "-f", "pom.xml", "-pl", selectors]
     if also_make:
         arguments.append("-am")
     if use_run_repository:
