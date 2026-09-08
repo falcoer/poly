@@ -145,7 +145,7 @@ success does not silently validate an earlier milestone.
 
 ## 0.13.0.1 — Targeted execution performance and actionable diagnostics
 
-- Status: `in-progress`
+- Status: `validated`
 - Tag: `roadmap/0.13.0.1-targeted-execution-diagnostics`
 - Summary: reusable deterministic inspection inventory, explicit targeted-build scope, grouped diagnostics, and actionable failed-action logs. [Details](docs/releases/0.13.0.1.md)
 
