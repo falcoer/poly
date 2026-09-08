@@ -714,11 +714,34 @@ def _append_selection_summary(
     parameters = request.get("parameters")
     selection_mode = parameters.get("poly.selection.mode") if isinstance(parameters, dict) else None
     scope = "implicit workspace selection" if selection_mode != "explicit" else "explicit"
+    requested_noun = "node" if selected_count == 1 else "nodes"
+    project_noun = "project" if maven_count == 1 else "projects"
+    reactor_noun = "reactor" if len(maven_actions) == 1 else "reactors"
     line = (
-        f"SELECTION  {scope} · {selected_count} requested node(s) · "
-        f"{maven_count} Maven project(s) · {len(maven_actions)} reactor(s)"
+        f"SELECTION  {scope} · {selected_count} requested {requested_noun} · "
+        f"{maven_count} Maven {project_noun} · {len(maven_actions)} {reactor_noun}"
     )
     lines.append(f"{_SECTION_INDENT}{_styled(line, 'cyan', color)}")
+    if selection_mode != "explicit":
+        return
+    effective: list[tuple[tuple[str, ...], str]] = []
+    for action in maven_actions:
+        requested_ids = action.get("requested_node_ids")
+        if isinstance(requested_ids, list):
+            effective.append(
+                (
+                    tuple(str(node_id) for node_id in requested_ids),
+                    str(action.get("working_directory", ".")),
+                )
+            )
+    requested = sum((node_ids for node_ids, _reactor in effective), ())
+    if not effective or len(requested) > 3:
+        return
+    for node_ids, reactor in effective:
+        rendered_nodes = ", ".join(_safe_visible(node_id) for node_id in node_ids)
+        lines.append(
+            f"{_DETAIL_INDENT}EFFECTIVE  {rendered_nodes} → reactor {_safe_visible(reactor)}"
+        )
 
 
 def _append_run_logs(lines: list[str], document: ReportDocument) -> None:

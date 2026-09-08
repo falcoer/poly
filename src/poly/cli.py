@@ -11,7 +11,12 @@ from pathlib import Path
 from typing import Any
 
 from poly._version import __version__
-from poly.application import inspect_workspace, prepare_planning
+from poly.application import (
+    InspectionSnapshot,
+    PlanningSnapshot,
+    inspect_workspace,
+    prepare_planning,
+)
 from poly.construction import WORKSPACE_MANIFEST, constructor_driver
 from poly.control_plane import (
     ControllerDescriptor,
@@ -31,7 +36,7 @@ from poly.driver import (
 from poly.driver.scaffold import DriverScaffoldError, scaffold_driver
 from poly.drivers import git_driver, maven_driver
 from poly.drivers.git import _positive_depth
-from poly.model import Node
+from poly.model import Node, Plan
 from poly.persistence import StateError, StateStore
 from poly.prepared import (
     PreparedPlanError,
@@ -55,7 +60,7 @@ from poly.reporting import (
     run_document,
 )
 from poly.runtime import Executor, LocalActionRunner, RunStatus
-from poly.terminal import SerializedRunRenderer, TerminalCapabilities
+from poly.terminal import PreparationRenderer, SerializedRunRenderer, TerminalCapabilities
 from poly.workspace import WorkspaceError, validate_workspace
 
 REPORT_FORMATS = ("text", "json", "yaml", "xml")
@@ -87,9 +92,16 @@ def build_registry() -> DriverRegistry:
 
 
 def main(arguments: list[str] | None = None) -> int:
-    registry = build_registry()
-    parser = _parser(registry)
     raw_arguments = list(sys.argv[1:] if arguments is None else arguments)
+    preparation = PreparationRenderer(sys.stdout, enabled=_preparation_is_visible(raw_arguments))
+    preparation.start("Driver resolution in progress")
+    try:
+        registry = build_registry()
+    except BaseException:
+        preparation.fail("driver resolution")
+        raise
+    preparation.complete(_driver_resolution_summary(registry))
+    parser = _parser(registry)
     options = parser.parse_args(raw_arguments)
     command = shlex.join(["poly", *raw_arguments])
     if options.command == "driver":
@@ -104,9 +116,9 @@ def main(arguments: list[str] | None = None) -> int:
         print(f"Created {scaffolded.distribution_name} in {scaffolded.target}")
         return 0
     if options.command == "init" and options.root_repository:
-        return _bootstrap_root(parser, options, registry, command)
+        return _bootstrap_root(parser, options, registry, command, preparation)
     if options.command == "nature":
-        return _nature_command(parser, options, registry, command)
+        return _nature_command(parser, options, registry, command, preparation)
     workspace = options.workspace.resolve()
     if not workspace.is_dir():
         parser.error(f"workspace does not exist or is not a directory: {workspace}")
@@ -168,8 +180,14 @@ def main(arguments: list[str] | None = None) -> int:
         try:
             prepared = store.load_prepared_plan()
             if is_deferred_document(prepared):
-                inspection = inspect_workspace(registry, workspace)
-                resolved, plan = resolve_deferred_document(registry, inspection, prepared)
+                inspection = _inspect_with_progress(registry, workspace, preparation)
+                preparation.start("Execution selection in progress")
+                try:
+                    resolved, plan = resolve_deferred_document(registry, inspection, prepared)
+                except BaseException:
+                    preparation.fail("execution selection")
+                    raise
+                preparation.complete(_execution_selection_summary(plan))
                 if plan.status.value not in {"executable", "empty"}:
                     failed = dict(prepared)
                     failed["resolution"] = resolved.get("plan", {})
@@ -224,8 +242,11 @@ def main(arguments: list[str] | None = None) -> int:
 
     streamed = False
     try:
-        inspection = inspect_workspace(
-            registry, workspace, remote=getattr(options, "remote", False)
+        inspection = _inspect_with_progress(
+            registry,
+            workspace,
+            preparation,
+            remote=getattr(options, "remote", False),
         )
     except WorkspaceError as error:
         parser.error(str(error))
@@ -264,14 +285,19 @@ def main(arguments: list[str] | None = None) -> int:
             verbs = (options.verb,) if options.verb else inspection.available_verbs
             _validate_verbs(parser, verbs, inspection.available_verbs)
             snapshots = tuple(
-                prepare_planning(registry, inspection, verb, selected, parameters) for verb in verbs
+                _prepare_with_progress(
+                    registry, inspection, verb, selected, parameters, preparation
+                )
+                for verb in verbs
             )
             document = action_catalog_document(snapshots)
             exit_code = 0
         else:
             verb = options.verb if options.command == "run" else options.command
             _validate_verbs(parser, (verb,), inspection.available_verbs)
-            snapshot = prepare_planning(registry, inspection, verb, selected, parameters)
+            snapshot = _prepare_with_progress(
+                registry, inspection, verb, selected, parameters, preparation
+            )
             plan_only = getattr(options, "plan_only", False)
             if plan_only:
                 document = planning_document(snapshot)
@@ -450,6 +476,7 @@ def _nature_command(
     options: argparse.Namespace,
     registry: DriverRegistry,
     command: str,
+    preparation: PreparationRenderer,
 ) -> int:
     start = options.workspace.resolve()
     if not start.is_dir():
@@ -472,18 +499,19 @@ def _nature_command(
         _write_output(document, options, command, 0)
         return 0
     try:
-        inspection = inspect_workspace(registry, workspace)
+        inspection = _inspect_with_progress(registry, workspace, preparation)
         node_id, natures = _nature_target(
             options.values, inspection.inventory.nodes, workspace, start
         )
     except WorkspaceError as error:
         parser.error(str(error))
-    snapshot = prepare_planning(
+    snapshot = _prepare_with_progress(
         registry,
         inspection,
         f"nature-{options.nature_command}",
         (node_id,),
         {"poly.node.natures": ",".join(natures)},
+        preparation,
     )
     if options.plan_only:
         document = planning_document(snapshot)
@@ -582,6 +610,7 @@ def _bootstrap_root(
     options: argparse.Namespace,
     registry: DriverRegistry,
     command: str,
+    preparation: PreparationRenderer,
 ) -> int:
     if options.target is None:
         parser.error("root repository bootstrap requires a target directory")
@@ -591,14 +620,16 @@ def _bootstrap_root(
         parser.error(f"bootstrap target parent does not exist: {parent}")
     if target.exists() and not target.is_dir():
         parser.error(f"bootstrap target is not a directory: {target}")
-    inspection = inspect_workspace(registry, parent)
+    inspection = _inspect_with_progress(registry, parent, preparation)
     parameters = {
         "poly.source.url": options.root_repository,
         "poly.node.path": target.name,
     }
     if options.ref:
         parameters["poly.source.ref"] = options.ref
-    snapshot = prepare_planning(registry, inspection, "bootstrap", (), parameters)
+    snapshot = _prepare_with_progress(
+        registry, inspection, "bootstrap", (), parameters, preparation
+    )
     if options.plan_only:
         exit_code = 0 if snapshot.plan.status.value == "executable" else 1
         _write_output(planning_document(snapshot), options, command, exit_code)
@@ -782,6 +813,77 @@ def _write_output(
             width=capabilities.width,
             hyperlinks=capabilities.hyperlinks,
         )
+    )
+
+
+def _preparation_is_visible(arguments: list[str]) -> bool:
+    """Keep transient preparation output out of help and structured documents."""
+
+    if any(argument in {"-h", "--help", "--version"} for argument in arguments):
+        return False
+    for index, argument in enumerate(arguments):
+        if argument.startswith("--format="):
+            return argument.partition("=")[2] == "text"
+        if argument == "--format" and index + 1 < len(arguments):
+            return arguments[index + 1] == "text"
+    return True
+
+
+def _driver_resolution_summary(registry: DriverRegistry) -> str:
+    inventory = registry.inventory()
+    loaded = sum(item.status == "loaded" for item in inventory)
+    rejected = len(inventory) - loaded
+    noun = "driver" if loaded == 1 else "drivers"
+    return f"driver resolution · {loaded} loaded {noun} · {rejected} rejected"
+
+
+def _inspect_with_progress(
+    registry: DriverRegistry,
+    workspace: Path,
+    preparation: PreparationRenderer,
+    *,
+    remote: bool = False,
+) -> InspectionSnapshot:
+    preparation.start("Node resolution in progress")
+    try:
+        inspection = inspect_workspace(registry, workspace, remote=remote)
+    except BaseException:
+        preparation.fail("node resolution")
+        raise
+    node_count = len(inspection.inventory.nodes)
+    diagnostic_count = len(inspection.diagnostics)
+    node_noun = "node" if node_count == 1 else "nodes"
+    diagnostic_suffix = "" if diagnostic_count == 0 else f" · {diagnostic_count} diagnostic(s)"
+    preparation.complete(f"node resolution · {node_count} {node_noun}{diagnostic_suffix}")
+    return inspection
+
+
+def _prepare_with_progress(
+    registry: DriverRegistry,
+    inspection: InspectionSnapshot,
+    verb: str,
+    selected: tuple[str, ...],
+    parameters: dict[str, str],
+    preparation: PreparationRenderer,
+) -> PlanningSnapshot:
+    preparation.start("Execution selection in progress")
+    try:
+        snapshot = prepare_planning(registry, inspection, verb, selected, parameters)
+    except BaseException:
+        preparation.fail("execution selection")
+        raise
+    preparation.complete(_execution_selection_summary(snapshot.plan))
+    return snapshot
+
+
+def _execution_selection_summary(plan: Plan) -> str:
+    selected_count = len(plan.selected_node_ids)
+    action_count = len(plan.actions)
+    selected_noun = "node" if selected_count == 1 else "nodes"
+    action_noun = "action" if action_count == 1 else "actions"
+    return (
+        f"execution selection · {selected_count} requested {selected_noun} · "
+        f"{action_count} {action_noun}"
     )
 
 

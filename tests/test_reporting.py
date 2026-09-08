@@ -118,7 +118,8 @@ def test_maven_plan_renders_explicit_selection_scope(tmp_path: Path) -> None:
 
     output = render_cli(planning_document(planning), "poly build --select maven:service")
 
-    assert "SELECTION  explicit · 1 requested node(s) · 1 Maven project(s) · 1 reactor(s)" in output
+    assert "SELECTION  explicit · 1 requested node · 1 Maven project · 1 reactor" in output
+    assert "EFFECTIVE  maven:service → reactor ." in output
 
 
 def test_run_document_keeps_attempt_logs_and_state(tmp_path: Path) -> None:

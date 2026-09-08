@@ -15,6 +15,7 @@ from poly.reporting import ReportDocument
 from poly.runtime import ActionState, RunEvent
 from poly.terminal import (
     NavigationKey,
+    PreparationRenderer,
     RunRenderer,
     SerializedRunRenderer,
     TerminalCapabilities,
@@ -139,6 +140,23 @@ def test_renderer_satisfies_execution_protocol() -> None:
     renderer = SerializedRunRenderer(io.StringIO(), ())
 
     assert isinstance(renderer, RunRenderer)
+
+
+def test_preparation_renderer_replaces_animation_with_effective_summary() -> None:
+    output = InteractiveOutput()
+    renderer = PreparationRenderer(
+        output,
+        capabilities=TerminalCapabilities(True, True, False, 100),
+        interval_seconds=0.001,
+    )
+
+    renderer.start("Node resolution in progress")
+    time.sleep(0.01)
+    renderer.complete("node resolution · 593 nodes")
+
+    value = output.getvalue()
+    assert "[◰] Node resolution in progress" in value
+    assert "✓ OK       node resolution · 593 nodes" in value
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX pseudo-terminal required")
