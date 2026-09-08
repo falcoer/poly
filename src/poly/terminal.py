@@ -303,7 +303,7 @@ class PreparationRenderer:
             if label is None:
                 return
             with self._lock:
-                self.stream.write(f"\r  [{frame}] {label}\x1b[K")
+                self.stream.write(f"\r  {frame} {label}\x1b[K")
                 self.stream.flush()
             if self._stop.wait(self.interval_seconds):
                 return

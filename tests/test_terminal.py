@@ -155,7 +155,7 @@ def test_preparation_renderer_replaces_animation_with_effective_summary() -> Non
     renderer.complete("node resolution · 593 nodes")
 
     value = output.getvalue()
-    assert "[◰] Node resolution in progress" in value
+    assert "◰ Node resolution in progress" in value
     assert "✓ OK       node resolution · 593 nodes" in value
 
 
