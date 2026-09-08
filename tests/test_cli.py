@@ -6,11 +6,16 @@ import subprocess
 import sys
 from importlib.metadata import version
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+import poly.cli as cli
 from poly import __version__
+from poly.application import InspectionSnapshot
 from poly.cli import main
+from poly.model import Inventory
+from poly.terminal import PreparationRenderer
 
 
 class RecordingOutput(io.StringIO):
@@ -21,6 +26,20 @@ class RecordingOutput(io.StringIO):
     def flush(self) -> None:
         self.flushes.append(self.getvalue())
         super().flush()
+
+
+class RecordingPreparation:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, str]] = []
+
+    def start(self, message: str) -> None:
+        self.events.append(("start", message))
+
+    def complete(self, message: str) -> None:
+        self.events.append(("complete", message))
+
+    def fail(self, step: str) -> None:
+        self.events.append(("fail", step))
 
 
 def _workspace(path: Path) -> None:
@@ -741,3 +760,49 @@ def test_cli_generates_external_driver_repository(
 
     assert "Created poly-driver-sample-tech" in capsys.readouterr().out
     assert (target / "poly-driver.toml").is_file()
+
+
+def test_cli_reports_failed_preparation_steps(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    registry = cli.build_registry()
+    preparation = RecordingPreparation()
+
+    def fail_inspection(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("inspection failed")
+
+    def fail_planning(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("planning failed")
+
+    monkeypatch.setattr(cli, "inspect_workspace", fail_inspection)
+    with pytest.raises(RuntimeError, match="inspection failed"):
+        cli._inspect_with_progress(
+            registry,
+            tmp_path,
+            cast(PreparationRenderer, preparation),
+        )
+    assert preparation.events == [
+        ("start", "Node resolution in progress"),
+        ("fail", "node resolution"),
+    ]
+
+    monkeypatch.setattr(cli, "prepare_planning", fail_planning)
+    with pytest.raises(RuntimeError, match="planning failed"):
+        cli._prepare_with_progress(
+            registry,
+            InspectionSnapshot(tmp_path, Inventory(()), (), ()),
+            "build",
+            (),
+            {},
+            cast(PreparationRenderer, preparation),
+        )
+    assert preparation.events[-2:] == [
+        ("start", "Execution selection in progress"),
+        ("fail", "execution selection"),
+    ]
+
+
+def test_cli_hides_preparation_for_structured_output() -> None:
+    assert not cli._preparation_is_visible(["build", "--format=json"])
+    assert not cli._preparation_is_visible(["build", "--format", "json"])
+    assert cli._preparation_is_visible(["build", "--format", "text"])
