@@ -69,3 +69,9 @@ def test_action_requested_nodes_must_be_covered() -> None:
             node_ids=("dependency",),
             requested_node_ids=("service",),
         )
+
+
+@pytest.mark.parametrize("path", ("/absolute", "../outside", "a/../../outside", "a\\b", "C:/work"))
+def test_action_rejects_working_directory_outside_workspace(path: str) -> None:
+    with pytest.raises(ValueError, match="working directory must be a workspace-relative"):
+        ActionSpec("action", "driver", "verify", "operation", (), working_directory=path)

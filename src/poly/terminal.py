@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from itertools import cycle as _cycle
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
 from typing import Protocol, TextIO, cast, runtime_checkable
@@ -34,6 +35,7 @@ _CLEAR_TO_END = "\x1b[J"
 _RESET_STYLE = "\x1b[0m"
 _MINIMUM_LIVE_WIDTH = 64
 _MINIMUM_LIVE_HEIGHT = 8
+_PREPARATION_FRAMES = ("◰", "◳", "◲", "◱")
 
 
 class TerminalOutputMode(StrEnum):
@@ -232,6 +234,79 @@ class TerminalCapabilities:
             and self.width >= _MINIMUM_LIVE_WIDTH
             and self.height >= _MINIMUM_LIVE_HEIGHT
         )
+
+
+@dataclass(slots=True)
+class PreparationRenderer:
+    """Render one transient, serialized preparation phase on an interactive terminal."""
+
+    stream: TextIO
+    enabled: bool = True
+    capabilities: TerminalCapabilities | None = None
+    interval_seconds: float = 0.12
+    _label: str | None = field(default=None, init=False)
+    _stop: Event = field(default_factory=Event, init=False)
+    _thread: Thread | None = field(default=None, init=False)
+    _lock: Lock = field(default_factory=Lock, init=False)
+
+    def __post_init__(self) -> None:
+        if self.capabilities is None:
+            self.capabilities = TerminalCapabilities.detect(self.stream)
+        self.enabled = self.enabled and self.capabilities.cursor_updates
+
+    def start(self, label: str) -> None:
+        """Start replacing the current line with a compact four-frame spinner."""
+
+        self.complete(None)
+        if not self.enabled:
+            return
+        self._label = label
+        self._stop.clear()
+        self._thread = Thread(target=self._animate, name="poly-preparation", daemon=True)
+        self._thread.start()
+
+    def complete(self, summary: str | None) -> None:
+        """Stop the animation and replace it with its effective result when supplied."""
+
+        thread = self._thread
+        if thread is not None:
+            self._stop.set()
+            thread.join()
+        self._thread = None
+        self._label = None
+        if not self.enabled or summary is None:
+            return
+        with self._lock:
+            self.stream.write(f"\r  ✓ OK       {summary}\x1b[K\n")
+            self.stream.flush()
+
+    def fail(self, summary: str) -> None:
+        """Stop the animation and retain a concise failed preparation result."""
+
+        thread = self._thread
+        if thread is not None:
+            self._stop.set()
+            thread.join()
+        self._thread = None
+        self._label = None
+        if not self.enabled:
+            return
+        with self._lock:
+            self.stream.write(f"\r  ✗ KO       {summary}\x1b[K\n")
+            self.stream.flush()
+
+    def _animate(self) -> None:
+        for frame in _cycle(_PREPARATION_FRAMES):
+            if self._stop.is_set():
+                return
+            label = self._label
+            if label is None:
+                return
+            with self._lock:
+                self.stream.write(f"\r  {frame} {label}\x1b[K")
+                self.stream.flush()
+            if self._stop.wait(self.interval_seconds):
+                return
 
 
 @dataclass(frozen=True, slots=True)

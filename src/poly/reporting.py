@@ -51,6 +51,10 @@ def inspection_document(snapshot: InspectionSnapshot) -> ReportDocument:
         "drivers": [_driver_document(item) for item in snapshot.drivers],
         "plugins": [_plugin_document(item) for item in snapshot.plugins],
         "contributions": [_contribution_document(item) for item in snapshot.contributions],
+        "inspection_cache": {
+            "state": snapshot.cache_state,
+            "elapsed_ms": snapshot.elapsed_ms,
+        },
     }
 
 
@@ -121,7 +125,7 @@ def run_document(snapshot: PlanningSnapshot, result: RunResult) -> ReportDocumen
         "duration_ms": result.duration_ms,
         "workers": _worker_document(result),
         "slowest_action": _slowest_action(result),
-        "actions": [_action_result_document(action) for action in result.actions],
+        "actions": [_action_result_document(action, result.plan_id) for action in result.actions],
         "events": [_event_document(event) for event in result.events],
     }
     return document
@@ -139,7 +143,7 @@ def prepared_run_document(document: ReportDocument, result: RunResult) -> Report
         "duration_ms": result.duration_ms,
         "workers": _worker_document(result),
         "slowest_action": _slowest_action(result),
-        "actions": [_action_result_document(action) for action in result.actions],
+        "actions": [_action_result_document(action, result.plan_id) for action in result.actions],
         "events": [_event_document(event) for event in result.events],
     }
     return run
@@ -162,7 +166,9 @@ def construction_document(workspace: Path, plan: Plan, result: RunResult) -> Rep
             "available_constraints": list(result.available_constraints),
             "duration_ms": result.duration_ms,
             "workers": _worker_document(result),
-            "actions": [_action_result_document(action) for action in result.actions],
+            "actions": [
+                _action_result_document(action, result.plan_id) for action in result.actions
+            ],
             "events": [_event_document(event) for event in result.events],
         },
     }
@@ -550,10 +556,7 @@ def _concise_document(
 ) -> None:
     operations: dict[str, str] = {}
     diagnostics = document.get("diagnostics", [])
-    for diagnostic in diagnostics if isinstance(diagnostics, list) else []:
-        if isinstance(diagnostic, dict):
-            message = diagnostic.get("message")
-            lines.append(f"{_DETAIL_INDENT}{_styled(f'⚠ WARN     {message}', 'yellow', color)}")
+    _append_diagnostics(lines, diagnostics, verbosity, color)
 
     prepared = document.get("prepared")
     request = document.get("request")
@@ -585,6 +588,7 @@ def _concise_document(
             if isinstance(action, dict):
                 operations[str(action.get("id"))] = str(action.get("operation"))
         if not is_exec:
+            _append_selection_summary(lines, document, planned, color)
             plan_line = f"PLAN     {plan.get('id')} · {count} action(s) · {plan.get('status')}"
             lines.append(f"{_SECTION_INDENT}{_styled(plan_line, 'cyan', color)}")
         plan_diagnostics = plan.get("diagnostics", [])
@@ -613,9 +617,16 @@ def _concise_document(
         inventory = document.get("inventory", {})
         nodes = inventory.get("nodes", []) if isinstance(inventory, dict) else []
         count = len(nodes) if isinstance(nodes, list) else 0
-        status = _styled(f"✓ OK       inspection · {count} node(s)", "green", color)
+        cache = document.get("inspection_cache")
+        cache_suffix = ""
+        if isinstance(cache, dict):
+            state = cache.get("state")
+            elapsed = cache.get("elapsed_ms")
+            if state in {"hit", "cold", "refresh"} and isinstance(elapsed, int):
+                cache_suffix = f" · cache {state} · {elapsed} ms"
+        status = _styled(f"✓ OK       inspection · {count} node(s){cache_suffix}", "green", color)
         lines.append(f"{_SECTION_INDENT}{status}")
-        if verbosity >= 1:
+        if verbosity >= 2:
             for node in nodes if isinstance(nodes, list) else []:
                 if isinstance(node, dict):
                     lines.append(f"{_DETAIL_INDENT}{node.get('id')} · {node.get('path')}")
@@ -643,6 +654,7 @@ def _concise_plan(lines: list[str], document: ReportDocument, color: bool) -> No
     if not isinstance(plan, dict):
         return
     planned = plan.get("planned_actions", [])
+    _append_selection_summary(lines, document, planned, color)
     count = len(planned) if isinstance(planned, list) else 0
     plan_line = f"PLAN     {plan.get('id')} · {count} action(s) · {plan.get('status')}"
     lines.append(f"{_SECTION_INDENT}{_styled(plan_line, 'cyan', color)}")
@@ -651,6 +663,96 @@ def _concise_plan(lines: list[str], document: ReportDocument, color: bool) -> No
         if isinstance(diagnostic, dict):
             warning = f"⚠ WARN     {diagnostic.get('message')}"
             lines.append(f"{_DETAIL_INDENT}{_styled(warning, 'yellow', color)}")
+
+
+def _append_diagnostics(
+    lines: list[str], diagnostics: JsonValue | None, verbosity: int, color: bool
+) -> None:
+    grouped: dict[tuple[str, str], list[dict[str, JsonValue]]] = {}
+    for diagnostic in diagnostics if isinstance(diagnostics, list) else []:
+        if not isinstance(diagnostic, dict):
+            continue
+        code = str(diagnostic.get("code", "diagnostic"))
+        message = str(diagnostic.get("message", "diagnostic"))
+        grouped.setdefault((code, message), []).append(diagnostic)
+    for (_code, message), entries in sorted(grouped.items()):
+        suffix = f" · {len(entries)} affected reference(s)" if len(entries) > 1 else ""
+        warning = f"⚠ WARN     {_safe_visible(message)}{suffix}"
+        lines.append(f"{_DETAIL_INDENT}{_styled(warning, 'yellow', color)}")
+        if verbosity < 1:
+            continue
+        paths = sorted(
+            {
+                str(entry["path"])
+                for entry in entries
+                if isinstance(entry.get("path"), str) and entry["path"]
+            }
+        )
+        for path in paths[:5]:
+            lines.append(f"{_LOG_INDENT}at: {_safe_visible(path)}")
+        remaining = len(paths) - 5
+        if remaining > 0:
+            lines.append(f"{_LOG_INDENT}… {remaining} additional location(s)")
+
+
+def _append_selection_summary(
+    lines: list[str], document: ReportDocument, planned: JsonValue | None, color: bool
+) -> None:
+    actions = planned if isinstance(planned, list) else []
+    maven_actions = [
+        action
+        for action in actions
+        if isinstance(action, dict) and action.get("operation") == "maven/reactor"
+    ]
+    if not maven_actions:
+        return
+    request = document.get("request")
+    if not isinstance(request, dict):
+        return
+    selected = request.get("selected_node_ids")
+    selected_count = len(selected) if isinstance(selected, list) else 0
+    inventory = document.get("inventory")
+    node_values = inventory.get("nodes", []) if isinstance(inventory, dict) else []
+    nodes = node_values if isinstance(node_values, list) else []
+    selected_ids = {str(node_id) for node_id in selected} if isinstance(selected, list) else set()
+    maven_count = 0
+    for node in nodes:
+        if not isinstance(node, dict) or node.get("id") not in selected_ids:
+            continue
+        natures = node.get("natures")
+        if isinstance(natures, list) and "maven/project" in natures:
+            maven_count += 1
+    parameters = request.get("parameters")
+    selection_mode = parameters.get("poly.selection.mode") if isinstance(parameters, dict) else None
+    scope = "implicit workspace selection" if selection_mode != "explicit" else "explicit"
+    requested_noun = "node" if selected_count == 1 else "nodes"
+    project_noun = "project" if maven_count == 1 else "projects"
+    reactor_noun = "reactor" if len(maven_actions) == 1 else "reactors"
+    line = (
+        f"SELECTION  {scope} · {selected_count} requested {requested_noun} · "
+        f"{maven_count} Maven {project_noun} · {len(maven_actions)} {reactor_noun}"
+    )
+    lines.append(f"{_SECTION_INDENT}{_styled(line, 'cyan', color)}")
+    if selection_mode != "explicit":
+        return
+    effective: list[tuple[tuple[str, ...], str]] = []
+    for action in maven_actions:
+        requested_ids = action.get("requested_node_ids")
+        if isinstance(requested_ids, list):
+            effective.append(
+                (
+                    tuple(str(node_id) for node_id in requested_ids),
+                    str(action.get("working_directory", ".")),
+                )
+            )
+    requested = sum((node_ids for node_ids, _reactor in effective), ())
+    if not effective or len(requested) > 3:
+        return
+    for node_ids, reactor in effective:
+        rendered_nodes = ", ".join(_safe_visible(node_id) for node_id in node_ids)
+        lines.append(
+            f"{_DETAIL_INDENT}EFFECTIVE  {rendered_nodes} → reactor {_safe_visible(reactor)}"
+        )
 
 
 def _append_run_logs(lines: list[str], document: ReportDocument) -> None:
@@ -801,6 +903,9 @@ def _concise_action(
         summary = attempt.get("summary")
         if summary and not isinstance(value, dict):
             line += f" · {_safe_visible(str(summary))}"
+        exit_code = attempt.get("exit_code")
+        if state == ActionState.FAILED.value and isinstance(exit_code, int):
+            line += f" · exit {exit_code}"
     blocked = action.get("blocked_by")
     if blocked:
         line += f" · blocked by {_compact(blocked)}"
@@ -808,6 +913,13 @@ def _concise_action(
     if isinstance(completed_at, str):
         line += f" · [{_format_cli_timestamp(completed_at)}]"
     lines.extend(_render_action_lines(line, tone, color, width).rstrip().splitlines())
+
+    if state == ActionState.FAILED.value and isinstance(attempt, dict) and verbosity == 0:
+        excerpt = _failure_excerpt(attempt)
+        if excerpt:
+            detail_width = max(1, width - _display_width(_LOG_INDENT))
+            for chunk in _wrap_display(f"error: {excerpt}", detail_width):
+                lines.append(f"{_LOG_INDENT}{chunk}")
 
     if isinstance(attempt, dict) and verbosity >= 1:
         for stream_name in ("stdout", "stderr"):
@@ -1069,6 +1181,7 @@ def _action_document(action: ActionSpec) -> ReportDocument:
         ],
         "command": list(action.command) if action.command is not None else None,
         "environment": dict(action.environment),
+        "working_directory": action.working_directory,
         "changes_structure": action.changes_structure,
         "required_capability": action.required_capability,
         "execution_resources": _string_values(action.execution_resources),
@@ -1108,8 +1221,11 @@ def _plan_document(plan: Plan) -> ReportDocument:
     }
 
 
-def _action_result_document(result: ActionResult) -> ReportDocument:
+def _action_result_document(result: ActionResult, run_id: str) -> ReportDocument:
     attempt = result.attempt
+    outputs = attempt.outputs if attempt is not None else ()
+    if result.state is ActionState.FAILED and result.output_directory is not None:
+        outputs = (*outputs, *_failure_output_references(run_id, result.output_directory))
     return {
         "action_id": result.action_id,
         "state": result.state.value,
@@ -1130,9 +1246,30 @@ def _action_result_document(result: ActionResult) -> ReportDocument:
             "value": None
             if attempt.value is None
             else {"value": attempt.value.value, "label": attempt.value.label},
-            "outputs": [_output_document(output) for output in attempt.outputs],
+            "outputs": [_output_document(output) for output in outputs],
         },
     }
+
+
+def _failure_output_references(run_id: str, output_directory: str) -> tuple[OutputReference, ...]:
+    base = Path(".poly") / "runs" / run_id / output_directory
+    return (
+        OutputReference("file", (base / "stdout.txt").as_posix(), "Action stdout", "text/plain"),
+        OutputReference("file", (base / "stderr.txt").as_posix(), "Action stderr", "text/plain"),
+        OutputReference(
+            "file", (base / "details.json").as_posix(), "Action details", "application/json"
+        ),
+    )
+
+
+def _failure_excerpt(attempt: dict[str, JsonValue]) -> str:
+    stderr = str(attempt.get("stderr") or "").strip()
+    stdout = str(attempt.get("stdout") or "").strip()
+    source = stderr or stdout
+    lines = [line.strip() for line in source.splitlines() if line.strip()]
+    errors = [line for line in lines if "error" in line.lower()]
+    selected = errors[-2:] or lines[-2:]
+    return " | ".join(selected)
 
 
 def _worker_document(result: RunResult) -> ReportDocument:

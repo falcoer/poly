@@ -162,6 +162,44 @@ def test_local_runner_executes_explicit_command_and_expands_run_directory(
     assert attempt.stdout.strip() == str(run_directory)
 
 
+def test_local_runner_executes_process_in_declared_working_directory(tmp_path: Path) -> None:
+    run_directory = tmp_path / ".poly" / "runs" / "plan"
+    (tmp_path / "reactor").mkdir()
+    action = ActionSpec(
+        "process",
+        "fixture",
+        "verify",
+        "fixture/process",
+        ("node",),
+        command=(sys.executable, "-c", "from pathlib import Path; print(Path.cwd().name)"),
+        working_directory="reactor",
+    )
+
+    attempt = LocalActionRunner().run(action, ExecutionContext(tmp_path, run_directory))
+
+    assert attempt.success
+    assert attempt.stdout.strip() == "reactor"
+
+
+def test_local_runner_rejects_missing_declared_working_directory(tmp_path: Path) -> None:
+    action = ActionSpec(
+        "process",
+        "fixture",
+        "verify",
+        "fixture/process",
+        ("node",),
+        command=(sys.executable, "-c", "raise SystemExit(0)"),
+        working_directory="missing",
+    )
+
+    attempt = LocalActionRunner().run(
+        action, ExecutionContext(tmp_path, tmp_path / ".poly" / "runs" / "plan")
+    )
+
+    assert not attempt.success
+    assert attempt.summary == "action working directory does not exist: missing"
+
+
 def test_local_runner_reports_missing_commands_and_handlers(tmp_path: Path) -> None:
     context = ExecutionContext(tmp_path, tmp_path / ".poly" / "runs" / "plan")
     command = ActionSpec(

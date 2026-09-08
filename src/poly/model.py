@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import MappingProxyType
 
 type JsonScalar = str | int | float | bool | None
@@ -150,6 +150,7 @@ class ActionSpec:
     claims: frozenset[ActionClaim] = frozenset()
     command: tuple[str, ...] | None = None
     environment: dict[str, str] = field(default_factory=dict)
+    working_directory: str = "."
     changes_structure: bool = False
     required_capability: str = "process.execute"
     execution_resources: frozenset[str] = frozenset()
@@ -166,6 +167,21 @@ class ActionSpec:
         object.__setattr__(
             self, "environment", MappingProxyType(dict(sorted(self.environment.items())))
         )
+        working_directory = PurePosixPath(self.working_directory)
+        windows_directory = PureWindowsPath(self.working_directory)
+        if (
+            not self.working_directory
+            or "\\" in self.working_directory
+            or working_directory.is_absolute()
+            or ".." in working_directory.parts
+            or windows_directory.drive
+            or windows_directory.is_absolute()
+        ):
+            raise ValueError(
+                "action working directory must be a workspace-relative POSIX path: "
+                f"{self.working_directory!r}"
+            )
+        object.__setattr__(self, "working_directory", working_directory.as_posix())
         object.__setattr__(
             self,
             "required_capability",

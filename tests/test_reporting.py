@@ -9,7 +9,7 @@ from ruamel.yaml import YAML
 
 from poly.application import InspectionSnapshot, PlanningSnapshot
 from poly.control_plane import ControllerDescriptor
-from poly.driver import ActionValue, DriverInventoryItem, OutputReference
+from poly.driver import ActionValue, DriverInventoryItem, InspectionDiagnostic, OutputReference
 from poly.model import (
     ActionSpec,
     Inventory,
@@ -64,9 +64,62 @@ def test_documents_distinguish_available_applicable_planned_and_ready(tmp_path: 
 
     assert inspected["available_verbs"] == ["verify"]
     assert planned_value["applicable_actions"][0]["id"] == "verify:node"
+    assert planned_value["applicable_actions"][0]["working_directory"] == "."
     assert planned_value["plan"]["planned_actions"][0]["id"] == "verify:node"
     assert planned_value["plan"]["ready_action_ids"] == ["verify:node"]
     assert catalog_value["verbs"][0]["plan_status"] == "executable"
+
+
+def test_cli_groups_repeated_diagnostics_and_bounds_single_verbose_inventory(
+    tmp_path: Path,
+) -> None:
+    inventory = Inventory(
+        (
+            Node("maven:first", "first", ("maven/project",)),
+            Node("maven:second", "second", ("maven/project",)),
+        )
+    )
+    inspection = InspectionSnapshot(
+        tmp_path,
+        inventory,
+        (
+            InspectionDiagnostic("maven.coordinate.ambiguous", "duplicate coordinate", "first"),
+            InspectionDiagnostic("maven.coordinate.ambiguous", "duplicate coordinate", "second"),
+        ),
+        ("verify",),
+    )
+    document = inspection_document(inspection)
+
+    concise = render_cli(document, "poly inspect", color=False)
+    verbose = render_cli(document, "poly inspect -v", verbosity=1, color=False)
+
+    assert concise.count("duplicate coordinate") == 1
+    assert "2 affected reference(s)" in concise
+    assert "at: first" in verbose
+    assert "at: second" in verbose
+    assert "maven:first · first" not in verbose
+
+
+def test_maven_plan_renders_explicit_selection_scope(tmp_path: Path) -> None:
+    node = Node("maven:service", "service", ("maven/project",))
+    inventory = Inventory((node,))
+    inspection = InspectionSnapshot(tmp_path, inventory, (), ("build",))
+    action = ActionSpec(
+        "maven.build:maven:service",
+        "poly.driver.maven",
+        "build",
+        "maven/reactor",
+        (node.id,),
+        (node.id,),
+    )
+    request = PlanningRequest("build", inventory, (node.id,), {"poly.selection.mode": "explicit"})
+    plan = Plan("plan", "build", (node.id,), (action,), (), (), PlanStatus.EXECUTABLE)
+    planning = PlanningSnapshot(inspection, request, (action,), (), plan)
+
+    output = render_cli(planning_document(planning), "poly build --select maven:service")
+
+    assert "SELECTION  explicit · 1 requested node · 1 Maven project · 1 reactor" in output
+    assert "EFFECTIVE  maven:service → reactor ." in output
 
 
 def test_run_document_keeps_attempt_logs_and_state(tmp_path: Path) -> None:
@@ -93,6 +146,43 @@ def test_run_document_keeps_attempt_logs_and_state(tmp_path: Path) -> None:
     assert action["state"] == "succeeded"
     assert action["attempt"]["stdout"] == "output"
     assert "stdout: output" in render(document, "text")
+
+
+def test_failed_action_exposes_bounded_error_and_persisted_log_outputs(tmp_path: Path) -> None:
+    _, planning = _snapshots(tmp_path)
+    result = RunResult(
+        "plan",
+        RunStatus.FAILED,
+        (
+            ActionResult(
+                "verify:node",
+                ActionState.FAILED,
+                ActionAttempt(
+                    False,
+                    "command failed",
+                    1,
+                    "[INFO] preparation\n[ERROR] primary failure\n[ERROR] follow-up",
+                ),
+                output_directory="actions/verify-node",
+            ),
+        ),
+        (),
+        (),
+    )
+
+    document = run_document(planning, result)
+    output = render_cli(document, "poly verify", exit_code=1)
+    structured = json.loads(render(document, "json"))
+    references = structured["run"]["actions"][0]["attempt"]["outputs"]
+
+    assert "exit 1" in output
+    assert "error: [ERROR] primary failure | [ERROR] follow-up" in output
+    assert "Action stderr: .poly/runs/plan/actions/verify-node/stderr.txt" in output
+    assert [reference["label"] for reference in references] == [
+        "Action stdout",
+        "Action stderr",
+        "Action details",
+    ]
 
 
 def test_interactive_renderer_has_command_statuses_and_distinct_completion(
