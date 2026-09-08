@@ -126,6 +126,22 @@ def test_cli_inspect_actions_and_plan_reports(
     assert '"ready_action_ids":' in planned
 
 
+def test_cli_refreshes_a_cached_inspection_on_demand(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _workspace(tmp_path)
+    (tmp_path / ".poly").mkdir()
+
+    assert main(["inspect", "--workspace", str(tmp_path), "--format", "json"]) == 0
+    assert json.loads(capsys.readouterr().out)["inspection_cache"]["state"] == "cold"
+
+    assert main(["inspect", "--workspace", str(tmp_path), "--format", "json"]) == 0
+    assert json.loads(capsys.readouterr().out)["inspection_cache"]["state"] == "hit"
+
+    assert main(["inspect", "--workspace", str(tmp_path), "--refresh", "--format", "json"]) == 0
+    assert json.loads(capsys.readouterr().out)["inspection_cache"]["state"] == "refresh"
+
+
 def test_cli_inspect_writes_and_exposes_an_explicit_report_output(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

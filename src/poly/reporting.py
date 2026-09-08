@@ -51,6 +51,10 @@ def inspection_document(snapshot: InspectionSnapshot) -> ReportDocument:
         "drivers": [_driver_document(item) for item in snapshot.drivers],
         "plugins": [_plugin_document(item) for item in snapshot.plugins],
         "contributions": [_contribution_document(item) for item in snapshot.contributions],
+        "inspection_cache": {
+            "state": snapshot.cache_state,
+            "elapsed_ms": snapshot.elapsed_ms,
+        },
     }
 
 
@@ -613,7 +617,14 @@ def _concise_document(
         inventory = document.get("inventory", {})
         nodes = inventory.get("nodes", []) if isinstance(inventory, dict) else []
         count = len(nodes) if isinstance(nodes, list) else 0
-        status = _styled(f"✓ OK       inspection · {count} node(s)", "green", color)
+        cache = document.get("inspection_cache")
+        cache_suffix = ""
+        if isinstance(cache, dict):
+            state = cache.get("state")
+            elapsed = cache.get("elapsed_ms")
+            if state in {"hit", "cold", "refresh"} and isinstance(elapsed, int):
+                cache_suffix = f" · cache {state} · {elapsed} ms"
+        status = _styled(f"✓ OK       inspection · {count} node(s){cache_suffix}", "green", color)
         lines.append(f"{_SECTION_INDENT}{status}")
         if verbosity >= 2:
             for node in nodes if isinstance(nodes, list) else []:

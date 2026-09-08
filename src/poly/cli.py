@@ -180,7 +180,9 @@ def main(arguments: list[str] | None = None) -> int:
         try:
             prepared = store.load_prepared_plan()
             if is_deferred_document(prepared):
-                inspection = _inspect_with_progress(registry, workspace, preparation)
+                inspection = _inspect_with_progress(
+                    registry, workspace, preparation, refresh=options.refresh
+                )
                 preparation.start("Execution selection in progress")
                 try:
                     resolved, plan = resolve_deferred_document(registry, inspection, prepared)
@@ -247,6 +249,7 @@ def main(arguments: list[str] | None = None) -> int:
             workspace,
             preparation,
             remote=getattr(options, "remote", False),
+            refresh=getattr(options, "refresh", False),
         )
     except WorkspaceError as error:
         parser.error(str(error))
@@ -366,6 +369,7 @@ def _parser(registry: DriverRegistry) -> argparse.ArgumentParser:
         help="write the inspection report to this file and expose it as an output",
     )
     _report_options(inspect)
+    _refresh_option(inspect)
 
     init = commands.add_parser("init", help="initialize an existing directory as a Poly workspace")
     init.add_argument("root_repository", nargs="?", help="root control repository to clone")
@@ -406,6 +410,7 @@ def _parser(registry: DriverRegistry) -> argparse.ArgumentParser:
     execute.add_argument("--controller", default="local")
     _jobs_option(execute)
     _report_options(execute)
+    _refresh_option(execute)
 
     run = commands.add_parser("run", help="negotiate and execute a finite plan")
     run.add_argument("verb")
@@ -499,7 +504,9 @@ def _nature_command(
         _write_output(document, options, command, 0)
         return 0
     try:
-        inspection = _inspect_with_progress(registry, workspace, preparation)
+        inspection = _inspect_with_progress(
+            registry, workspace, preparation, refresh=options.refresh
+        )
         node_id, natures = _nature_target(
             options.values, inspection.inventory.nodes, workspace, start
         )
@@ -620,7 +627,7 @@ def _bootstrap_root(
         parser.error(f"bootstrap target parent does not exist: {parent}")
     if target.exists() and not target.is_dir():
         parser.error(f"bootstrap target is not a directory: {target}")
-    inspection = _inspect_with_progress(registry, parent, preparation)
+    inspection = _inspect_with_progress(registry, parent, preparation, refresh=options.refresh)
     parameters = {
         "poly.source.url": options.root_repository,
         "poly.node.path": target.name,
@@ -652,7 +659,7 @@ def _bootstrap_root(
             return exit_code
     try:
         validate_workspace(target)
-        hydration_inspection = inspect_workspace(registry, target)
+        hydration_inspection = inspect_workspace(registry, target, refresh=True)
     except WorkspaceError as error:
         parser.error(f"root repository has no valid committed workspace: {error}")
     source_ids = tuple(
@@ -843,10 +850,11 @@ def _inspect_with_progress(
     preparation: PreparationRenderer,
     *,
     remote: bool = False,
+    refresh: bool = False,
 ) -> InspectionSnapshot:
     preparation.start("Node resolution in progress")
     try:
-        inspection = inspect_workspace(registry, workspace, remote=remote)
+        inspection = inspect_workspace(registry, workspace, remote=remote, refresh=refresh)
     except BaseException:
         preparation.fail("node resolution")
         raise
@@ -854,7 +862,8 @@ def _inspect_with_progress(
     diagnostic_count = len(inspection.diagnostics)
     node_noun = "node" if node_count == 1 else "nodes"
     diagnostic_suffix = "" if diagnostic_count == 0 else f" · {diagnostic_count} diagnostic(s)"
-    preparation.complete(f"node resolution · {node_count} {node_noun}{diagnostic_suffix}")
+    cache = f" · cache {inspection.cache_state} · {inspection.elapsed_ms} ms"
+    preparation.complete(f"node resolution · {node_count} {node_noun}{diagnostic_suffix}{cache}")
     return inspection
 
 
@@ -915,6 +924,7 @@ def _color_enabled(options: argparse.Namespace) -> bool:
 
 def _planning_options(parser: argparse.ArgumentParser) -> None:
     _report_options(parser)
+    _refresh_option(parser)
     parser.add_argument(
         "--select",
         action="append",
@@ -938,6 +948,14 @@ def _direct_verb_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--controller", default="local")
     _jobs_option(parser)
     _planning_options(parser)
+
+
+def _refresh_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="force a fresh workspace inspection instead of using a valid inventory cache",
+    )
 
 
 def _jobs_option(parser: argparse.ArgumentParser) -> None:
