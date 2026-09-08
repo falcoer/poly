@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+from importlib.metadata import version as package_version
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -164,7 +165,7 @@ def run(poly: Path, fixture: Path, output: Path, platform_name: str) -> None:
         raise AssertionError(f"acceptance workspace already exists: {workspace}")
 
     version = _run([str(poly), "--version"]).stdout.strip()
-    assert version == "poly 0.13.0", version
+    assert version == f"poly {package_version('poly')}", version
     root_remote = (fixture / "remotes" / "root.git").resolve()
     bootstrap = _json_command(
         poly,
