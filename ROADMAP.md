@@ -143,6 +143,12 @@ success does not silently validate an earlier milestone.
 - Tag: `roadmap/0.13-bounded-parallel-execution`
 - Summary: deterministic frontier scheduling, bounded workers, isolation, interruption, and canonical reports. [Details](docs/releases/0.13.0.md)
 
+## 0.13.0.1 — Targeted execution performance and actionable diagnostics
+
+- Status: `pending`
+- Tag: `roadmap/0.13.0.1-targeted-execution-diagnostics`
+- Summary: reusable deterministic inspection inventory, explicit targeted-build scope, grouped diagnostics, and actionable failed-action logs. [Details](docs/releases/0.13.0.1.md)
+
 ## 0.13.1 — Executable specification and parity baseline
 
 - Status: `pending`
