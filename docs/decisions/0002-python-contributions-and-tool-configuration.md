@@ -3,6 +3,14 @@
 Date: 2026-09-09
 Status: accepted direction; API details marked open below are not implemented decisions.
 
+## Implementation follow-up — 0.13.1
+
+The baseline descriptions and open questions below record the original decision.
+The [implemented contracts](../architecture/contribution-contracts.md) resolve
+initial/alternative producer semantics and add the minimal blueprint data contract
+through Extension API 1.1. Facade string-map compatibility is preserved; generic
+CLI binding and generated-file lifecycle remain future work.
+
 ## Context
 
 Poly 0.13.0.1 is the validated baseline. Its mature behavior, Windows support,

@@ -125,7 +125,7 @@ def test_plugin_descriptor_is_canonical_serializable_and_round_trips() -> None:
     ]
 
 
-@pytest.mark.parametrize("api", ("2.0", "1.1"))
+@pytest.mark.parametrize("api", ("2.0", "1.2"))
 def test_plugin_rejects_incompatible_extension_api(api: str) -> None:
     plugin = Plugin("future.plugin", "1", api, ())
 
@@ -199,6 +199,8 @@ def test_explicit_plugin_reserves_blueprints_and_first_class_facades() -> None:
     assert registry.contributions.blueprint("service-stack") == Blueprint()
     assert registry.contributions.facade("add", "service") == ServiceFacade()
     assert isinstance(registry.blueprints()[0], BlueprintContribution)
+    with pytest.raises(ExtensionProtocolError, match="no declarative definition"):
+        registry.contributions.resolve_blueprint("service-stack", {}, version="1")
     assert registry.plugin_inventory()[0].contributions == (
         "blueprint:service-stack",
         "facade:add:service",

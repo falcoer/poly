@@ -19,6 +19,7 @@ from poly.driver.api import (
     PlanningProvider,
     ScalarValue,
 )
+from poly.driver.blueprint import BlueprintDefinition, BlueprintParameter, ResolvedBlueprint
 from poly.driver.discovery import (
     DRIVER_ENTRY_POINT_GROUP,
     DRIVER_SPEC_VERSION,
@@ -78,6 +79,8 @@ __all__ = [
     "ActionHandler",
     "ActionValue",
     "BlueprintContribution",
+    "BlueprintDefinition",
+    "BlueprintParameter",
     "CommandFacade",
     "ContributionDescriptor",
     "ContributionInventoryItem",
@@ -116,6 +119,7 @@ __all__ = [
     "PluginLoadResult",
     "PluginRegistration",
     "PluginRegistry",
+    "ResolvedBlueprint",
     "ScalarValue",
     "blueprint_contribution_identity",
     "discover_external_drivers",
