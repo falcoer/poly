@@ -354,6 +354,7 @@ def test_cli_init_add_persist_and_render_construction_runs(
     assert main(["drivers", "--workspace", str(tmp_path), "--format", "json"]) == 0
     drivers = json.loads(capsys.readouterr().out)
     assert {driver["name"] for driver in drivers["drivers"]} == {
+        "eclipse",
         "poly.constructor",
         "poly.driver.git",
         "poly.driver.maven",
@@ -366,6 +367,7 @@ def test_drivers_and_natures_are_listed_from_an_empty_directory(
     assert main(["drivers", "--workspace", str(tmp_path), "--format", "json"]) == 0
     drivers = json.loads(capsys.readouterr().out)
     assert [driver["name"] for driver in drivers["drivers"]] == [
+        "eclipse",
         "poly.constructor",
         "poly.driver.git",
         "poly.driver.maven",

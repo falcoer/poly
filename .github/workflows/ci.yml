@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 env:
-  POLY_VERSION: "0.13.1"
+  POLY_VERSION: "0.13.2"
 
 concurrency:
   group: ci-${{ github.ref }}

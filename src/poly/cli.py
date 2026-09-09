@@ -34,7 +34,7 @@ from poly.driver import (
     discover_external_plugins,
 )
 from poly.driver.scaffold import DriverScaffoldError, scaffold_driver
-from poly.drivers import git_driver, maven_driver
+from poly.drivers import eclipse_driver, git_driver, maven_driver
 from poly.drivers.git import _positive_depth
 from poly.model import Node, Plan
 from poly.persistence import StateError, StateStore
@@ -86,6 +86,7 @@ def build_registry() -> DriverRegistry:
     registry.register(constructor_driver(), origin=DriverOrigin.SYSTEM)
     registry.register(git_driver(), origin=DriverOrigin.BUILTIN)
     registry.register(maven_driver(), origin=DriverOrigin.BUILTIN)
+    registry.register(eclipse_driver(), origin=DriverOrigin.BUILTIN)
     discover_external_plugins(registry)
     discover_external_drivers(registry)
     return registry
@@ -456,6 +457,22 @@ def _parser(registry: DriverRegistry) -> argparse.ArgumentParser:
     dynamic = sorted(set(_driver_verbs(registry)) - RESERVED_COMMANDS - INTERNAL_VERBS - structural)
     for verb in dynamic:
         direct = commands.add_parser(verb, help=f"plan and execute the {verb!r} driver verb")
+        facades = registry.command_facades(verb)
+        if facades:
+            facade_commands = direct.add_subparsers(dest="facade", required=True)
+            for facade in facades:
+                facade_parser = facade_commands.add_parser(facade.name, help=facade.description)
+                for argument in facade.arguments:
+                    keywords = {"help": argument.help}
+                    if not argument.positional:
+                        keywords.update(dest=argument.name, required=argument.required)
+                    if argument.repeatable:
+                        keywords.update(action="append", default=[])
+                    if argument.choices:
+                        keywords["choices"] = argument.choices
+                    facade_parser.add_argument(*argument.flags, **keywords)
+                _direct_verb_options(facade_parser)
+            continue
         if verb == "hydrate":
             direct.add_argument(
                 "--depth",
@@ -1013,9 +1030,11 @@ def _command_parameters(options: argparse.Namespace, registry: DriverRegistry) -
     parameters = _parameters(options.parameter)
     if options.command == "init":
         parameters["poly.name"] = options.name or options.workspace.resolve().name
-    elif options.command == "add":
+    elif getattr(options, "facade", None) is not None:
         facade = next(
-            item for item in registry.command_facades("add") if item.name == options.facade
+            item
+            for item in registry.command_facades(options.command)
+            if item.name == options.facade
         )
         values = {
             argument.name: (

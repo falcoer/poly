@@ -24,6 +24,7 @@ est détaillé dans [la documentation des pilotes externes](../drivers/external.
 - [Composition et cycle Git](git-workspaces.md)
 - [Planification, exécution et rapports](jobs-and-reports.md)
 - [Contributions et préconditions](contributions.md)
+- [Préparer Eclipse](eclipse.md)
 - [Valeurs énumérées](enumerations.md)
 - [Glossaire](glossary.md)
 
