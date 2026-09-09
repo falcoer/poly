@@ -168,10 +168,10 @@ backlog, delivery rules, and the 0.13.1 starting point.
 
 ## 0.13.2 — Configuration generation and Eclipse preparation
 
-- Status: `implemented — CI and Eclipse real-use acceptance pending`
+- Status: `in progress — navigation prototype insufficient; full import required`
 - Planned tag: `roadmap/0.13.2-eclipse-configuration`
-- Summary: portable Eclipse navigation project, shared selection profile, reviewable
-  changes, ownership checks and stale-plan protection through the public SDK.
+- Summary: real project import and nature identification, Eclipse headless import,
+  shared working-set convention, ownership checks and safe regeneration.
   [Details](docs/releases/0.13.2.md)
 
 ## 0.13.3 — VS Code and OpenCode preparation

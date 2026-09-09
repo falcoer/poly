@@ -1,5 +1,9 @@
 # Préparer Eclipse — Poly 0.13.2
 
+> Le parcours ci-dessous décrit le prototype de navigation actuellement disponible.
+> Il ne valide pas la 0.13.2 : l'import complet, Eclipse headless et les working sets
+> restent à implémenter suivant la [conception révisée](../architecture/eclipse-workspace-import.md).
+
 ## Profil livré : navigation de la composition
 
 La commande crée un projet Eclipse général regroupant les répertoires des nœuds
