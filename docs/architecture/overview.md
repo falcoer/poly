@@ -67,3 +67,18 @@ remote action runners only from explicitly advertised capabilities. Versioned
 state envelopes retain inventory and reports independently of any renderer, so
 an interrupted session can recover a prior plan or result without renegotiating
 it.
+
+## Current direction (2026-09-09)
+
+The initial-runtime section above describes the historical baseline. Bounded
+parallel execution and targeted inspection caching/diagnostics are validated
+through 0.13.0.1. Python remains the maintained engine.
+
+Drivers attribute observed natures and decide applicability inside propose();
+Poly selects providers by verb and validates the resulting finite plan. Generation
+of Eclipse, VS Code, OpenCode, and GitLab configuration uses this same boundary.
+A projection is a driver operation, not an additional contribution type.
+
+See [ADR 0002](../decisions/0002-python-contributions-and-tool-configuration.md)
+for current versus reserved entry points, facade/blueprint separation, run-local
+preconditions, and the revised delivery scope.

@@ -1,5 +1,14 @@
 # Plugin Extension API and Rust migration boundary
 
+> Historical architecture note. On 2026-09-09 the user deferred Rust migration
+> and all dedicated parity preparation without a date. The Rust gate and former
+> 0.13.1 scope below are superseded by
+> [ADR 0002](../decisions/0002-python-contributions-and-tool-configuration.md)
+> and the [revised roadmap](../../ROADMAP.md). The domain/core separation and
+> validated extension identities remain applicable. Blueprint execution and
+> generic facade binding are still incomplete; registration is not proof of a
+> complete functional contract.
+
 ## Objective
 
 This document records the architectural boundary agreed before Poly 0.13 so that later sessions can continue implementation without relying on conversational context.

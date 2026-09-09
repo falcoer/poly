@@ -149,8 +149,84 @@ success does not silently validate an earlier milestone.
 - Tag: `roadmap/0.13.0.1-targeted-execution-diagnostics`
 - Summary: reusable deterministic inspection inventory, explicit targeted-build scope, grouped diagnostics, and actionable failed-action logs. [Details](docs/releases/0.13.0.1.md)
 
-## 0.13.1 — Executable specification and parity baseline
+## Direction revised on 2026-09-09
+
+The maintained implementation remains Python. Rust migration and its dedicated
+cross-implementation parity runner are deferred without a date. Validated
+milestones above remain accepted; parallel execution, inspection caching, targeted
+Maven context, and failure logs are existing capabilities, not new roadmap work.
+
+The active objective is to prepare tools for a root-owned workspace through
+driver-generated configurations, while preserving domain-owned applicability
+and finite planning. A projection is a driver operation, not a fourth contribution
+kind. See [the architectural decision](docs/decisions/0002-python-contributions-and-tool-configuration.md).
+
+Only 0.13.1 is the immediate consolidation target. Later version assignments are
+provisional pending milestones, ordered by user value and existing dependencies,
+with no delivery dates. Their acceptance may reveal a narrowly scoped API change;
+this roadmap does not pre-approve a new CLI syntax or a general template engine.
+
+## 0.13.1 — Contribution contracts and finite preconditions
 
 - Status: `pending`
-- Tag: `roadmap/0.13.1-executable-specification`
-- Summary: freeze language-neutral contracts and a differential conformance corpus before evaluating a Rust implementation. [Details](docs/releases/0.13.1.md)
+- Planned tag: `roadmap/0.13.1-contribution-contracts`
+- Summary: consolidate driver qualification and applicability, facade normalization,
+  a minimal declarative blueprint contract, and finite prerequisite semantics.
+  Reuse existing tests and benchmarks; resolve evidenced gaps only.
+  [Details](docs/releases/0.13.1.md)
+
+## 0.13.2 — Configuration generation and Eclipse preparation
+
+- Status: `pending`
+- Planned tag: `roadmap/0.13.2-eclipse-configuration`
+- Summary: establish configuration ownership and safe regeneration through a first
+  useful Eclipse driver, using the public extension boundary.
+  [Details](docs/releases/0.13.2.md)
+
+## 0.13.3 — VS Code and OpenCode preparation
+
+- Status: `pending`
+- Planned tag: `roadmap/0.13.3-editor-configuration`
+- Summary: reuse the configuration contract for VS Code and OpenCode; keep each
+  tool's formats and behavior in its driver.
+  [Details](docs/releases/0.13.3.md)
+
+## 0.13.4 — GitLab CI configuration
+
+- Status: `pending`
+- Planned tag: `roadmap/0.13.4-gitlab-configuration`
+- Summary: generate reviewable GitLab CI configuration consistent with explicit
+  Poly workflows; remote project changes remain a separate scope.
+  [Details](docs/releases/0.13.4.md)
+
+## 0.13.5 — Angular creation through contributions
+
+- Status: `pending`
+- Planned tag: `roadmap/0.13.5-angular-blueprint`
+- Summary: deliver the requested empty-repository-to-Angular journey using a
+  facade, a versioned blueprint, and Node/Angular technology contributions.
+  [Details](docs/releases/0.13.5.md)
+
+## Needs-driven backlog
+
+- A second blueprint or optional enrichment to prove composition reuse.
+- Docker and other technology drivers when a concrete workspace workflow requires them.
+- Logical service nodes without a local directory: define the first actual
+  service and review the node/path contract before implementation.
+- GitLab API operations (remote project creation, settings, pipeline interaction),
+  separately from generating local CI configuration.
+- Python and proprietary-tool drivers remain candidates, not confirmed delivery commitments.
+- IDE/tool installation and version provisioning require a separate bounded need;
+  configuration generation does not imply installing or launching tools.
+- Marketplace, network plugin installation, IPC/multi-language execution, remote
+  caches, daemons, distributed scheduling, and a general blueprint language remain
+  deferred. No Rust-specific preparatory work is scheduled.
+
+## Delivery discipline
+
+Preserve root ownership, stable identities, prepared plans, canonical reports,
+and the existing Windows/Linux gates. Audit coverage before adding tests, run
+affected quality checks before publication, and extend validation only for a
+concrete risk or required gate. Reuse the cold/warm inspection benchmark rather
+than recreating a migration benchmark suite. Update the cookbook with each
+delivered user journey. No future milestone or tag is validated by this revision.
