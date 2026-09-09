@@ -82,3 +82,7 @@ A projection is a driver operation, not an additional contribution type.
 See [ADR 0002](../decisions/0002-python-contributions-and-tool-configuration.md)
 for current versus reserved entry points, facade/blueprint separation, run-local
 preconditions, and the revised delivery scope.
+
+The implemented 0.13.1 refinement is specified in
+[Contribution contracts](contribution-contracts.md), including the finite fact
+closure correction and the independent Eclipse contract fixture.

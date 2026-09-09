@@ -282,7 +282,7 @@ class CommandFacade(Protocol):
 
 @runtime_checkable
 class BlueprintContribution(Protocol):
-    """Declarative extension contribution reserved for workspace blueprints."""
+    """Legacy identity contract; BlueprintDefinition adds optional declarative data."""
 
     @property
     def name(self) -> str: ...

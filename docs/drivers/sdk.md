@@ -12,12 +12,15 @@ An explicit plugin returns `PluginRegistration` from the `poly.plugins` entry
 point group. Its serializable `Plugin` descriptor declares stable contribution
 identities, Extension API compatibility, optional dependencies, and resources.
 Drivers use `driver:<name>`, facades use `facade:<verb>:<name>`, and blueprints
-use `blueprint:<name>`. Blueprint lookup is reserved in 0.12.6; execution is not
-yet part of the public contract.
+use `blueprint:<name>`. Since 0.13.1, `BlueprintDefinition` supports a minimal
+data-only configuration contract resolved by Poly before planning. Legacy
+name/description-only contributions remain supported. See the
+[contribution contracts](../architecture/contribution-contracts.md) for qualification,
+applicability, facade normalization, blueprint resolution, and finite prerequisites.
 
 ## Manifest compatibility
 
-The current driver API is `1.1`; the containing Poly Extension API is `1.0`. A
+The current driver API is `1.1`; the containing Poly Extension API is `1.1`. A
 driver manifest declares its identity,
 implementation version, API version, exact capability set, and the stable
 natures it contributes. Poly accepts the

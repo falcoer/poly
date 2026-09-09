@@ -520,3 +520,31 @@ def test_public_helpers_report_invalid_values(tmp_path: Path) -> None:
     with pytest.raises(WorkspaceError, match="root node cannot"):
         remove_manifest_node(tmp_path, "root")
     reconcile_gitignore(tmp_path, validate_workspace(tmp_path).manifest)
+
+
+def test_observed_nature_survives_removal_from_authored_natures(tmp_path: Path) -> None:
+    manifest = _manifest(
+        {
+            "id": "module",
+            "parent": "root",
+            "kind": "module",
+            "path": "module",
+            "natures": ["maven/project", "custom/owned"],
+        },
+    )
+    _write_workspace(tmp_path, manifest)
+    observed = (Node("maven:module", "module", ("maven/project",)),)
+    declared = validate_workspace(tmp_path)
+    before = (tmp_path / WORKSPACE_MANIFEST).read_bytes()
+    inventory = reconcile_inventory(declared, observed)
+    assert {"maven/project", "custom/owned"}.issubset(inventory.get("module").natures)
+    assert (tmp_path / WORKSPACE_MANIFEST).read_bytes() == before
+    changed = _manifest(
+        {"id": "module", "parent": "root", "kind": "module", "path": "module"},
+    )
+    _write_workspace(tmp_path, changed)
+    before = (tmp_path / WORKSPACE_MANIFEST).read_bytes()
+    inventory = reconcile_inventory(validate_workspace(tmp_path), observed)
+    assert "maven/project" in inventory.get("module").natures
+    assert "custom/owned" not in inventory.get("module").natures
+    assert (tmp_path / WORKSPACE_MANIFEST).read_bytes() == before

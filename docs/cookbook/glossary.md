@@ -74,3 +74,15 @@ submodules implicites.
 Racine logique possédant la composition commitée, le lock et le bloc
 `.gitignore` géré par Poly. L'état sous `.poly/` est local et reconstructible.
 
+
+## Blueprint déclaratif
+
+Description versionnée d'une configuration souhaitée, paramétrée et résolue par
+Poly avant la planification. Le blueprint ne génère pas lui-même de fichiers ;
+voir [contributions et préconditions](contributions.md).
+
+## Fait de précondition
+
+Clé monotone limitée à un run, disponible initialement ou après la réussite d'un
+producteur. Tous les faits requis doivent être disponibles avant admission d'une
+action ; plusieurs producteurs d'un même fait sont des alternatives.

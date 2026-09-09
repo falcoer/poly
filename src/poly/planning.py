@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections import defaultdict
+from collections import defaultdict, deque
 from collections.abc import Iterable
 
 from poly.driver.api import PlanningProvider
@@ -143,10 +143,15 @@ class Planner:
                     )
                 )
 
+        # A fact is available after ANY successful producer, not ALL producers.
+        # First simulate success-only reachability over this finite action set.
+        # Only still-unavailable requirements can participate in a blocking cycle.
+        reachable = _reachable_constraints(actions, initial)
         graph: dict[str, set[str]] = {action.id: set() for action in actions}
         for consumer in actions:
             for constraint in consumer.requires:
-                graph[consumer.id].update(producer.id for producer in producers[constraint.key])
+                if constraint.key not in reachable:
+                    graph[consumer.id].update(producer.id for producer in producers[constraint.key])
         if _contains_cycle(graph):
             diagnostics.append(
                 PlanDiagnostic(
@@ -214,6 +219,27 @@ def _action_payload(action: ActionSpec) -> dict[str, object]:
         "execution_resources": sorted(action.execution_resources),
         "concurrency_safe": action.concurrency_safe,
     }
+
+
+def _reachable_constraints(actions: tuple[ActionSpec, ...], initial: set[str]) -> set[str]:
+    """Compute the least fact closure without electing producers or adding actions."""
+    available = set(initial)
+    waiting: defaultdict[str, list[int]] = defaultdict(list)
+    missing = [{item.key for item in action.requires} - available for action in actions]
+    ready = deque(index for index, requirements in enumerate(missing) if not requirements)
+    for index, requirements in enumerate(missing):
+        for key in requirements:
+            waiting[key].append(index)
+    while ready:
+        for fact in actions[ready.popleft()].produces:
+            if fact.key in available:
+                continue
+            available.add(fact.key)
+            for index in waiting.pop(fact.key, ()):
+                missing[index].remove(fact.key)
+                if not missing[index]:
+                    ready.append(index)
+    return available
 
 
 def _contains_cycle(graph: dict[str, set[str]]) -> bool:

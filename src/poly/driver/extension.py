@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-POLY_EXTENSION_API_VERSION = "1.0"
+POLY_EXTENSION_API_VERSION = "1.1"
 
 
 class ExtensionProtocolError(ValueError):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -12,6 +13,7 @@ from poly.driver.api import (
     InspectionProvider,
     PlanningProvider,
 )
+from poly.driver.blueprint import BlueprintDefinition, ResolvedBlueprint, resolve_definition
 from poly.driver.extension import (
     POLY_EXTENSION_API_VERSION,
     ContributionDescriptor,
@@ -212,6 +214,7 @@ class ContributionRegistry:
         self._drivers: dict[str, tuple[str, DriverRegistration]] = {}
         self._facades: dict[tuple[str, str], tuple[str, CommandFacade]] = {}
         self._blueprints: dict[str, tuple[str, BlueprintContribution]] = {}
+        self._blueprint_resources: dict[str, frozenset[str]] = {}
 
     def validate_registration(self, registration: PluginRegistration) -> None:
         registration.validate()
@@ -242,6 +245,7 @@ class ContributionRegistry:
             self._facades[(facade.verb, facade.name)] = (plugin_id, facade)
         for blueprint in registration.blueprints:
             self._blueprints[blueprint.name] = (plugin_id, blueprint)
+            self._blueprint_resources[blueprint.name] = frozenset(registration.plugin.resources)
 
     def driver_registrations(self) -> tuple[DriverRegistration, ...]:
         return tuple(value[1] for _, value in sorted(self._drivers.items()))
@@ -278,6 +282,21 @@ class ContributionRegistry:
             return self._blueprints[name][1]
         except KeyError as error:
             raise ExtensionProtocolError(f"unknown blueprint: {name!r}") from error
+
+    def resolve_blueprint(
+        self, name: str, parameters: Mapping[str, str], *, version: str
+    ) -> ResolvedBlueprint:
+        """Resolve data only, using loaded contributions and the owning plugin resources."""
+        blueprint = self.blueprint(name)
+        if not isinstance(blueprint, BlueprintDefinition):
+            raise ExtensionProtocolError(f"blueprint {name!r} has no declarative definition")
+        return resolve_definition(
+            blueprint,
+            parameters,
+            version=version,
+            available_contributions=frozenset(item.identity for item in self.inventory()),
+            available_resources=self._blueprint_resources[name],
+        )
 
     def inventory(self) -> tuple[ContributionInventoryItem, ...]:
         items = [
