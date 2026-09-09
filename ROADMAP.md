@@ -159,8 +159,8 @@ backlog, delivery rules, and the 0.13.1 starting point.
 
 ## 0.13.1 — Contribution contracts and finite preconditions
 
-- Status: `implemented-awaiting-validation`
-- Planned tag: `roadmap/0.13.1-contribution-contracts`
+- Status: `validated`
+- Tag: `roadmap/0.13.1-contribution-contracts`
 - Summary: consolidate driver qualification and applicability, facade normalization,
   a minimal declarative blueprint contract, and finite prerequisite semantics.
   Reuse existing tests and benchmarks; resolve evidenced gaps only.
