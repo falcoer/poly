@@ -14,6 +14,7 @@ from poly.driver.api import (
     PlanningProvider,
 )
 from poly.driver.blueprint import BlueprintDefinition, ResolvedBlueprint, resolve_definition
+from poly.driver.configuration import ConfigurationError, ConfigurationSchema
 from poly.driver.extension import (
     POLY_EXTENSION_API_VERSION,
     ContributionDescriptor,
@@ -93,11 +94,18 @@ class DriverRegistration:
     planners: tuple[PlanningProvider, ...] = ()
     handlers: tuple[ActionHandler, ...] = ()
     facades: tuple[CommandFacade, ...] = ()
+    configuration_schemas: tuple[ConfigurationSchema, ...] = ()
+    source_inspectors: tuple[InspectionProvider, ...] = ()
 
     def validate(self) -> None:
         self.manifest.ensure_compatible()
+        if len(self.source_inspectors) > 1:
+            raise DriverProtocolError("a driver can register only one source inspector")
+        identities = [schema.identity for schema in self.configuration_schemas]
+        if len(identities) != len(set(identities)):
+            raise DriverProtocolError("duplicate configuration schema identities")
         actual: set[DriverCapability] = set()
-        if self.inspectors:
+        if self.inspectors or self.source_inspectors:
             actual.add(DriverCapability.INSPECT)
         if self.planners:
             actual.add(DriverCapability.PLAN)
@@ -112,7 +120,7 @@ class DriverRegistration:
                 f"{sorted(item.value for item in actual)!r}"
             )
         provider_names = {
-            *(provider.name for provider in self.inspectors),
+            *(provider.name for provider in (*self.inspectors, *self.source_inspectors)),
             *(provider.name for provider in self.planners),
             *(provider.name for provider in self.handlers),
         }
@@ -219,6 +227,16 @@ class ContributionRegistry:
     def validate_registration(self, registration: PluginRegistration) -> None:
         registration.validate()
         duplicates: list[str] = []
+        schemas = {
+            schema.identity
+            for driver in self.driver_registrations()
+            for schema in driver.configuration_schemas
+        }
+        for driver in registration.drivers:
+            for schema in driver.configuration_schemas:
+                if schema.identity in schemas:
+                    duplicates.append(f"configuration-schema:{schema.identity}")
+                schemas.add(schema.identity)
         for driver in registration.drivers:
             identity = driver_contribution_identity(driver.manifest.name)
             if driver.manifest.name in self._drivers:
@@ -255,6 +273,13 @@ class ContributionRegistry:
             return self._drivers[name][1]
         except KeyError as error:
             raise DriverProtocolError(f"unknown driver: {name!r}") from error
+
+    def configuration_schema(self, identity: str) -> ConfigurationSchema:
+        for driver in self.driver_registrations():
+            for schema in driver.configuration_schemas:
+                if schema.identity == identity:
+                    return schema
+        raise ConfigurationError(f"unknown configuration schema: {identity!r}")
 
     def plugin_for_driver(self, name: str) -> str:
         try:
@@ -606,6 +631,13 @@ class DriverRegistry:
             provider
             for registration in self.contributions.driver_registrations()
             for provider in registration.inspectors
+        )
+
+    def source_inspection_providers(self) -> tuple[InspectionProvider, ...]:
+        return tuple(
+            provider
+            for registration in self.contributions.driver_registrations()
+            for provider in registration.source_inspectors
         )
 
     def planning_providers(self, verb: str | None = None) -> tuple[PlanningProvider, ...]:

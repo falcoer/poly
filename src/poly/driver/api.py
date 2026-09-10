@@ -89,6 +89,7 @@ class InspectionDiagnostic:
 class InspectionContext:
     workspace: Path
     parameters: dict[str, str] = field(default_factory=dict)
+    source: Node | None = None
 
     def __post_init__(self) -> None:
         workspace = self.workspace.resolve()

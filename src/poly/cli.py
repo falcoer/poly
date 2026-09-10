@@ -40,6 +40,7 @@ from poly.model import Node, Plan
 from poly.persistence import StateError, StateStore
 from poly.prepared import (
     PreparedPlanError,
+    deferred_commands,
     deferred_document,
     is_deferred_document,
     require_current,
@@ -82,12 +83,15 @@ INTERNAL_VERBS = frozenset(("bootstrap", "nature-add", "nature-remove"))
 
 
 def build_registry() -> DriverRegistry:
+    from poly.hydration import hydration_driver
+
     registry = DriverRegistry()
     registry.register(constructor_driver(), origin=DriverOrigin.SYSTEM)
     registry.register(git_driver(), origin=DriverOrigin.BUILTIN)
     registry.register(maven_driver(), origin=DriverOrigin.BUILTIN)
     discover_external_plugins(registry)
     discover_external_drivers(registry)
+    registry.register(hydration_driver(registry), origin=DriverOrigin.SYSTEM)
     return registry
 
 
@@ -181,7 +185,13 @@ def main(arguments: list[str] | None = None) -> int:
             prepared = store.load_prepared_plan()
             if is_deferred_document(prepared):
                 inspection = _inspect_with_progress(
-                    registry, workspace, preparation, refresh=options.refresh
+                    registry,
+                    workspace,
+                    preparation,
+                    refresh=options.refresh,
+                    declared_only=all(
+                        item["verb"] == "hydrate" for item in deferred_commands(prepared)
+                    ),
                 )
                 preparation.start("Execution selection in progress")
                 try:
@@ -250,6 +260,9 @@ def main(arguments: list[str] | None = None) -> int:
             preparation,
             remote=getattr(options, "remote", False),
             refresh=getattr(options, "refresh", False),
+            declared_only=(
+                options.command == "hydrate" or getattr(options, "verb", None) == "hydrate"
+            ),
         )
     except WorkspaceError as error:
         parser.error(str(error))
@@ -598,6 +611,8 @@ def _current_node(nodes: tuple[Node, ...], workspace: Path, current: Path) -> st
         if isinstance(node.metadata.get("poly.parent"), str)
     }
     for node in nodes:
+        if node.path is None:
+            continue
         path = (workspace / node.path).resolve()
         if path != current and path not in current.parents:
             continue
@@ -851,10 +866,13 @@ def _inspect_with_progress(
     *,
     remote: bool = False,
     refresh: bool = False,
+    declared_only: bool = False,
 ) -> InspectionSnapshot:
     preparation.start("Node resolution in progress")
     try:
-        inspection = inspect_workspace(registry, workspace, remote=remote, refresh=refresh)
+        inspection = inspect_workspace(
+            registry, workspace, remote=remote, refresh=refresh, declared_only=declared_only
+        )
     except BaseException:
         preparation.fail("node resolution")
         raise

@@ -168,10 +168,10 @@ backlog, delivery rules, and the 0.13.1 starting point.
 
 ## 0.13.2 — Configuration generation and Eclipse preparation
 
-- Status: `pending`
+- Status: `in progress — navigation prototype insufficient; full import required`
 - Planned tag: `roadmap/0.13.2-eclipse-configuration`
-- Summary: establish configuration ownership and safe regeneration through a first
-  useful Eclipse driver, using the public extension boundary.
+- Summary: real project import and nature identification, Eclipse headless import,
+  shared working-set convention, ownership checks and safe regeneration.
   [Details](docs/releases/0.13.2.md)
 
 ## 0.13.3 — VS Code and OpenCode preparation
@@ -197,4 +197,3 @@ backlog, delivery rules, and the 0.13.1 starting point.
 - Summary: deliver the requested empty-repository-to-Angular journey using a
   facade, a versioned blueprint, and Node/Angular technology contributions.
   [Details](docs/releases/0.13.5.md)
-

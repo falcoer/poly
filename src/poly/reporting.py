@@ -592,6 +592,7 @@ def _concise_document(
             plan_line = f"PLAN     {plan.get('id')} · {count} action(s) · {plan.get('status')}"
             lines.append(f"{_SECTION_INDENT}{_styled(plan_line, 'cyan', color)}")
         plan_diagnostics = plan.get("diagnostics", [])
+        _append_blocked_rejections(lines, document, color)
         for diagnostic in plan_diagnostics if isinstance(plan_diagnostics, list) else []:
             if isinstance(diagnostic, dict):
                 warning = f"⚠ WARN     {diagnostic.get('message')}"
@@ -659,10 +660,26 @@ def _concise_plan(lines: list[str], document: ReportDocument, color: bool) -> No
     plan_line = f"PLAN     {plan.get('id')} · {count} action(s) · {plan.get('status')}"
     lines.append(f"{_SECTION_INDENT}{_styled(plan_line, 'cyan', color)}")
     diagnostics = plan.get("diagnostics", [])
+    _append_blocked_rejections(lines, document, color)
     for diagnostic in diagnostics if isinstance(diagnostics, list) else []:
         if isinstance(diagnostic, dict):
             warning = f"⚠ WARN     {diagnostic.get('message')}"
             lines.append(f"{_DETAIL_INDENT}{_styled(warning, 'yellow', color)}")
+
+
+def _append_blocked_rejections(lines: list[str], document: ReportDocument, color: bool) -> None:
+    plan = document.get("plan")
+    if not isinstance(plan, dict) or plan.get("status") != "blocked":
+        return
+    rejected = document.get("rejected_candidates", [])
+    if not isinstance(rejected, list):
+        return
+    reasons = sorted(
+        {str(item["reason"]) for item in rejected if isinstance(item, dict) and item.get("reason")}
+    )
+    for reason in reasons:
+        warning = f"⚠ WARN     {_safe_visible(reason)}"
+        lines.append(f"{_DETAIL_INDENT}{_styled(warning, 'yellow', color)}")
 
 
 def _append_diagnostics(
@@ -1150,6 +1167,10 @@ def _node_document(node: Node) -> ReportDocument:
     return {
         "id": node.id,
         "path": node.path,
+        "configuration": dict(node.configuration),
+        "nature_origins": {
+            nature: list(origins) for nature, origins in node.nature_origins.items()
+        },
         "natures": list(node.natures),
         "metadata": _json_mapping(node.metadata),
         "relations": [

@@ -17,6 +17,13 @@ branch/HEAD/cleanliness without changing them, and negotiates explicit read-only
 aggregation, groups selected modules at their highest local reactor, and makes
 cross-reactor materialization and ordering explicit in the plan.
 
+Configuration nodes are declared through driver-contributed add facades and
+materialized by the same finite `poly hydrate` workflow as sources. Source
+inspections and workspace coherence precede projection actions. See the
+[configuration contract](docs/architecture/configuration-hydration.md).
+The former Eclipse navigation prototype has been removed; the real headless
+Eclipse adapter remains to be implemented. Driver and Extension APIs are 2.0.
+
 ## Status
 
 Poly is being implemented from scratch. The executable milestones, acceptance

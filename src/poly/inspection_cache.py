@@ -11,7 +11,7 @@ from poly.driver import DriverInventoryItem, InspectionDiagnostic
 from poly.model import Inventory, JsonValue, Node, NodeRelation
 from poly.workspace import PROVISIONAL_WORKSPACE_MANIFEST, WORKSPACE_LOCK, WORKSPACE_MANIFEST
 
-CACHE_SCHEMA = "poly.inspection-cache/v1"
+CACHE_SCHEMA = "poly.inspection-cache/v2"
 _CACHE_FILE = "inspection-v1.json"
 _SKIPPED_DIRECTORIES = {".git", ".poly", ".venv", "node_modules", "target"}
 
@@ -79,6 +79,10 @@ def save(
                 {
                     "id": node.id,
                     "path": node.path,
+                    "configuration": dict(node.configuration),
+                    "nature_origins": {
+                        nature: list(origins) for nature, origins in node.nature_origins.items()
+                    },
                     "natures": list(node.natures),
                     "metadata": dict(node.metadata),
                     "relations": [
@@ -144,13 +148,22 @@ def _inventory(payload: dict[str, object]) -> Inventory:
         metadata = value.get("metadata", {})
         natures = value.get("natures", [])
         if (
-            not isinstance(relations, list)
+            "path" not in value
+            or not isinstance(relations, list)
             or not isinstance(metadata, dict)
             or not isinstance(natures, list)
             or not isinstance(value.get("id"), str)
-            or not isinstance(value.get("path"), str)
+            or (value.get("path") is not None and not isinstance(value.get("path"), str))
+            or not isinstance(value.get("configuration", {}), dict)
+            or not isinstance(value.get("nature_origins", {}), dict)
         ):
             raise ValueError("cached node is incompatible")
+        origins = value.get("nature_origins", {})
+        if any(
+            not isinstance(items, list) or not all(isinstance(item, str) for item in items)
+            for items in origins.values()
+        ):
+            raise ValueError("cached nature provenance is incompatible")
         nodes.append(
             Node(
                 value["id"],
@@ -164,6 +177,11 @@ def _inventory(payload: dict[str, object]) -> Inventory:
                     and isinstance(relation.get("kind"), str)
                     and isinstance(relation.get("target"), str)
                 ),
+                value.get("configuration", {}),
+                {
+                    nature: tuple(origins)
+                    for nature, origins in value.get("nature_origins", {}).items()
+                },
             )
         )
     return Inventory(tuple(nodes))

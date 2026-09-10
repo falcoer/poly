@@ -86,3 +86,8 @@ preconditions, and the revised delivery scope.
 The implemented 0.13.1 refinement is specified in
 [Contribution contracts](contribution-contracts.md), including the finite fact
 closure correction and the independent Eclipse contract fixture.
+
+The 0.13.2 correction makes configurations ordinary declared nodes and includes
+source inspections and coherence in the hydration plan. See
+[the current contract](configuration-hydration.md). The bundled Eclipse navigation
+prototype has been removed; real import remains pending.

@@ -357,6 +357,7 @@ def test_cli_init_add_persist_and_render_construction_runs(
         "poly.constructor",
         "poly.driver.git",
         "poly.driver.maven",
+        "poly.hydration",
     }
 
 
@@ -369,6 +370,7 @@ def test_drivers_and_natures_are_listed_from_an_empty_directory(
         "poly.constructor",
         "poly.driver.git",
         "poly.driver.maven",
+        "poly.hydration",
     ]
 
     assert main(["nature", "list", "--workspace", str(tmp_path), "--format", "json"]) == 0

@@ -92,7 +92,11 @@ class MavenInspectionProvider:
     def inspect(self, context: InspectionContext) -> InspectionResult:
         diagnostics: list[InspectionDiagnostic] = []
         raw_by_path: dict[Path, _RawPom] = {}
-        for path in _discover_poms(context.workspace):
+        for path in (
+            _discover_poms(context.workspace)
+            if context.source is None
+            else _source_poms(context.workspace, context.source)
+        ):
             try:
                 raw_by_path[path] = _parse_pom(path)
             except (OSError, ET.ParseError, MavenModelError) as error:
@@ -178,7 +182,7 @@ class MavenPlanningProvider:
         selected: list[Node] = []
         rejected: list[RejectedCandidate] = []
         for node in request.inventory.select(request.selected_node_ids):
-            if "maven/project" not in node.natures:
+            if "maven/project" not in node.natures or node.path is None:
                 rejected.append(
                     RejectedCandidate(
                         self.name,
@@ -297,7 +301,7 @@ class MavenPlanningProvider:
                         (ActionClaim(f"maven/{request.verb}", f"reactor:{reactor_id}"),)
                     ),
                     command=command,
-                    working_directory=reactor_node.path,
+                    working_directory=reactor_node.require_path(),
                     execution_resources=frozenset((f"reactor:{reactor_id}",)),
                     concurrency_safe=True,
                 )
@@ -321,6 +325,7 @@ def maven_driver() -> DriverRegistration:
     return DriverRegistration(
         manifest,
         inspectors=(MavenInspectionProvider(),),
+        source_inspectors=(MavenInspectionProvider(),),
         planners=(MavenPlanningProvider(),),
     )
 
@@ -334,6 +339,26 @@ def _discover_poms(workspace: Path) -> tuple[Path, ...]:
         if "pom.xml" in file_names:
             poms.append((Path(current) / "pom.xml").resolve())
     return tuple(sorted(poms))
+
+
+def _source_poms(workspace: Path, source: Node) -> tuple[Path, ...]:
+    """Read the root descriptor and explicit module links, never a source tree walk."""
+    boundary = (workspace / source.require_path()).resolve()
+    pending = [boundary / "pom.xml"]
+    visited: set[Path] = set()
+    while pending:
+        path = pending.pop().resolve()
+        if not path.is_relative_to(boundary):
+            raise MavenModelError(f"module descriptor escapes source {source.id!r}: {path}")
+        if path in visited or not path.is_file():
+            continue
+        visited.add(path)
+        try:
+            raw = _parse_pom(path)
+        except (OSError, ET.ParseError, MavenModelError):
+            continue  # The normal parser emits the diagnostic for this descriptor.
+        pending.extend(path.parent / module / "pom.xml" for module in raw.modules)
+    return tuple(sorted(visited))
 
 
 def _parse_pom(path: Path) -> _RawPom:

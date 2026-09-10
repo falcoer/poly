@@ -86,8 +86,8 @@ def test_manifest_round_trip_and_compatibility() -> None:
     assert_manifest_compatible(value)
     assert DriverManifest.from_dict(value.to_dict()) == value
 
-    with pytest.raises(DriverProtocolError, match=r"requires API 2\.0"):
-        manifest("2.0").ensure_compatible()
+    with pytest.raises(DriverProtocolError, match=r"requires API 1\.1"):
+        manifest("1.1").ensure_compatible()
     with pytest.raises(DriverProtocolError, match=r"requires API 1\.2"):
         manifest("1.2").ensure_compatible()
 
@@ -128,7 +128,7 @@ def test_registration_rejects_capability_or_name_mismatch() -> None:
     wrong = ExampleInspector("wrong.name")
     with pytest.raises(DriverProtocolError, match="manifest name"):
         DriverRegistration(
-            DriverManifest(NAME, "1", "1.0", frozenset((DriverCapability.INSPECT,))),
+            DriverManifest(NAME, "1", DRIVER_API_VERSION, frozenset((DriverCapability.INSPECT,))),
             inspectors=(wrong,),
         ).validate()
 
@@ -136,7 +136,7 @@ def test_registration_rejects_capability_or_name_mismatch() -> None:
 def test_registry_exposes_dynamic_facades_and_rejects_collisions(tmp_path: Path) -> None:
     facade = ExampleFacade()
     registration = DriverRegistration(
-        DriverManifest(NAME, "1", "1.1", frozenset((DriverCapability.FACADE,))),
+        DriverManifest(NAME, "1", DRIVER_API_VERSION, frozenset((DriverCapability.FACADE,))),
         facades=(facade,),
     )
     registry = DriverRegistry()
@@ -148,7 +148,9 @@ def test_registry_exposes_dynamic_facades_and_rejects_collisions(tmp_path: Path)
     assert facade.translate(FacadeRequest(tmp_path, {"node_id": "api"})) == {"poly.node.id": "api"}
 
     duplicate = DriverRegistration(
-        DriverManifest("other.driver", "1", "1.1", frozenset((DriverCapability.FACADE,))),
+        DriverManifest(
+            "other.driver", "1", DRIVER_API_VERSION, frozenset((DriverCapability.FACADE,))
+        ),
         facades=(facade,),
     )
     with pytest.raises(DriverProtocolError, match="facade collision"):
@@ -173,7 +175,7 @@ def test_registration_rejects_facade_arguments_reserved_by_the_cli(
 ) -> None:
     facade = ExampleFacade(arguments=(argument,))
     registration = DriverRegistration(
-        DriverManifest(NAME, "1", "1.1", frozenset((DriverCapability.FACADE,))),
+        DriverManifest(NAME, "1", DRIVER_API_VERSION, frozenset((DriverCapability.FACADE,))),
         facades=(facade,),
     )
 

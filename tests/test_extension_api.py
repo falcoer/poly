@@ -9,6 +9,7 @@ from typing import cast
 import pytest
 
 from poly.driver import (
+    DRIVER_API_VERSION,
     POLY_EXTENSION_API_VERSION,
     BlueprintContribution,
     CommandFacade,
@@ -57,7 +58,7 @@ def _driver(name: str = "example.driver", *, facade: bool = False) -> DriverRegi
     facades: tuple[CommandFacade, ...] = (ServiceFacade(),) if facade else ()
     capabilities = frozenset((DriverCapability.FACADE,)) if facade else frozenset()
     return DriverRegistration(
-        DriverManifest(name, "1.2.3", "1.1", capabilities),
+        DriverManifest(name, "1.2.3", DRIVER_API_VERSION, capabilities),
         facades=facades,
     )
 
@@ -125,7 +126,7 @@ def test_plugin_descriptor_is_canonical_serializable_and_round_trips() -> None:
     ]
 
 
-@pytest.mark.parametrize("api", ("2.0", "1.2"))
+@pytest.mark.parametrize("api", ("1.1", "2.1"))
 def test_plugin_rejects_incompatible_extension_api(api: str) -> None:
     plugin = Plugin("future.plugin", "1", api, ())
 
@@ -135,12 +136,12 @@ def test_plugin_rejects_incompatible_extension_api(api: str) -> None:
 
 def test_plugin_descriptor_rejects_invalid_identity_dependencies_and_mapping() -> None:
     with pytest.raises(ExtensionProtocolError, match="plugin id"):
-        Plugin("bad plugin", "1", "1.0", ())
+        Plugin("bad plugin", "1", POLY_EXTENSION_API_VERSION, ())
     with pytest.raises(ExtensionProtocolError, match="depend on itself"):
-        Plugin("plugin", "1", "1.0", (), ("plugin",))
+        Plugin("plugin", "1", POLY_EXTENSION_API_VERSION, (), ("plugin",))
     with pytest.raises(ExtensionProtocolError, match="duplicate contributions"):
         contribution = ContributionDescriptor("driver:one", "driver")
-        Plugin("plugin", "1", "1.0", (contribution, contribution))
+        Plugin("plugin", "1", POLY_EXTENSION_API_VERSION, (contribution, contribution))
     with pytest.raises(ExtensionProtocolError, match="invalid plugin descriptor"):
         Plugin.from_dict({"id": "plugin", "version": "1", "api_version": "1.0"})
     with pytest.raises(ExtensionProtocolError, match="invalid contribution descriptor"):
@@ -154,7 +155,7 @@ def test_plugin_dependencies_are_optional_metadata_and_resources_are_serialized(
     descriptor = Plugin(
         "plugin",
         "1",
-        "1.0",
+        POLY_EXTENSION_API_VERSION,
         (),
         dependencies=("not-installed",),
         resources=("schemas/plugin.json",),
@@ -230,7 +231,7 @@ def test_duplicate_plugins_and_contributions_fail_before_partial_registration() 
 
 def test_plugin_registration_requires_exact_descriptor_inventory() -> None:
     registration = PluginRegistration(
-        Plugin("plugin", "1", "1.0", ()),
+        Plugin("plugin", "1", POLY_EXTENSION_API_VERSION, ()),
         drivers=(_driver(),),
     )
 

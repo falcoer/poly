@@ -1,24 +1,21 @@
-# Eclipse contribution contract fixture
+# External configuration/hydration contract fixture
 
-This independent Python plugin imports only the public `poly.driver` SDK and
-canonical `poly.model` types. It exposes one configure facade, one declarative
-blueprint, and one process-action planning driver. It is not a production Eclipse
-integration: it creates only a minimal `.project`, once, and refuses overwrite.
+This independent plugin imports only `poly.driver` and `poly.model`. It contributes
+an `add eclipse-configuration` facade, a versioned configuration schema, a blueprint
+for initial values, and an ordinary `hydrate` driver. It is loaded only by tests;
+it is not a bundled or installed production Eclipse integration.
 
-The core-owned integration test loads `eclipse_contract:plugin` through
-`load_plugin_entrypoint`, registers it, resolves the facade and blueprint, freezes
-the proposal, executes it, and parses the generated XML. Run from a Poly checkout:
+The facade creates a normal pathless configuration node through the constructor.
+Hydration waits for `WORKSPACE_COHERENT`, consumes the consolidated inventory, and
+materializes `.poly/projections/<node>/request.xml`. Identical regeneration is a
+no-op; differing existing output is refused. This request is a fixture artifact,
+not an Eclipse workspace or a successful Eclipse import.
 
-```bash
-uv run pytest tests/test_blueprint_contract.py --no-cov
+```shell
+uv run pytest tests/test_blueprint_contract.py tests/test_hydration_configuration.py --no-cov
 ```
 
-```powershell
-uv run pytest tests/test_blueprint_contract.py --no-cov
-```
-
-The fixture module is placed on the test import path; it is not installed as a
-production plugin. No configure CLI command is introduced. See the
-[contract](../../docs/architecture/contribution-contracts.md) for implemented and
-reserved boundaries. The complete fixture test also runs in the existing
-Windows/Linux workspace CI matrix.
+The tests also hydrate a missing locked Git checkout, discover its Maven modules,
+retain manual natures and compare the outputs produced under two different roots.
+The fixture uses Driver API and Extension API 2.0. See the
+[configuration hydration contract](../../docs/architecture/configuration-hydration.md).

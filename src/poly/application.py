@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from time import perf_counter
 
@@ -23,7 +24,9 @@ from poly.model import (
     Inventory,
     Node,
     Plan,
+    PlanDiagnostic,
     PlanningRequest,
+    PlanStatus,
     RejectedCandidate,
 )
 from poly.planning import Planner
@@ -58,10 +61,30 @@ class PlanningSnapshot:
 
 
 def inspect_workspace(
-    registry: DriverRegistry, workspace: Path, *, remote: bool = False, refresh: bool = False
+    registry: DriverRegistry,
+    workspace: Path,
+    *,
+    remote: bool = False,
+    refresh: bool = False,
+    declared_only: bool = False,
 ) -> InspectionSnapshot:
     started = perf_counter()
     resolved_workspace = workspace.resolve()
+    if declared_only and (resolved_workspace / WORKSPACE_MANIFEST).is_file():
+        from poly.workspace import validate_workspace
+
+        compiled_declaration = validate_workspace(resolved_workspace)
+        return InspectionSnapshot(
+            resolved_workspace,
+            compiled_declaration.inventory,
+            (),
+            available_verbs(registry),
+            registry.inventory(),
+            registry.plugin_inventory(),
+            registry.contribution_inventory(),
+            "declaration",
+            _elapsed_ms(started),
+        )
     drivers = registry.inventory()
     plugins = registry.plugin_inventory()
     contributions = registry.contribution_inventory()
@@ -116,7 +139,13 @@ def inspect_workspace(
     for provider in registry.inspection_providers():
         result = provider.inspect(context)
         diagnostics.extend(result.diagnostics)
-        nodes.extend(result.nodes)
+        nodes.extend(
+            replace(
+                node,
+                nature_origins={nature: (f"observed:{provider.name}",) for nature in node.natures},
+            )
+            for node in result.nodes
+        )
     snapshot = InspectionSnapshot(
         resolved_workspace,
         reconcile_inventory(compiled, tuple(nodes)),
@@ -161,12 +190,51 @@ def prepare_planning(
         )
     )
     rejected = tuple(sorted(candidate for proposal in proposals for candidate in proposal.rejected))
+    plan = planner.negotiate_proposals(request, proposals)
+    diagnostics: list[PlanDiagnostic] = []
+    if verb == "hydrate":
+        covered = {node_id for action in actions for node_id in action.node_ids}
+        for node in request.inventory.select(request.selected_node_ids):
+            if node.metadata.get("poly.kind") == "configuration" and node.id not in covered:
+                diagnostics.append(
+                    PlanDiagnostic(
+                        "configuration.unhandled",
+                        f"no hydration action covers configuration node {node.id!r}",
+                    )
+                )
+    configurations = [
+        dict(node.configuration)
+        for node in request.inventory.nodes
+        if node.metadata.get("poly.kind") == "configuration" and verb == "hydrate"
+    ]
+    raw_configuration = request.parameters.get("poly.node.configuration")
+    if verb == "add" and raw_configuration is not None:
+        try:
+            value = json.loads(raw_configuration)
+            if not isinstance(value, dict):
+                raise ValueError("configuration must be an object")
+            configurations.append(value)
+        except ValueError as error:
+            diagnostics.append(PlanDiagnostic("configuration.invalid", str(error)))
+    for configuration in configurations:
+        try:
+            identity = str(configuration.get("schema", ""))
+            registry.contributions.configuration_schema(identity).validate(configuration)
+        except ValueError as error:
+            diagnostics.append(PlanDiagnostic("configuration.invalid", str(error)))
+    if diagnostics:
+        plan = replace(
+            plan,
+            id=hashlib.sha256((plan.id + repr(diagnostics)).encode()).hexdigest()[:20],
+            status=PlanStatus.BLOCKED,
+            diagnostics=tuple(sorted((*plan.diagnostics, *diagnostics))),
+        )
     return PlanningSnapshot(
         inspection,
         request,
         actions,
         rejected,
-        planner.negotiate_proposals(request, proposals),
+        plan,
     )
 
 
