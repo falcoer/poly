@@ -111,8 +111,8 @@ def test_checkout_then_inspection_then_projection_converges_on_two_workspaces(
         kind="repository",
         path="sources/code",
         natures=("maven/project", "custom/manual"),
-        source=SourceDeclaration("git", str(remote)),
-        locked_source=LockedSource("code", "git", str(remote), None, commit, "commit"),
+        source=SourceDeclaration("git", remote.as_uri()),
+        locked_source=LockedSource("code", "git", remote.as_uri(), None, commit, "commit"),
     )
     add_manifest_node(
         first,
