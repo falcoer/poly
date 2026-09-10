@@ -15,7 +15,10 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Typing :: Typed",
 ]
-dependencies = ["ruamel-yaml>=0.18.10,<0.19"]
+dependencies = [
+    "jsonschema>=4.23,<5",
+    "ruamel-yaml>=0.18.10,<0.19",
+]
 
 [project.scripts]
 poly = "poly.cli:main"
@@ -27,6 +30,7 @@ dev = [
   "pytest>=8.3",
   "pytest-cov>=6.0",
   "ruff>=0.9",
+  "types-jsonschema>=4.26.0.20260518",
 ]
 
 [tool.hatch.build.targets.wheel]

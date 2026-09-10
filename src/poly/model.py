@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -62,22 +63,46 @@ class Node:
     """An observed structural unit selectable by a user or driver."""
 
     id: str
-    path: str
+    path: str | None
     natures: tuple[str, ...] = ()
     metadata: Metadata = field(default_factory=dict)
     relations: tuple[NodeRelation, ...] = ()
+    configuration: Metadata = field(default_factory=dict)
+    nature_origins: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "id", _required(self.id, "node id"))
-        path = PurePosixPath(self.path)
-        if path.is_absolute() or ".." in path.parts:
-            raise ValueError(f"node path must be workspace-relative: {self.path!r}")
-        object.__setattr__(self, "path", path.as_posix())
+        if self.path is not None:
+            path = PurePosixPath(self.path)
+            if (
+                not self.path
+                or path.is_absolute()
+                or ".." in path.parts
+                or PureWindowsPath(self.path).drive
+                or "\\" in self.path
+            ):
+                raise ValueError(f"node path must be workspace-relative: {self.path!r}")
+            object.__setattr__(self, "path", path.as_posix())
         object.__setattr__(
             self, "natures", tuple(sorted({_required(n, "nature") for n in self.natures}))
         )
         object.__setattr__(self, "metadata", _frozen_metadata(self.metadata))
         object.__setattr__(self, "relations", tuple(sorted(set(self.relations))))
+        # Reject non-serializable values before accepting a declaration into a plan.
+        configuration = json.loads(json.dumps(dict(self.configuration), allow_nan=False))
+        object.__setattr__(self, "configuration", _frozen_metadata(configuration))
+        origins = {
+            nature: tuple(sorted(set(values))) for nature, values in self.nature_origins.items()
+        }
+        if set(origins) - set(self.natures):
+            raise ValueError("nature provenance must refer to a nature present on the node")
+        object.__setattr__(self, "nature_origins", MappingProxyType(origins))
+
+    def require_path(self) -> str:
+        """Require physical placement without assigning a fake path to logical nodes."""
+        if self.path is None:
+            raise ValueError(f"node {self.id!r} has no filesystem path")
+        return self.path
 
 
 @dataclass(frozen=True, slots=True)

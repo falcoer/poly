@@ -216,6 +216,8 @@ def _current_node(nodes: tuple[Node, ...], workspace: Path, current: Path) -> st
         if isinstance(node.metadata.get("poly.parent"), str)
     }
     for node in nodes:
+        if node.path is None:
+            continue
         path = (workspace / node.path).resolve()
         if path != current and path not in current.parents:
             continue

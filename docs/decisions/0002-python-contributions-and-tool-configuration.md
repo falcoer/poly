@@ -1,5 +1,9 @@
 # ADR 0002 — Python contributions and workspace tool configuration
 
+> Update 2026-09-10: lifecycle and command decisions are superseded by
+> [configuration nodes and hydration](../architecture/configuration-hydration.md).
+> Real Eclipse import remains pending; the navigation prototype has been removed.
+
 Date: 2026-09-09
 Status: accepted direction; API details marked open below are not implemented decisions.
 

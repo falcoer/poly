@@ -21,10 +21,10 @@ implicit plugins. Identities remain `driver:<name>`, `facade:<verb>:<name>`, and
 `blueprint:<name>`. API roles, declared capabilities, verbs, and natures are not
 interchangeable. A process action needs no custom execute handler.
 
-The containing Extension API is now **1.1**, an additive minor revision; plugins
-requiring 1.0 remain accepted. Plugins using blueprint definitions should request
-1.1. Driver API remains **1.1**. Python contexts expose model objects and paths;
-this is neither a security sandbox nor an IPC protocol.
+Driver and Extension APIs are now **2.0**. Configuration nodes can have no
+filesystem path; older API 1.x plugins must be updated before loading. The
+[configuration/hydration contract](configuration-hydration.md) records this
+intentional compatibility break and the new optional driver contributions.
 
 ## Qualification and applicability
 
@@ -102,40 +102,17 @@ driver validates/reads the actual resource during its read-only proposal step.
 Required contribution versions follow plugin compatibility/dependencies; this
 release adds no separate version-range language.
 
-## Facade and core resolution sequence
+## Configuration declaration and hydration
 
-The existing string map suffices for the independent
-[Eclipse fixture](../../examples/eclipse-contract/README.md):
+The independent [Eclipse fixture](../../examples/eclipse-contract/README.md) now
+contributes `add eclipse-configuration`. Its facade validates values against a
+versioned schema and translates them to ordinary constructor parameters. A
+blueprint can provide reusable initial values. The constructor persists the node
+in the root composition; a later hydration plan includes source inspections,
+workspace coherence and the fixture projection action. The fixture reads the
+consolidated run inventory through the SDK and creates a request document.
 
-1. Core resolves `facade(configure, eclipse-fixture)` from the registry.
-2. `translate(FacadeRequest)` normalizes `project_name` without effects.
-3. Core calls `resolve_blueprint("eclipse-java", values, version="1.0.0")`.
-4. Core constructs one `PlanningRequest` for the facade's verb, inventory,
-   selection, and the resolved configuration map; the driver proposes actions.
-5. Core validates/freezes that finite plan and executes its serialized actions.
-
-The fixture driver freezes the generated XML in a process command before execution.
-No blueprint or facade calls the planner, executor, renderer, or another driver.
-This proves a non-add facade without changing `CommandFacade.translate` or adding
-a structured intent type. The registry/SDK sequence is implemented and tested;
-automatic CLI facade binding still targets **add only**. A generic configure CLI,
-production Eclipse driver, managed output lifecycle, stale-plan protection, and
-persisted blueprint selection in workspace manifests belong to later milestones.
-No speculative command syntax is advertised here.
-
-## Compatibility and evidence
-
-Manifest/lock schemas, prepared journals, plan/report envelopes, action fields,
-legacy driver registration, and CLI add translation are unchanged. Prepared
-journals still resolve once before execution; existing frozen plans keep their
-recorded status and are not retroactively repaired. Newly negotiated seeded plans
-can now be executable, with a correspondingly different diagnostic fingerprint.
-Blueprint definitions add no mandatory workspace field. `.poly/` stays disposable.
-
-Focused evidence: `test_precondition_semantics.py` exercises planner → runtime
-with one/two workers; `test_blueprint_contract.py` loads the external plugin and
-creates/validates XML through a process action; `test_workspace.py` checks observed
-nature retention without authored-file writes. Existing Git/Maven applicability,
-serialization, prepared workflows, conformance, and cold/warm benchmarks are
-reused. Release evidence and remaining acceptance gates live in
-[0.13.1](../releases/0.13.1.md).
+The former non-add configuration fixture has been removed. There is no application
+switch, implicit prerequisite verb, or dynamically appended execution action.
+See [configuration hydration](configuration-hydration.md) for implementation
+boundaries and tests. The production Eclipse importer remains pending.

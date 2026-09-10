@@ -42,7 +42,7 @@ def bravo(): return registration("driver.bravo", "bravo-run")
 def duplicate_alpha(): return registration("driver.alpha", "other-run")
 def collide_alpha(): return registration("driver.alpha-collision", "shared-run")
 def collide_bravo(): return registration("driver.bravo-collision", "shared-run")
-def incompatible(): return registration("driver.future", "future-run", "2.0")
+def incompatible(): return registration("driver.future", "future-run", "3.0")
 """,
         encoding="utf-8",
     )
@@ -75,7 +75,7 @@ def test_scaffold_generates_complete_external_repository(tmp_path: Path) -> None
         path.read_text(encoding="utf-8") for path in target.rglob("*") if path.is_file()
     )
     assert "__DRIVER_NAME__" not in all_content
-    assert '"poly>=0.13.0,<0.14"' in all_content
+    assert '"poly>=0.13.2,<0.14"' in all_content
     assert f'poly = {{ path = "{source.resolve().as_posix()}", editable = true }}' in all_content
 
     with pytest.raises(DriverScaffoldError, match="not empty"):
@@ -96,7 +96,7 @@ def test_generated_driver_loads_and_validates_through_public_convention(
 
     assert registration.manifest.name == "poly.driver.sample-tech"
     assert driver_test_main(["validate", str(target / "poly-driver.toml")]) == 0
-    assert '"api_version": "1.1"' in capsys.readouterr().out
+    assert '"api_version": "2.0"' in capsys.readouterr().out
     assert (
         driver_test_main(
             [
@@ -273,9 +273,9 @@ def test_incompatible_protocol_and_import_error_are_isolated(
         "missing",
     }
     future = next(item for item in registry.inventory() if item.identity == "driver.future")
-    assert future.api_version == "2.0"
+    assert future.api_version == "3.0"
     assert future.version == "1.2.3"
     assert future.verbs == ("future-run",)
     messages = " ".join(item.diagnostic or "" for item in registry.inventory())
-    assert "requires API 2.0" in messages
+    assert "requires API 3.0" in messages
     assert "ModuleNotFoundError" in messages

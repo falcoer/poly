@@ -22,6 +22,7 @@ from poly.driver import (
     InspectionContext,
     InspectionDiagnostic,
     InspectionResult,
+    source_available,
 )
 from poly.model import (
     ActionClaim,
@@ -46,7 +47,11 @@ class GitInspectionProvider:
     command_timeout_seconds: float = 5.0
 
     def inspect(self, context: InspectionContext) -> InspectionResult:
-        roots = _discover_repository_roots(context.workspace)
+        if context.source is None:
+            roots = _discover_repository_roots(context.workspace)
+        else:
+            root = context.workspace / context.source.require_path()
+            roots = (root,) if (root / ".git").exists() else ()
         diagnostics: list[InspectionDiagnostic] = []
         observed: list[tuple[Path, Metadata]] = []
         for root in roots:
@@ -326,7 +331,7 @@ class GitPlanningProvider:
         actions: list[ActionSpec] = []
         rejected: list[RejectedCandidate] = []
         for node in request.inventory.select(request.selected_node_ids):
-            if "git/repository" not in node.natures:
+            if "git/repository" not in node.natures or node.path is None:
                 rejected.append(
                     RejectedCandidate(
                         driver=self.name,
@@ -346,7 +351,7 @@ class GitPlanningProvider:
                     node_ids=(node.id,),
                     requested_node_ids=(node.id,),
                     claims=frozenset((ActionClaim("git/status", f"node:{node.id}"),)),
-                    command=("git", "-C", node.path, "status", "--short", "--branch"),
+                    command=("git", "-C", node.require_path(), "status", "--short", "--branch"),
                     execution_resources=frozenset((f"repository:{node.id}",)),
                     concurrency_safe=True,
                 )
@@ -412,7 +417,7 @@ class GitPlanningProvider:
                 continue
             environment = {
                 "poly.node.id": node.id,
-                "poly.node.path": node.path,
+                "poly.node.path": node.require_path(),
                 "poly.source.url": url,
                 "poly.source.ref": str(node.metadata.get("poly.source.ref") or ""),
                 "poly.source.depth": str(
@@ -486,7 +491,7 @@ class GitPlanningProvider:
                     self._materialization_action(
                         "prepare",
                         node.id,
-                        node.path,
+                        node.require_path(),
                         environment,
                         tuple(prerequisites),
                         checkout,
@@ -495,7 +500,7 @@ class GitPlanningProvider:
                     self._materialization_action(
                         "fetch",
                         node.id,
-                        node.path,
+                        node.require_path(),
                         environment,
                         checkout,
                         available,
@@ -504,7 +509,7 @@ class GitPlanningProvider:
                     self._materialization_action(
                         "checkout",
                         node.id,
-                        node.path,
+                        node.require_path(),
                         environment,
                         available,
                         checked,
@@ -518,7 +523,7 @@ class GitPlanningProvider:
                         (node.id,),
                         requested_node_ids=(node.id,),
                         requires=frozenset((Constraint(checked),)),
-                        produces=frozenset((Constraint(verified),)),
+                        produces=frozenset((Constraint(verified), source_available(node.id))),
                         claims=frozenset((ActionClaim("git/verify-head", f"node:{node.id}"),)),
                         environment=environment,
                         required_capability="git.materialize",
@@ -927,6 +932,7 @@ def git_driver() -> DriverRegistration:
     return DriverRegistration(
         manifest=manifest,
         inspectors=(GitInspectionProvider(),),
+        source_inspectors=(GitInspectionProvider(),),
         planners=(GitPlanningProvider(),),
         handlers=(GitActionHandler(),),
         facades=(RepositoryAddFacade(),),

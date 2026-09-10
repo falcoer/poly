@@ -34,12 +34,13 @@ from poly.driver import (
     discover_external_plugins,
 )
 from poly.driver.scaffold import DriverScaffoldError, scaffold_driver
-from poly.drivers import eclipse_driver, git_driver, maven_driver
+from poly.drivers import git_driver, maven_driver
 from poly.drivers.git import _positive_depth
 from poly.model import Node, Plan
 from poly.persistence import StateError, StateStore
 from poly.prepared import (
     PreparedPlanError,
+    deferred_commands,
     deferred_document,
     is_deferred_document,
     require_current,
@@ -82,13 +83,15 @@ INTERNAL_VERBS = frozenset(("bootstrap", "nature-add", "nature-remove"))
 
 
 def build_registry() -> DriverRegistry:
+    from poly.hydration import hydration_driver
+
     registry = DriverRegistry()
     registry.register(constructor_driver(), origin=DriverOrigin.SYSTEM)
     registry.register(git_driver(), origin=DriverOrigin.BUILTIN)
     registry.register(maven_driver(), origin=DriverOrigin.BUILTIN)
-    registry.register(eclipse_driver(), origin=DriverOrigin.BUILTIN)
     discover_external_plugins(registry)
     discover_external_drivers(registry)
+    registry.register(hydration_driver(registry), origin=DriverOrigin.SYSTEM)
     return registry
 
 
@@ -182,7 +185,13 @@ def main(arguments: list[str] | None = None) -> int:
             prepared = store.load_prepared_plan()
             if is_deferred_document(prepared):
                 inspection = _inspect_with_progress(
-                    registry, workspace, preparation, refresh=options.refresh
+                    registry,
+                    workspace,
+                    preparation,
+                    refresh=options.refresh,
+                    declared_only=all(
+                        item["verb"] == "hydrate" for item in deferred_commands(prepared)
+                    ),
                 )
                 preparation.start("Execution selection in progress")
                 try:
@@ -251,6 +260,9 @@ def main(arguments: list[str] | None = None) -> int:
             preparation,
             remote=getattr(options, "remote", False),
             refresh=getattr(options, "refresh", False),
+            declared_only=(
+                options.command == "hydrate" or getattr(options, "verb", None) == "hydrate"
+            ),
         )
     except WorkspaceError as error:
         parser.error(str(error))
@@ -457,22 +469,6 @@ def _parser(registry: DriverRegistry) -> argparse.ArgumentParser:
     dynamic = sorted(set(_driver_verbs(registry)) - RESERVED_COMMANDS - INTERNAL_VERBS - structural)
     for verb in dynamic:
         direct = commands.add_parser(verb, help=f"plan and execute the {verb!r} driver verb")
-        facades = registry.command_facades(verb)
-        if facades:
-            facade_commands = direct.add_subparsers(dest="facade", required=True)
-            for facade in facades:
-                facade_parser = facade_commands.add_parser(facade.name, help=facade.description)
-                for argument in facade.arguments:
-                    keywords = {"help": argument.help}
-                    if not argument.positional:
-                        keywords.update(dest=argument.name, required=argument.required)
-                    if argument.repeatable:
-                        keywords.update(action="append", default=[])
-                    if argument.choices:
-                        keywords["choices"] = argument.choices
-                    facade_parser.add_argument(*argument.flags, **keywords)
-                _direct_verb_options(facade_parser)
-            continue
         if verb == "hydrate":
             direct.add_argument(
                 "--depth",
@@ -615,6 +611,8 @@ def _current_node(nodes: tuple[Node, ...], workspace: Path, current: Path) -> st
         if isinstance(node.metadata.get("poly.parent"), str)
     }
     for node in nodes:
+        if node.path is None:
+            continue
         path = (workspace / node.path).resolve()
         if path != current and path not in current.parents:
             continue
@@ -868,10 +866,13 @@ def _inspect_with_progress(
     *,
     remote: bool = False,
     refresh: bool = False,
+    declared_only: bool = False,
 ) -> InspectionSnapshot:
     preparation.start("Node resolution in progress")
     try:
-        inspection = inspect_workspace(registry, workspace, remote=remote, refresh=refresh)
+        inspection = inspect_workspace(
+            registry, workspace, remote=remote, refresh=refresh, declared_only=declared_only
+        )
     except BaseException:
         preparation.fail("node resolution")
         raise
@@ -1030,11 +1031,9 @@ def _command_parameters(options: argparse.Namespace, registry: DriverRegistry) -
     parameters = _parameters(options.parameter)
     if options.command == "init":
         parameters["poly.name"] = options.name or options.workspace.resolve().name
-    elif getattr(options, "facade", None) is not None:
+    elif options.command == "add":
         facade = next(
-            item
-            for item in registry.command_facades(options.command)
-            if item.name == options.facade
+            item for item in registry.command_facades("add") if item.name == options.facade
         )
         values = {
             argument.name: (

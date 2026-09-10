@@ -17,8 +17,7 @@ from poly.driver import (
     FacadeRequest,
     load_plugin_entrypoint,
 )
-from poly.model import Inventory, Node, PlanningRequest, PlanStatus
-from poly.planning import Planner
+from poly.model import PlanStatus
 from poly.runtime import Executor, LocalActionRunner, RunStatus
 
 
@@ -31,45 +30,57 @@ def registry(monkeypatch: pytest.MonkeyPatch) -> DriverRegistry:
     return result
 
 
-def test_external_facade_blueprint_plan_and_process_execution(
+def test_external_facade_blueprint_plan_and_hydration(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from poly.application import inspect_workspace, prepare_planning
+    from poly.construction import constructor_driver
+    from poly.hydration import hydration_driver
+    from poly.workspace import create_workspace_files
+
     loaded = registry(monkeypatch)
-    facade = loaded.contributions.facade("configure", "eclipse-fixture")
-    values = facade.translate(FacadeRequest(tmp_path, {"name": "  Test & Java  "}))
-    resolved = loaded.contributions.resolve_blueprint("eclipse-java", values, version="1.0.0")
+    loaded.register(constructor_driver())
+    loaded.register(hydration_driver(loaded))
+    create_workspace_files(tmp_path, "demo", "Demo")
+    resolved = loaded.contributions.resolve_blueprint(
+        "eclipse-workspace", {"project_name": "Test & Java"}, version="1.0.0"
+    )
     assert json.loads(json.dumps(resolved.to_dict()))["parameters"] == {
         "project_name": "Test & Java"
     }
-    assert not (tmp_path / ".project").exists()
-    inventory = Inventory((Node("java", ".", ("java/project",)), Node("other", "other")))
-    request = PlanningRequest(
-        "configure", inventory, ("java", "other"), dict(resolved.configuration)
+    (tmp_path / "eclipse.yaml").write_text('name: "Test & Java"', encoding="utf-8")
+    facade = loaded.contributions.facade("add", "eclipse-configuration")
+    parameters = facade.translate(
+        FacadeRequest(tmp_path, {"node_id": "ide", "configuration_file": "eclipse.yaml"})
     )
-    plan = Planner(loaded.planning_providers()).negotiate(request)
+    inspection = inspect_workspace(loaded, tmp_path, declared_only=True)
+    add = prepare_planning(loaded, inspection, "add", (), parameters).plan
+    runner = LocalActionRunner(registry=loaded)
+    result = Executor(runner).execute(add, ExecutionContext(tmp_path, tmp_path / ".poly/runs/add"))
+    assert result.status is RunStatus.SUCCEEDED
+    inspection = inspect_workspace(loaded, tmp_path, declared_only=True)
+    plan = prepare_planning(loaded, inspection, "hydrate", ("root", "ide")).plan
     assert plan.status is PlanStatus.EXECUTABLE
-    assert len(plan.actions) == 1
-    assert plan.rejected[0].missing == ("nature:java/project",)
-    assert not (tmp_path / ".project").exists()
-    result = Executor(LocalActionRunner()).execute(
-        plan,
-        ExecutionContext(tmp_path, tmp_path / ".poly" / "runs" / plan.id),
+    output = tmp_path / ".poly/projections/ide/request.xml"
+    assert not output.exists()
+    result = Executor(runner).execute(
+        plan, ExecutionContext(tmp_path, tmp_path / ".poly/runs/first")
     )
     assert result.status is RunStatus.SUCCEEDED
-    assert ElementTree.parse(tmp_path / ".project").findtext("name") == "Test & Java"
-    # The fixture fails safely instead of overwriting an existing user file.
-    before = (tmp_path / ".project").read_bytes()
-    second = Executor(LocalActionRunner()).execute(
-        plan,
-        ExecutionContext(tmp_path, tmp_path / ".poly" / "runs" / "second"),
+    assert ElementTree.parse(output).getroot().get("name") == "Test & Java"
+    before = output.stat().st_mtime_ns
+    second = Executor(runner).execute(
+        plan, ExecutionContext(tmp_path, tmp_path / ".poly/runs/second")
     )
-    assert second.status is RunStatus.FAILED
-    assert (tmp_path / ".project").read_bytes() == before
-    unrelated = replace(request, parameters={"tool": "other"})
-    empty = Planner(loaded.planning_providers()).negotiate(unrelated)
-    assert empty.status is PlanStatus.EMPTY
-    assert empty.rejected == ()
+    assert second.status is RunStatus.SUCCEEDED
+    assert output.stat().st_mtime_ns == before
+    output.write_text("manual edit", encoding="utf-8")
+    third = Executor(runner).execute(
+        plan, ExecutionContext(tmp_path, tmp_path / ".poly/runs/third")
+    )
+    assert third.status is RunStatus.FAILED
+    assert output.read_text(encoding="utf-8") == "manual edit"
 
 
 @pytest.mark.parametrize(
@@ -88,7 +99,7 @@ def test_blueprint_rejects_invalid_inputs(
 ) -> None:
     with pytest.raises(ExtensionProtocolError, match=message):
         registry(monkeypatch).contributions.resolve_blueprint(
-            "eclipse-java", values, version=version
+            "eclipse-workspace", values, version=version
         )
 
 
@@ -96,7 +107,7 @@ def test_blueprint_checks_dependencies_defaults_choices_and_freezes_data(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     loaded = registry(monkeypatch)
-    definition = loaded.contributions.blueprint("eclipse-java")
+    definition = loaded.contributions.blueprint("eclipse-workspace")
     assert isinstance(definition, BlueprintDefinition)
     from poly.driver.blueprint import resolve_definition
 
@@ -113,7 +124,7 @@ def test_blueprint_checks_dependencies_defaults_choices_and_freezes_data(
                 {"project_name": "x"},
                 version="1.0.0",
                 available_contributions=frozenset(("driver:fixture.eclipse",)),
-                available_resources=frozenset(("resources/project.xml",)),
+                available_resources=frozenset(("resources/request.xml",)),
             )
     parameter = BlueprintParameter("project_name", "demo", ("demo", "other"))
     defaults = replace(definition, parameters=(parameter,))
@@ -122,9 +133,9 @@ def test_blueprint_checks_dependencies_defaults_choices_and_freezes_data(
         {},
         version="1.0.0",
         available_contributions=frozenset(("driver:fixture.eclipse",)),
-        available_resources=frozenset(("resources/project.xml",)),
+        available_resources=frozenset(("resources/request.xml",)),
     )
-    assert resolved.configuration["project.name"] == "demo"
+    assert resolved.configuration["name"] == "demo"
     with pytest.raises(ExtensionProtocolError, match="invalid blueprint parameter"):
         parameter.validate("invalid")
     values = {"key": "before"}

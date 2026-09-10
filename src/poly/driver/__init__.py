@@ -20,6 +20,11 @@ from poly.driver.api import (
     ScalarValue,
 )
 from poly.driver.blueprint import BlueprintDefinition, BlueprintParameter, ResolvedBlueprint
+from poly.driver.configuration import (
+    ConfigurationAddFacade,
+    ConfigurationError,
+    ConfigurationSchema,
+)
 from poly.driver.discovery import (
     DRIVER_ENTRY_POINT_GROUP,
     DRIVER_SPEC_VERSION,
@@ -45,6 +50,7 @@ from poly.driver.extension import (
     driver_contribution_identity,
     facade_contribution_identity,
 )
+from poly.driver.hydration import WORKSPACE_COHERENT, hydration_inventory, source_available
 from poly.driver.manifest import (
     DRIVER_API_VERSION,
     DriverCapability,
@@ -76,12 +82,16 @@ __all__ = [
     "DRIVER_SPEC_VERSION",
     "PLUGIN_ENTRY_POINT_GROUP",
     "POLY_EXTENSION_API_VERSION",
+    "WORKSPACE_COHERENT",
     "ActionHandler",
     "ActionValue",
     "BlueprintContribution",
     "BlueprintDefinition",
     "BlueprintParameter",
     "CommandFacade",
+    "ConfigurationAddFacade",
+    "ConfigurationError",
+    "ConfigurationSchema",
     "ContributionDescriptor",
     "ContributionInventoryItem",
     "ContributionKind",
@@ -126,8 +136,10 @@ __all__ = [
     "discover_external_plugins",
     "driver_contribution_identity",
     "facade_contribution_identity",
+    "hydration_inventory",
     "load_entrypoint",
     "load_external_driver",
     "load_plugin_entrypoint",
     "scaffold_driver",
+    "source_available",
 ]

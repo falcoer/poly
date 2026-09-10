@@ -8,7 +8,7 @@ Poly is a deterministic polyrepo engine. It separates five roles:
 - the **executor** runs that frozen plan without inventing more work;
 - the **reporter** renders the same canonical state for humans and tools.
 
-Technology knowledge lives in versioned drivers. The built-in Git, Maven and Eclipse
+Technology knowledge lives in versioned drivers. The built-in Git and Maven
 drivers use the same public SDK and conformance suite as external drivers.
 
 The Git reference driver discovers root and nested repositories, observes
@@ -17,10 +17,12 @@ branch/HEAD/cleanliness without changing them, and negotiates explicit read-only
 aggregation, groups selected modules at their highest local reactor, and makes
 cross-reactor materialization and ordering explicit in the plan.
 
-The Eclipse driver prepares a portable navigation project with linked folders:
-`poly configure eclipse --plan` previews generation and `poly configure eclipse`
-applies it. See the [Eclipse cookbook](docs/cookbook/eclipse.md) for selection,
-import, ownership and regeneration. This profile does not configure Java/m2e.
+Configuration nodes are declared through driver-contributed add facades and
+materialized by the same finite `poly hydrate` workflow as sources. Source
+inspections and workspace coherence precede projection actions. See the
+[configuration contract](docs/architecture/configuration-hydration.md).
+The former Eclipse navigation prototype has been removed; the real headless
+Eclipse adapter remains to be implemented. Driver and Extension APIs are 2.0.
 
 ## Status
 

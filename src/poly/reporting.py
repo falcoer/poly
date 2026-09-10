@@ -1167,6 +1167,10 @@ def _node_document(node: Node) -> ReportDocument:
     return {
         "id": node.id,
         "path": node.path,
+        "configuration": dict(node.configuration),
+        "nature_origins": {
+            nature: list(origins) for nature, origins in node.nature_origins.items()
+        },
         "natures": list(node.natures),
         "metadata": _json_mapping(node.metadata),
         "relations": [

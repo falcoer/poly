@@ -7,7 +7,7 @@ import json
 import os
 import re
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -32,10 +32,10 @@ MANAGED_IGNORE_END = "# END poly managed"
 
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 _COMMIT = re.compile(r"[0-9a-fA-F]{40,64}\Z")
-_KINDS = frozenset(("workspace", "repository", "module"))
+_KINDS = frozenset(("workspace", "repository", "module", "configuration"))
 _MANIFEST_FIELDS = frozenset(("schema", "workspace", "nodes"))
 _WORKSPACE_FIELDS = frozenset(("id", "name", "root-node"))
-_NODE_FIELDS = frozenset(("id", "parent", "kind", "path", "source", "natures"))
+_NODE_FIELDS = frozenset(("id", "parent", "kind", "path", "source", "natures", "configuration"))
 _SOURCE_FIELDS = frozenset(("driver", "url", "ref", "depth"))
 _LOCK_FIELDS = frozenset(("schema", "manifest-digest", "sources"))
 _LOCK_SOURCE_FIELDS = frozenset(("driver", "url", "requested-ref", "depth", "resolved"))
@@ -66,18 +66,22 @@ class SourceDeclaration:
 class WorkspaceNode:
     id: str
     kind: str
-    path: str
-    workspace_path: str
+    path: str | None
+    workspace_path: str | None
     parent: str | None = None
     source: SourceDeclaration | None = None
     natures: tuple[str, ...] = ()
+    configuration: Metadata = field(default_factory=dict)
 
     def semantic(self) -> dict[str, JsonValue]:
         value: dict[str, JsonValue] = {
             "id": self.id,
             "kind": self.kind,
-            "path": self.path,
         }
+        if self.path is not None:
+            value["path"] = self.path
+        if self.configuration:
+            value["configuration"] = dict(self.configuration)
         if self.parent is not None:
             value["parent"] = self.parent
         if self.source is not None:
@@ -267,6 +271,8 @@ def reconcile_inventory(
                 observed.natures,
                 metadata,
                 relations,
+                observed.configuration,
+                observed.nature_origins,
             )
     return Inventory(tuple(nodes_by_id.values()))
 
@@ -293,7 +299,8 @@ def add_manifest_node(
     node_id: str,
     parent: str,
     kind: str,
-    path: str,
+    path: str | None,
+    configuration: Metadata | None = None,
     natures: tuple[str, ...] = (),
     source: SourceDeclaration | None = None,
     locked_source: LockedSource | None = None,
@@ -307,7 +314,10 @@ def add_manifest_node(
     specification["id"] = node_id
     specification["parent"] = parent
     specification["kind"] = kind
-    specification["path"] = path
+    if path is not None:
+        specification["path"] = path
+    if configuration is not None:
+        specification["configuration"] = configuration
     if source is not None:
         specification["source"] = CommentedMap(source.semantic())
     if natures:
@@ -415,7 +425,9 @@ def _managed_gitignore_text(path: Path, manifest: WorkspaceManifest) -> str:
         {
             node.workspace_path
             for node in manifest.nodes
-            if node.kind == "repository" and node.id != manifest.root_node
+            if node.kind == "repository"
+            and node.id != manifest.root_node
+            and node.workspace_path is not None
         },
         key=lambda value: (value.casefold(), value),
     )
@@ -474,8 +486,9 @@ def _parse_manifest(raw: object, workspace: Path) -> WorkspaceManifest:
         raise WorkspaceError("manifest nodes must be a non-empty list")
 
     provisional: list[
-        tuple[str, str | None, str, str, SourceDeclaration | None, tuple[str, ...]]
+        tuple[str, str | None, str, str | None, SourceDeclaration | None, tuple[str, ...]]
     ] = []
+    configurations: dict[str, Metadata] = {}
     seen: set[str] = set()
     for index, raw_node in enumerate(nodes_value):
         node = _mapping(raw_node, f"nodes[{index}]")
@@ -491,7 +504,23 @@ def _parse_manifest(raw: object, workspace: Path) -> WorkspaceManifest:
         parent = (
             None if parent_value is None else _identifier(parent_value, f"nodes[{index}].parent")
         )
-        path = _relative_path(node.get("path"), f"nodes[{index}].path")
+        if kind == "configuration":
+            if "path" in node:
+                raise WorkspaceError("configuration nodes must not declare a filesystem path")
+            path = None
+        else:
+            path = _relative_path(node.get("path"), f"nodes[{index}].path")
+        config = node.get("configuration", {})
+        if not isinstance(config, dict):
+            raise WorkspaceError(f"nodes[{index}].configuration must be a mapping")
+        if config and kind != "configuration":
+            raise WorkspaceError("only configuration nodes may carry configuration")
+        try:
+            configurations[node_id] = json.loads(json.dumps(config, allow_nan=False))
+        except (ValueError, TypeError) as error:
+            raise WorkspaceError(
+                f"nodes[{index}].configuration must contain JSON values"
+            ) from error
         source = _parse_source(node.get("source"), f"nodes[{index}].source")
         natures = _string_tuple(node.get("natures", []), f"nodes[{index}].natures")
         provisional.append((node_id, parent, kind, path, source, natures))
@@ -514,10 +543,10 @@ def _parse_manifest(raw: object, workspace: Path) -> WorkspaceManifest:
         if source is not None and kind != "repository":
             raise WorkspaceError(f"only repository nodes may declare a source: {node_id!r}")
 
-    resolved: dict[str, str] = {}
+    resolved: dict[str, str | None] = {}
     visiting: list[str] = []
 
-    def resolve(node_id: str) -> str:
+    def resolve(node_id: str) -> str | None:
         if node_id in resolved:
             return resolved[node_id]
         if node_id in visiting:
@@ -525,15 +554,18 @@ def _parse_manifest(raw: object, workspace: Path) -> WorkspaceManifest:
             raise WorkspaceError(f"node parent cycle: {cycle}")
         visiting.append(node_id)
         _current_id, parent, _kind, path, _source, _natures = by_id[node_id]
-        if parent is None:
-            result = "."
+        parent_path = resolve(parent) if parent is not None else "."
+        result: str | None
+        if path is None:
+            result = None
+        elif parent_path is None:
+            raise WorkspaceError(f"filesystem node {node_id!r} has a pathless parent")
         else:
-            parent_path = resolve(parent)
-            result_path = PurePosixPath(parent_path) / PurePosixPath(path)
-            result = result_path.as_posix()
+            result = (PurePosixPath(parent_path) / path).as_posix()
         visiting.pop()
         resolved[node_id] = result
-        _safe_workspace_path(workspace, result, node_id)
+        if result is not None:
+            _safe_workspace_path(workspace, result, node_id)
         return result
 
     for node_id in sorted(by_id):
@@ -548,6 +580,7 @@ def _parse_manifest(raw: object, workspace: Path) -> WorkspaceManifest:
             parent,
             source,
             natures,
+            configurations[node_id],
         )
         for node_id, parent, kind, path, source, natures in provisional
     )
@@ -656,10 +689,24 @@ def _declared_node(node: WorkspaceNode, locked: LockedSource | None = None) -> N
     natures = set(node.natures)
     natures.add(f"poly/{node.kind}")
     relations = (NodeRelation("poly/parent", node.parent),) if node.parent is not None else ()
-    return Node(node.id, node.workspace_path, tuple(natures), metadata, relations)
+    origins: dict[str, tuple[str, ...]] = {nature: ("declared",) for nature in node.natures}
+    origins[f"poly/{node.kind}"] = tuple(
+        sorted({*origins.get(f"poly/{node.kind}", ()), "structural"})
+    )
+    return Node(
+        node.id,
+        node.workspace_path,
+        tuple(natures),
+        metadata,
+        relations,
+        node.configuration,
+        origins,
+    )
 
 
 def _declared_identity(manifest: WorkspaceManifest, observed: Node) -> str | None:
+    if observed.path is None:
+        return observed.id if any(node.id == observed.id for node in manifest.nodes) else None
     candidates = [node for node in manifest.nodes if node.workspace_path == observed.path]
     if "git/repository" in observed.natures:
         boundaries = [node for node in candidates if node.kind in {"workspace", "repository"}]
@@ -686,16 +733,32 @@ def _merge_node(base: Node, observed: Node, relations: tuple[NodeRelation, ...])
         (*base.natures, *observed.natures),
         metadata,
         (*base.relations, *relations),
+        dict(base.configuration),
+        {
+            nature: tuple(
+                sorted(
+                    set(base.nature_origins.get(nature, ()))
+                    | set(
+                        observed.nature_origins.get(nature, ("observed",))
+                        if nature in observed.natures
+                        else ()
+                    )
+                )
+            )
+            for nature in set(base.natures) | set(observed.natures)
+        },
     )
 
 
 def _validate_collisions(
-    nodes: list[tuple[str, str | None, str, str, SourceDeclaration | None, tuple[str, ...]]],
-    resolved: dict[str, str],
+    nodes: list[tuple[str, str | None, str, str | None, SourceDeclaration | None, tuple[str, ...]]],
+    resolved: dict[str, str | None],
 ) -> None:
     by_folded: dict[str, list[str]] = {}
     for node_id, _parent, _kind, _path, _source, _natures in nodes:
-        by_folded.setdefault(resolved[node_id].casefold(), []).append(node_id)
+        path = resolved[node_id]
+        if path is not None:
+            by_folded.setdefault(path.casefold(), []).append(node_id)
     lookup = {item[0]: item for item in nodes}
     for folded, identifiers in sorted(by_folded.items()):
         if len(identifiers) < 2:

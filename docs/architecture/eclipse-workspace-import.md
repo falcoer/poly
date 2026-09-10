@@ -1,5 +1,9 @@
 # Eclipse : import réel, headless et working sets
 
+> Update 2026-09-10: lifecycle and command decisions are superseded by
+> [configuration nodes and hydration](configuration-hydration.md).
+> Real Eclipse import remains pending; the navigation prototype has been removed.
+
 Date : 2026-09-09. Statut : exigences utilisateur actées ; conception proposée
 pour compléter la 0.13.2. Les mécanismes décrits ici ne sont pas encore implémentés.
 

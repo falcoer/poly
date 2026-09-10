@@ -15,7 +15,7 @@ uv sync --all-groups
 
 During development against a local core checkout, add
 `--poly-source /path/to/poly`. This writes a development-only `uv` source while
-the built distribution retains the portable requirement `poly>=0.13.0,<0.14`.
+the built distribution retains the portable requirement `poly>=0.13.2,<0.14`.
 
 The generator creates:
 
@@ -168,3 +168,12 @@ process, and its action handler has the process permissions of the invoking
 user. Install only reviewed and trusted driver wheels. Operating-system
 sandboxing, privilege separation, and hostile-plugin containment are explicitly
 outside the 0.12 scope.
+
+## API 2.0 migration
+
+Configuration nodes may have no filesystem path. Update drivers to API 2.0,
+check applicability before filesystem operations, and use Node.require_path()
+when needed. Source inspections opt in through source_inspectors and use the
+InspectionContext.source boundary. Configuration schemas and hydration inventory
+exchange are public SDK contributions; see
+[the configuration contract](../architecture/configuration-hydration.md).

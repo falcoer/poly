@@ -146,9 +146,9 @@ class ConstructionPlanningProvider:
 
     def _add(self, request: PlanningRequest) -> ActionSpec:
         node_id = _required_parameter(request, "poly.node.id")
-        path = _required_parameter(request, "poly.node.path")
         kind = request.parameters.get("poly.node.kind", "module")
-        if kind not in {"module", "repository"}:
+        path = None if kind == "configuration" else _required_parameter(request, "poly.node.path")
+        if kind not in {"module", "repository", "configuration"}:
             raise ConstructionError(f"unsupported node kind: {kind!r}")
         parent = request.parameters.get("poly.node.parent") or _root_node_id(request)
         natures = tuple(
@@ -162,8 +162,17 @@ class ConstructionPlanningProvider:
             "id": node_id,
             "parent": parent,
             "kind": kind,
-            "path": path,
         }
+        if path is not None:
+            spec["path"] = path
+        if kind == "configuration":
+            try:
+                configuration = json.loads(_required_parameter(request, "poly.node.configuration"))
+                if not isinstance(configuration, dict):
+                    raise ValueError("configuration must be an object")
+                spec["configuration"] = configuration
+            except ValueError as error:
+                raise ConstructionError(str(error)) from error
         if natures:
             spec["natures"] = list(natures)
         repository = request.parameters.get("poly.source.url")
@@ -194,7 +203,11 @@ class ConstructionPlanningProvider:
             claims=frozenset(
                 (
                     ActionClaim("poly/construction/add", f"node:{node_id}"),
-                    ActionClaim("poly/construction/path", f"path:{path}"),
+                    *(
+                        (ActionClaim("poly/construction/path", f"path:{path}"),)
+                        if path is not None
+                        else ()
+                    ),
                 )
             ),
             environment={"poly.node.spec": json.dumps(spec, sort_keys=True)},
@@ -327,7 +340,11 @@ class ConstructionPlanner:
             claims=frozenset(
                 (
                     ActionClaim("poly/construction/add", f"node:{node_id}"),
-                    ActionClaim("poly/construction/path", f"path:{path}"),
+                    *(
+                        (ActionClaim("poly/construction/path", f"path:{path}"),)
+                        if path is not None
+                        else ()
+                    ),
                 )
             ),
             environment={"poly.node.spec": json.dumps(spec, sort_keys=True)},
@@ -435,7 +452,8 @@ class ConstructionActionHandler:
             node_id=node_id,
             parent=str(spec["parent"]),
             kind=str(spec["kind"]),
-            path=str(spec["path"]),
+            path=str(spec["path"]) if "path" in spec else None,
+            configuration=spec.get("configuration"),
             natures=tuple(natures_value),
             source=source,
             locked_source=locked,
